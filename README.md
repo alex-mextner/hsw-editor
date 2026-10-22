@@ -18,6 +18,7 @@ and works offline.
 apps/web        Vite + React 19 + R3F + shadcn (base-ui) + Tailwind v4, PWA
 apps/server     Bun daemon: REST/SSE, wall store, asset serving
 packages/core   wall schema, ops, validation
+packages/compat tool-to-holder compatibility, auto-attach, re-hang and the bank tool-filter model (pure)
 packages/bank   HSW element bank index
 services/vision Python sidecar (uv + FastAPI): detect, segment, calibrate, fit
 cli/hsw_editor.py  lifecycle CLI on the shared agent-tools service manager
@@ -49,6 +50,7 @@ into `vendor/state-lib/` (gitignored; override the source with `STATE_LIB_RUNTIM
 `VITE_STATE_BACKEND=baseline`, the app uses a dependency-free baseline store. CI always runs the baseline backend.
 
 ## CLI
+
 
 | Command                                                              | Effect                                                                                                               |
 | -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -89,6 +91,10 @@ release: [docs/cli.md](docs/cli.md). HTTP API: [docs/api.md](docs/api.md). Relea
 - [#22](https://github.com/alex-mextner/hsw-editor/issues/22) (v) Release, packaging and systemd autostart
 - [#23](https://github.com/alex-mextner/hsw-editor/issues/23) (w) Domain hsw-editor.rs and landing page
 - [#24](https://github.com/alex-mextner/hsw-editor/issues/24) (x) i18n ru/en
+- [#56](https://github.com/alex-mextner/hsw-editor/issues/56) compat: tool-to-mount compatibility, auto-attach and re-hang
+- [#57](https://github.com/alex-mextner/hsw-editor/issues/57) web: bank filter by selected tools (override with reset), fit-score ranking
+- [#58](https://github.com/alex-mextner/hsw-editor/issues/58) bank: custom user elements (import, API, CLI, mine badge)
+- [#59](https://github.com/alex-mextner/hsw-editor/issues/59) web: drag and drop tools onto mounts, Tools panel with thumbnails
 
 Full design: [docs/specs/2026-10-22-hsw-editor-design.md](docs/specs/2026-10-22-hsw-editor-design.md). Agent rules: [AGENTS.md](AGENTS.md).
 

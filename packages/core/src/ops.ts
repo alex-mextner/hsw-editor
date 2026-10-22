@@ -63,6 +63,7 @@ export const WARNING_CODES = [
   'missing_model',
   'parent_not_holder',
   'slot_collision',
+  'slot_without_parent',
 ] as const;
 export type WarningCode = (typeof WARNING_CODES)[number];
 
@@ -352,11 +353,12 @@ function attachItem(wall: Wall, op: Narrow<'attachItem'>): LeafResult {
   if (item.kind !== 'tool') {
     throw new OpError('invalid_op', `${op.id}: only tools hang on holders (kind is ${item.kind})`);
   }
-  if (op.parentId !== null) {
-    const parent = wall.items[itemIndex(wall, op.parentId)];
-    if (parent === undefined || parent.kind !== 'holder') {
-      throw new OpError('invalid_op', `${op.id}: ${op.parentId} is not a holder`);
-    }
+  // A parent that no longer exists is allowed (like `addItem`): removing a holder leaves its tools pointing at
+  // it with a `missing_parent` warning, and undoing a later re-attach has to be able to restore that state.
+  const parent =
+    op.parentId === null ? undefined : wall.items.find((candidate) => candidate.id === op.parentId);
+  if (parent !== undefined && parent.kind !== 'holder') {
+    throw new OpError('invalid_op', `${op.id}: ${op.parentId} is not a holder`);
   }
   const inverse: LeafOp = {
     type: 'attachItem',
@@ -366,10 +368,12 @@ function attachItem(wall: Wall, op: Narrow<'attachItem'>): LeafResult {
   };
   const { parentId: _parent, slot: _slot, ...rest } = item;
   const slot = op.slot ?? undefined;
-  const next: WallItem =
-    op.parentId === null
-      ? rest
-      : { ...rest, parentId: op.parentId, ...(slot === undefined ? {} : { slot }) };
+  // `parentId: null` with a slot restores a stored slot-without-parent item (the inverse of detaching one).
+  const next: WallItem = {
+    ...rest,
+    ...(op.parentId === null ? {} : { parentId: op.parentId }),
+    ...(slot === undefined ? {} : { slot }),
+  };
   if (sameJson(next, item)) return noop(wall, inverse);
   return { wall: withItem(wall, index, next), inverse, changed: true };
 }
@@ -520,7 +524,6 @@ const POSE_EPSILON_MM = 1e-6;
 export function checkWall(wall: Wall): WallWarning[] {
   const warnings: WallWarning[] = [];
   const size = boardSizeMm(wall.board);
-  const itemIds = new Set(wall.items.map((item) => item.id));
   const photoIds = new Set(wall.photos.map((photo) => photo.id));
   const modelIds = new Set(wall.models.map((model) => model.id));
   const byCell = new Map<string, string[]>();
@@ -582,8 +585,16 @@ export function checkWall(wall: Wall): WallWarning[] {
       }
       if (item.slot !== undefined) {
         const key = `${item.parentId}#${item.slot}`;
-        bySlot.set(key, [...(bySlot.get(key) ?? []), item.id]);
+        const group = bySlot.get(key);
+        if (group === undefined) bySlot.set(key, [item.id]);
+        else group.push(item.id);
       }
+    } else if (item.slot !== undefined) {
+      warnings.push({
+        code: 'slot_without_parent',
+        message: `item ${item.id} claims mount slot ${item.slot} but hangs on no holder`,
+        itemIds: [item.id],
+      });
     }
     const photoRefs = [item.photoId, item.source.photoId];
     for (const photoId of photoRefs) {

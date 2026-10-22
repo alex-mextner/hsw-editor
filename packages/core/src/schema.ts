@@ -254,7 +254,7 @@ const LeafOpSchemas = [
   z.strictObject({
     type: z.literal('attachItem'),
     ...TargetItem,
-    /** Holder the tool hangs on; `null` detaches it (and drops `slot`). */
+    /** Holder the tool hangs on; `null` detaches it; a `slot` sent along with `null` is kept (restores a stored slot-without-parent item). */
     parentId: IdSchema.nullable(),
     /** Mount slot on that holder; `null` or omitted leaves the tool unslotted. */
     slot: z.number().int().min(0).nullable().optional(),

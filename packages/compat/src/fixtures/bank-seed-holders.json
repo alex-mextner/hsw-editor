@@ -1,0 +1,881 @@
+[
+  {
+    "id": "cable-hanger-hangerreach100-strapwidth20",
+    "category": "accessories/cables",
+    "fitsTool": [{ "toolClass": "cable", "capacity": 1 }],
+    "bboxMm": { "min": { "x": -28, "y": -20, "z": 0 }, "max": { "x": 28, "y": 22, "z": 100 } }
+  },
+  {
+    "id": "cable-hanger-hangerreach100-strapwidth35",
+    "category": "accessories/cables",
+    "fitsTool": [{ "toolClass": "cable", "capacity": 1 }],
+    "bboxMm": { "min": { "x": -28, "y": -20, "z": 0 }, "max": { "x": 28, "y": 22, "z": 100 } }
+  },
+  {
+    "id": "cable-hanger-hangerreach130-strapwidth20",
+    "category": "accessories/cables",
+    "fitsTool": [{ "toolClass": "cable", "capacity": 1 }],
+    "bboxMm": { "min": { "x": -28, "y": -20, "z": 0 }, "max": { "x": 28, "y": 22, "z": 130 } }
+  },
+  {
+    "id": "cable-hanger-hangerreach40-strapwidth20",
+    "category": "accessories/cables",
+    "fitsTool": [{ "toolClass": "cable", "capacity": 1 }],
+    "bboxMm": { "min": { "x": -28, "y": -20, "z": 0 }, "max": { "x": 28, "y": 22, "z": 40 } }
+  },
+  {
+    "id": "cable-hanger-hangerreach70-strapwidth20",
+    "category": "accessories/cables",
+    "fitsTool": [{ "toolClass": "cable", "capacity": 1 }],
+    "bboxMm": { "min": { "x": -28, "y": -20, "z": 0 }, "max": { "x": 28, "y": 22, "z": 70 } }
+  },
+  {
+    "id": "spool-holder-borediameter16-spoolwidth30",
+    "category": "accessories/cables",
+    "fitsTool": [
+      {
+        "toolClass": "spool",
+        "dims": { "boreDiameter": { "min": 15, "max": 18 }, "width": { "min": 10, "max": 34 } },
+        "capacity": 1
+      }
+    ],
+    "bboxMm": { "min": { "x": -20, "y": -31.6, "z": 0 }, "max": { "x": 20, "y": 31.6, "z": 61 } }
+  },
+  {
+    "id": "spool-holder-borediameter16-spoolwidth50",
+    "category": "accessories/cables",
+    "fitsTool": [
+      {
+        "toolClass": "spool",
+        "dims": { "boreDiameter": { "min": 15, "max": 18 }, "width": { "min": 30, "max": 54 } },
+        "capacity": 1
+      }
+    ],
+    "bboxMm": { "min": { "x": -20, "y": -31.6, "z": 0 }, "max": { "x": 20, "y": 31.6, "z": 81 } }
+  },
+  {
+    "id": "spool-holder-borediameter25-spoolwidth30",
+    "category": "accessories/cables",
+    "fitsTool": [
+      {
+        "toolClass": "spool",
+        "dims": { "boreDiameter": { "min": 24, "max": 27 }, "width": { "min": 10, "max": 34 } },
+        "capacity": 1
+      }
+    ],
+    "bboxMm": {
+      "min": { "x": -22.75, "y": -55.2, "z": 0 },
+      "max": { "x": 22.75, "y": 55.2, "z": 61 }
+    }
+  },
+  {
+    "id": "spool-holder-borediameter32-spoolwidth50",
+    "category": "accessories/cables",
+    "fitsTool": [
+      {
+        "toolClass": "spool",
+        "dims": { "boreDiameter": { "min": 31, "max": 34 }, "width": { "min": 30, "max": 54 } },
+        "capacity": 1
+      }
+    ],
+    "bboxMm": {
+      "min": { "x": -26.25, "y": -55.2, "z": 0 },
+      "max": { "x": 26.25, "y": 55.2, "z": 81 }
+    }
+  },
+  {
+    "id": "spool-holder-borediameter50-spoolwidth70",
+    "category": "accessories/cables",
+    "fitsTool": [
+      {
+        "toolClass": "spool",
+        "dims": { "boreDiameter": { "min": 49, "max": 52 }, "width": { "min": 50, "max": 74 } },
+        "capacity": 1
+      }
+    ],
+    "bboxMm": {
+      "min": { "x": -35.25, "y": -55.2, "z": 0 },
+      "max": { "x": 35.25, "y": 55.2, "z": 101 }
+    }
+  },
+  {
+    "id": "bin-open-width100-depth40-height30",
+    "category": "bins/boxes",
+    "fitsTool": [{ "toolClass": "screws" }],
+    "bboxMm": { "min": { "x": -50, "y": -50, "z": 0 }, "max": { "x": 50, "y": 20, "z": 40 } }
+  },
+  {
+    "id": "bin-open-width100-depth60-height30",
+    "category": "bins/boxes",
+    "fitsTool": [{ "toolClass": "screws" }],
+    "bboxMm": { "min": { "x": -50, "y": -50, "z": 0 }, "max": { "x": 50, "y": 20, "z": 60 } }
+  },
+  {
+    "id": "bin-open-width120-depth40-height50",
+    "category": "bins/boxes",
+    "fitsTool": [{ "toolClass": "screws" }],
+    "bboxMm": { "min": { "x": -60, "y": -70, "z": 0 }, "max": { "x": 60, "y": 20, "z": 40 } }
+  },
+  {
+    "id": "bin-open-width40-depth60-height30",
+    "category": "bins/boxes",
+    "fitsTool": [{ "toolClass": "screws" }],
+    "bboxMm": { "min": { "x": -28, "y": -50, "z": 0 }, "max": { "x": 28, "y": 20, "z": 60 } }
+  },
+  {
+    "id": "bin-open-width60-depth60-height50",
+    "category": "bins/boxes",
+    "fitsTool": [{ "toolClass": "screws" }],
+    "bboxMm": { "min": { "x": -30, "y": -70, "z": 0 }, "max": { "x": 30, "y": 20, "z": 60 } }
+  },
+  {
+    "id": "cup-round-innerdiameter20-cupheight120",
+    "category": "bins/cups",
+    "fitsTool": [
+      { "toolClass": "pen", "dims": { "diameter": { "min": 0, "max": 18.5 } } },
+      { "toolClass": "brush", "dims": { "diameter": { "min": 0, "max": 18.5 } } },
+      { "toolClass": "file", "dims": { "width": { "min": 0, "max": 18.5 } } }
+    ],
+    "bboxMm": { "min": { "x": -28, "y": -140, "z": 0 }, "max": { "x": 28, "y": 20, "z": 29.3 } }
+  },
+  {
+    "id": "cup-round-innerdiameter20-cupheight80",
+    "category": "bins/cups",
+    "fitsTool": [
+      { "toolClass": "pen", "dims": { "diameter": { "min": 0, "max": 18.5 } } },
+      { "toolClass": "brush", "dims": { "diameter": { "min": 0, "max": 18.5 } } },
+      { "toolClass": "file", "dims": { "width": { "min": 0, "max": 18.5 } } }
+    ],
+    "bboxMm": { "min": { "x": -28, "y": -100, "z": 0 }, "max": { "x": 28, "y": 20, "z": 29.3 } }
+  },
+  {
+    "id": "cup-round-innerdiameter30-cupheight40",
+    "category": "bins/cups",
+    "fitsTool": [
+      { "toolClass": "pen", "dims": { "diameter": { "min": 0, "max": 28.5 } } },
+      { "toolClass": "brush", "dims": { "diameter": { "min": 0, "max": 28.5 } } },
+      { "toolClass": "file", "dims": { "width": { "min": 0, "max": 28.5 } } }
+    ],
+    "bboxMm": { "min": { "x": -28, "y": -60, "z": 0 }, "max": { "x": 28, "y": 20, "z": 39.3 } }
+  },
+  {
+    "id": "cup-round-innerdiameter50-cupheight120",
+    "category": "bins/cups",
+    "fitsTool": [
+      { "toolClass": "pen", "dims": { "diameter": { "min": 0, "max": 48.5 } } },
+      { "toolClass": "brush", "dims": { "diameter": { "min": 0, "max": 48.5 } } },
+      { "toolClass": "file", "dims": { "width": { "min": 0, "max": 48.5 } } }
+    ],
+    "bboxMm": { "min": { "x": -31.4, "y": -140, "z": 0 }, "max": { "x": 31.4, "y": 20, "z": 59.3 } }
+  },
+  {
+    "id": "cup-round-innerdiameter60-cupheight40",
+    "category": "bins/cups",
+    "fitsTool": [
+      { "toolClass": "pen", "dims": { "diameter": { "min": 0, "max": 58.5 } } },
+      { "toolClass": "brush", "dims": { "diameter": { "min": 0, "max": 58.5 } } },
+      { "toolClass": "file", "dims": { "width": { "min": 0, "max": 58.5 } } }
+    ],
+    "bboxMm": { "min": { "x": -36.4, "y": -60, "z": 0 }, "max": { "x": 36.4, "y": 20, "z": 69.3 } }
+  },
+  {
+    "id": "clamp-bar-roddiameter12-rodlength100",
+    "category": "holders/clamps",
+    "fitsTool": [{ "toolClass": "clamp" }],
+    "bboxMm": { "min": { "x": -60, "y": -20, "z": 0 }, "max": { "x": 60, "y": 48, "z": 40 } }
+  },
+  {
+    "id": "clamp-bar-roddiameter12-rodlength160",
+    "category": "holders/clamps",
+    "fitsTool": [{ "toolClass": "clamp" }],
+    "bboxMm": { "min": { "x": -90, "y": -20, "z": 0 }, "max": { "x": 90, "y": 48, "z": 40 } }
+  },
+  {
+    "id": "clamp-bar-roddiameter16-rodlength100",
+    "category": "holders/clamps",
+    "fitsTool": [{ "toolClass": "clamp" }],
+    "bboxMm": { "min": { "x": -60, "y": -20, "z": 0 }, "max": { "x": 60, "y": 50, "z": 44 } }
+  },
+  {
+    "id": "clamp-bar-roddiameter20-rodlength100",
+    "category": "holders/clamps",
+    "fitsTool": [{ "toolClass": "clamp" }],
+    "bboxMm": { "min": { "x": -60, "y": -20, "z": 0 }, "max": { "x": 60, "y": 52, "z": 48 } }
+  },
+  {
+    "id": "clamp-bar-roddiameter8-rodlength100",
+    "category": "holders/clamps",
+    "fitsTool": [{ "toolClass": "clamp" }],
+    "bboxMm": { "min": { "x": -60, "y": -20, "z": 0 }, "max": { "x": 60, "y": 46, "z": 36 } }
+  },
+  {
+    "id": "refit-clamp-bar",
+    "category": "holders/clamps",
+    "fitsTool": [{ "toolClass": "clamp" }],
+    "bboxMm": { "min": { "x": -51, "y": -38, "z": 0 }, "max": { "x": 51, "y": 15, "z": 40 } }
+  },
+  {
+    "id": "refit-scissors-peg",
+    "category": "holders/cutting",
+    "fitsTool": [{ "toolClass": "scissors", "capacity": 1 }],
+    "bboxMm": { "min": { "x": -14, "y": -35, "z": 0 }, "max": { "x": 14, "y": 35, "z": 42 } }
+  },
+  {
+    "id": "scissors-slot-slots1-bladethickness12",
+    "category": "holders/cutting",
+    "fitsTool": [
+      {
+        "toolClass": "scissors",
+        "dims": { "bladeThickness": { "min": 9, "max": 13 } },
+        "capacity": 1
+      },
+      { "toolClass": "knife", "dims": { "bladeThickness": { "min": 9, "max": 13 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -28, "y": -20, "z": 0 }, "max": { "x": 28, "y": 46, "z": 47 } }
+  },
+  {
+    "id": "scissors-slot-slots1-bladethickness4",
+    "category": "holders/cutting",
+    "fitsTool": [
+      {
+        "toolClass": "scissors",
+        "dims": { "bladeThickness": { "min": 1, "max": 5 } },
+        "capacity": 1
+      },
+      { "toolClass": "knife", "dims": { "bladeThickness": { "min": 1, "max": 5 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -28, "y": -20, "z": 0 }, "max": { "x": 28, "y": 46, "z": 47 } }
+  },
+  {
+    "id": "scissors-slot-slots2-bladethickness12",
+    "category": "holders/cutting",
+    "fitsTool": [
+      {
+        "toolClass": "scissors",
+        "dims": { "bladeThickness": { "min": 9, "max": 13 } },
+        "capacity": 2
+      },
+      { "toolClass": "knife", "dims": { "bladeThickness": { "min": 9, "max": 13 } }, "capacity": 2 }
+    ],
+    "bboxMm": { "min": { "x": -36, "y": -20, "z": 0 }, "max": { "x": 36, "y": 46, "z": 47 } }
+  },
+  {
+    "id": "scissors-slot-slots3-bladethickness12",
+    "category": "holders/cutting",
+    "fitsTool": [
+      {
+        "toolClass": "scissors",
+        "dims": { "bladeThickness": { "min": 9, "max": 13 } },
+        "capacity": 3
+      },
+      { "toolClass": "knife", "dims": { "bladeThickness": { "min": 9, "max": 13 } }, "capacity": 3 }
+    ],
+    "bboxMm": { "min": { "x": -51, "y": -20, "z": 0 }, "max": { "x": 51, "y": 46, "z": 47 } }
+  },
+  {
+    "id": "scissors-slot-slots4-bladethickness12",
+    "category": "holders/cutting",
+    "fitsTool": [
+      {
+        "toolClass": "scissors",
+        "dims": { "bladeThickness": { "min": 9, "max": 13 } },
+        "capacity": 4
+      },
+      { "toolClass": "knife", "dims": { "bladeThickness": { "min": 9, "max": 13 } }, "capacity": 4 }
+    ],
+    "bboxMm": { "min": { "x": -66, "y": -20, "z": 0 }, "max": { "x": 66, "y": 46, "z": 47 } }
+  },
+  {
+    "id": "drill-cradle-bodywidth32",
+    "category": "holders/drills",
+    "fitsTool": [
+      { "toolClass": "drill", "dims": { "neckWidth": { "min": 26, "max": 33 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -45.5, "y": -20, "z": 0 }, "max": { "x": 45.5, "y": 58, "z": 100 } }
+  },
+  {
+    "id": "drill-cradle-bodywidth38",
+    "category": "holders/drills",
+    "fitsTool": [
+      { "toolClass": "drill", "dims": { "neckWidth": { "min": 32, "max": 39 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -48.5, "y": -20, "z": 0 }, "max": { "x": 48.5, "y": 58, "z": 100 } }
+  },
+  {
+    "id": "drill-cradle-bodywidth45",
+    "category": "holders/drills",
+    "fitsTool": [
+      { "toolClass": "drill", "dims": { "neckWidth": { "min": 39, "max": 46 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -52, "y": -20, "z": 0 }, "max": { "x": 52, "y": 58, "z": 100 } }
+  },
+  {
+    "id": "drill-cradle-bodywidth55",
+    "category": "holders/drills",
+    "fitsTool": [
+      { "toolClass": "drill", "dims": { "neckWidth": { "min": 49, "max": 56 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -57, "y": -20, "z": 0 }, "max": { "x": 57, "y": 58, "z": 100 } }
+  },
+  {
+    "id": "drill-cradle-bodywidth70",
+    "category": "holders/drills",
+    "fitsTool": [
+      { "toolClass": "drill", "dims": { "neckWidth": { "min": 64, "max": 71 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -64.5, "y": -20, "z": 0 }, "max": { "x": 64.5, "y": 58, "z": 100 } }
+  },
+  {
+    "id": "refit-drill-arm-left",
+    "category": "holders/drills",
+    "fitsTool": [{ "toolClass": "drill" }],
+    "bboxMm": { "min": { "x": 24, "y": -86, "z": 0 }, "max": { "x": 48, "y": 6, "z": 108 } }
+  },
+  {
+    "id": "refit-drill-arm-right",
+    "category": "holders/drills",
+    "fitsTool": [{ "toolClass": "drill" }],
+    "bboxMm": { "min": { "x": -48, "y": -86, "z": 0 }, "max": { "x": -24, "y": 6, "z": 108 } }
+  },
+  {
+    "id": "refit-drill-backplate",
+    "category": "holders/drills",
+    "fitsTool": [{ "toolClass": "drill" }],
+    "bboxMm": { "min": { "x": -65, "y": -110, "z": 0 }, "max": { "x": 65, "y": 18, "z": 11 } }
+  },
+  {
+    "id": "hammer-fork-handlewidth20",
+    "category": "holders/hammers",
+    "fitsTool": [
+      { "toolClass": "hammer", "dims": { "handleWidth": { "min": 17, "max": 21 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -31.5, "y": -20, "z": 0 }, "max": { "x": 31.5, "y": 56, "z": 70 } }
+  },
+  {
+    "id": "hammer-fork-handlewidth25",
+    "category": "holders/hammers",
+    "fitsTool": [
+      { "toolClass": "hammer", "dims": { "handleWidth": { "min": 22, "max": 26 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -34, "y": -20, "z": 0 }, "max": { "x": 34, "y": 56, "z": 70 } }
+  },
+  {
+    "id": "hammer-fork-handlewidth30",
+    "category": "holders/hammers",
+    "fitsTool": [
+      { "toolClass": "hammer", "dims": { "handleWidth": { "min": 27, "max": 31 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -36.5, "y": -20, "z": 0 }, "max": { "x": 36.5, "y": 56, "z": 70 } }
+  },
+  {
+    "id": "hammer-fork-handlewidth35",
+    "category": "holders/hammers",
+    "fitsTool": [
+      { "toolClass": "hammer", "dims": { "handleWidth": { "min": 32, "max": 36 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -39, "y": -20, "z": 0 }, "max": { "x": 39, "y": 56, "z": 70 } }
+  },
+  {
+    "id": "hammer-fork-handlewidth40",
+    "category": "holders/hammers",
+    "fitsTool": [
+      { "toolClass": "hammer", "dims": { "handleWidth": { "min": 37, "max": 41 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -41.5, "y": -20, "z": 0 }, "max": { "x": 41.5, "y": 56, "z": 70 } }
+  },
+  {
+    "id": "refit-hammer-fork",
+    "category": "holders/hammers",
+    "fitsTool": [{ "toolClass": "hammer", "capacity": 1 }],
+    "bboxMm": { "min": { "x": -29, "y": -38, "z": 0 }, "max": { "x": 29, "y": 38, "z": 53 } }
+  },
+  {
+    "id": "hex-key-holder-keys13-startsize1p5-spacing10",
+    "category": "holders/hex-keys",
+    "fitsTool": [{ "toolClass": "hex-key", "capacity": 13 }],
+    "bboxMm": {
+      "min": { "x": -101.75, "y": -20, "z": 0 },
+      "max": { "x": 101.75, "y": 46, "z": 37.739 }
+    }
+  },
+  {
+    "id": "hex-key-holder-keys13-startsize1p5-spacing7",
+    "category": "holders/hex-keys",
+    "fitsTool": [{ "toolClass": "hex-key", "capacity": 13 }],
+    "bboxMm": {
+      "min": { "x": -97.375, "y": -20, "z": 0 },
+      "max": { "x": 97.375, "y": 46, "z": 37.739 }
+    }
+  },
+  {
+    "id": "hex-key-holder-keys5-startsize1p5-spacing7",
+    "category": "holders/hex-keys",
+    "fitsTool": [{ "toolClass": "hex-key", "capacity": 5 }],
+    "bboxMm": { "min": { "x": -28, "y": -20, "z": 0 }, "max": { "x": 28, "y": 46, "z": 20.419 } }
+  },
+  {
+    "id": "hex-key-holder-keys7-startsize1p5-spacing7",
+    "category": "holders/hex-keys",
+    "fitsTool": [{ "toolClass": "hex-key", "capacity": 7 }],
+    "bboxMm": {
+      "min": { "x": -36.75, "y": -20, "z": 0 },
+      "max": { "x": 36.75, "y": 46, "z": 22.728 }
+    }
+  },
+  {
+    "id": "hex-key-holder-keys9-startsize1p5-spacing10",
+    "category": "holders/hex-keys",
+    "fitsTool": [{ "toolClass": "hex-key", "capacity": 9 }],
+    "bboxMm": {
+      "min": { "x": -56.375, "y": -20, "z": 0 },
+      "max": { "x": 56.375, "y": 46, "z": 27.347 }
+    }
+  },
+  {
+    "id": "caliper-cradle-slots1-beamwidth16",
+    "category": "holders/measuring",
+    "fitsTool": [
+      { "toolClass": "caliper", "dims": { "beamWidth": { "min": 14, "max": 16.5 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -30, "y": -20, "z": 0 }, "max": { "x": 30, "y": 46, "z": 27.5 } }
+  },
+  {
+    "id": "caliper-cradle-slots1-beamwidth24",
+    "category": "holders/measuring",
+    "fitsTool": [
+      { "toolClass": "caliper", "dims": { "beamWidth": { "min": 22, "max": 24.5 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -34, "y": -20, "z": 0 }, "max": { "x": 34, "y": 46, "z": 27.5 } }
+  },
+  {
+    "id": "caliper-cradle-slots2-beamwidth20",
+    "category": "holders/measuring",
+    "fitsTool": [
+      { "toolClass": "caliper", "dims": { "beamWidth": { "min": 18, "max": 20.5 } }, "capacity": 2 }
+    ],
+    "bboxMm": { "min": { "x": -58, "y": -20, "z": 0 }, "max": { "x": 58, "y": 46, "z": 27.5 } }
+  },
+  {
+    "id": "caliper-cradle-slots3-beamwidth16",
+    "category": "holders/measuring",
+    "fitsTool": [
+      { "toolClass": "caliper", "dims": { "beamWidth": { "min": 14, "max": 16.5 } }, "capacity": 3 }
+    ],
+    "bboxMm": { "min": { "x": -78, "y": -20, "z": 0 }, "max": { "x": 78, "y": 46, "z": 27.5 } }
+  },
+  {
+    "id": "caliper-holder-proto",
+    "category": "holders/measuring",
+    "fitsTool": [{ "toolClass": "caliper", "capacity": 1 }],
+    "bboxMm": {
+      "min": { "x": -48.499, "y": -16.5, "z": 0 },
+      "max": { "x": 7.999, "y": 7.5, "z": 18.209 }
+    }
+  },
+  {
+    "id": "refit-caliper-cradle",
+    "category": "holders/measuring",
+    "fitsTool": [{ "toolClass": "caliper", "capacity": 1 }],
+    "bboxMm": { "min": { "x": -31, "y": -90, "z": 0 }, "max": { "x": 31, "y": -20, "z": 50 } }
+  },
+  {
+    "id": "refit-instrument-cradle",
+    "category": "holders/measuring",
+    "fitsTool": [{ "toolClass": "multimeter", "capacity": 1 }],
+    "bboxMm": { "min": { "x": -56, "y": -80, "z": 0 }, "max": { "x": 56, "y": 45, "z": 64 } }
+  },
+  {
+    "id": "refit-tape-measure-cradle",
+    "category": "holders/measuring",
+    "fitsTool": [{ "toolClass": "tape-measure", "capacity": 1 }],
+    "bboxMm": { "min": { "x": -46, "y": -34, "z": 0 }, "max": { "x": 46, "y": 52, "z": 64 } }
+  },
+  {
+    "id": "file-rack-slots10-slotwidth10",
+    "category": "holders/other",
+    "fitsTool": [
+      { "toolClass": "file", "dims": { "width": { "min": 6, "max": 10 } }, "capacity": 10 },
+      { "toolClass": "saw", "capacity": 10 }
+    ],
+    "bboxMm": { "min": { "x": -106, "y": -20, "z": 0 }, "max": { "x": 106, "y": 46, "z": 23 } }
+  },
+  {
+    "id": "file-rack-slots10-slotwidth6",
+    "category": "holders/other",
+    "fitsTool": [
+      { "toolClass": "file", "dims": { "width": { "min": 2, "max": 6 } }, "capacity": 10 },
+      { "toolClass": "saw", "capacity": 10 }
+    ],
+    "bboxMm": { "min": { "x": -86, "y": -20, "z": 0 }, "max": { "x": 86, "y": 46, "z": 23 } }
+  },
+  {
+    "id": "file-rack-slots3-slotwidth10",
+    "category": "holders/other",
+    "fitsTool": [
+      { "toolClass": "file", "dims": { "width": { "min": 6, "max": 10 } }, "capacity": 3 },
+      { "toolClass": "saw", "capacity": 3 }
+    ],
+    "bboxMm": { "min": { "x": -36, "y": -20, "z": 0 }, "max": { "x": 36, "y": 46, "z": 23 } }
+  },
+  {
+    "id": "file-rack-slots5-slotwidth10",
+    "category": "holders/other",
+    "fitsTool": [
+      { "toolClass": "file", "dims": { "width": { "min": 6, "max": 10 } }, "capacity": 5 },
+      { "toolClass": "saw", "capacity": 5 }
+    ],
+    "bboxMm": { "min": { "x": -56, "y": -20, "z": 0 }, "max": { "x": 56, "y": 46, "z": 23 } }
+  },
+  {
+    "id": "file-rack-slots8-slotwidth10",
+    "category": "holders/other",
+    "fitsTool": [
+      { "toolClass": "file", "dims": { "width": { "min": 6, "max": 10 } }, "capacity": 8 },
+      { "toolClass": "saw", "capacity": 8 }
+    ],
+    "bboxMm": { "min": { "x": -86, "y": -20, "z": 0 }, "max": { "x": 86, "y": 46, "z": 23 } }
+  },
+  {
+    "id": "spray-can-holder-candiameter40",
+    "category": "holders/other",
+    "fitsTool": [
+      { "toolClass": "spray-can", "dims": { "diameter": { "min": 37, "max": 41 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -32, "y": -20, "z": 0 }, "max": { "x": 32, "y": 46, "z": 58 } }
+  },
+  {
+    "id": "spray-can-holder-candiameter50",
+    "category": "holders/other",
+    "fitsTool": [
+      { "toolClass": "spray-can", "dims": { "diameter": { "min": 47, "max": 51 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -37, "y": -20, "z": 0 }, "max": { "x": 37, "y": 46, "z": 68 } }
+  },
+  {
+    "id": "spray-can-holder-candiameter65",
+    "category": "holders/other",
+    "fitsTool": [
+      { "toolClass": "spray-can", "dims": { "diameter": { "min": 62, "max": 66 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -44.5, "y": -20, "z": 0 }, "max": { "x": 44.5, "y": 46, "z": 83 } }
+  },
+  {
+    "id": "spray-can-holder-candiameter70",
+    "category": "holders/other",
+    "fitsTool": [
+      { "toolClass": "spray-can", "dims": { "diameter": { "min": 67, "max": 71 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -47, "y": -20, "z": 0 }, "max": { "x": 47, "y": 46, "z": 88 } }
+  },
+  {
+    "id": "pliers-rack-slots1-jawthickness10",
+    "category": "holders/pliers",
+    "fitsTool": [
+      { "toolClass": "pliers", "dims": { "jawThickness": { "min": 6, "max": 10 } }, "capacity": 1 },
+      { "toolClass": "snips", "dims": { "jawThickness": { "min": 6, "max": 10 } }, "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -28, "y": -20, "z": 0 }, "max": { "x": 28, "y": 46, "z": 52 } }
+  },
+  {
+    "id": "pliers-rack-slots2-jawthickness14",
+    "category": "holders/pliers",
+    "fitsTool": [
+      {
+        "toolClass": "pliers",
+        "dims": { "jawThickness": { "min": 10, "max": 14 } },
+        "capacity": 2
+      },
+      { "toolClass": "snips", "dims": { "jawThickness": { "min": 10, "max": 14 } }, "capacity": 2 }
+    ],
+    "bboxMm": { "min": { "x": -32, "y": -20, "z": 0 }, "max": { "x": 32, "y": 46, "z": 52 } }
+  },
+  {
+    "id": "pliers-rack-slots3-jawthickness18",
+    "category": "holders/pliers",
+    "fitsTool": [
+      {
+        "toolClass": "pliers",
+        "dims": { "jawThickness": { "min": 14, "max": 18 } },
+        "capacity": 3
+      },
+      { "toolClass": "snips", "dims": { "jawThickness": { "min": 14, "max": 18 } }, "capacity": 3 }
+    ],
+    "bboxMm": { "min": { "x": -51, "y": -20, "z": 0 }, "max": { "x": 51, "y": 46, "z": 52 } }
+  },
+  {
+    "id": "pliers-rack-slots4-jawthickness24",
+    "category": "holders/pliers",
+    "fitsTool": [
+      {
+        "toolClass": "pliers",
+        "dims": { "jawThickness": { "min": 20, "max": 24 } },
+        "capacity": 4
+      },
+      { "toolClass": "snips", "dims": { "jawThickness": { "min": 20, "max": 24 } }, "capacity": 4 }
+    ],
+    "bboxMm": { "min": { "x": -78, "y": -20, "z": 0 }, "max": { "x": 78, "y": 46, "z": 52 } }
+  },
+  {
+    "id": "refit-pliers-saddle",
+    "category": "holders/pliers",
+    "fitsTool": [{ "toolClass": "pliers", "capacity": 1 }],
+    "bboxMm": { "min": { "x": -28, "y": -39, "z": 0 }, "max": { "x": 28, "y": 18, "z": 42 } }
+  },
+  {
+    "id": "refit-screwdriver-rail-3",
+    "category": "holders/screwdrivers",
+    "fitsTool": [{ "toolClass": "screwdriver", "capacity": 3 }],
+    "bboxMm": { "min": { "x": -56, "y": -52, "z": 0 }, "max": { "x": 56, "y": 0, "z": 51 } }
+  },
+  {
+    "id": "refit-screwdriver-rail-6",
+    "category": "holders/screwdrivers",
+    "fitsTool": [{ "toolClass": "screwdriver", "capacity": 6 }],
+    "bboxMm": { "min": { "x": -108, "y": -52, "z": 0 }, "max": { "x": 108, "y": 0, "z": 51 } }
+  },
+  {
+    "id": "screwdriver-rail-slots2-holediameter10",
+    "category": "holders/screwdrivers",
+    "fitsTool": [
+      {
+        "toolClass": "screwdriver",
+        "dims": { "shaftDiameter": { "min": 7, "max": 9.6 } },
+        "capacity": 2
+      }
+    ],
+    "bboxMm": { "min": { "x": -30, "y": -20, "z": 0 }, "max": { "x": 30, "y": 46, "z": 33 } }
+  },
+  {
+    "id": "screwdriver-rail-slots3-holediameter5",
+    "category": "holders/screwdrivers",
+    "fitsTool": [
+      {
+        "toolClass": "screwdriver",
+        "dims": { "shaftDiameter": { "min": 2, "max": 4.6 } },
+        "capacity": 3
+      }
+    ],
+    "bboxMm": { "min": { "x": -43, "y": -20, "z": 0 }, "max": { "x": 43, "y": 46, "z": 33 } }
+  },
+  {
+    "id": "screwdriver-rail-slots5-holediameter10",
+    "category": "holders/screwdrivers",
+    "fitsTool": [
+      {
+        "toolClass": "screwdriver",
+        "dims": { "shaftDiameter": { "min": 7, "max": 9.6 } },
+        "capacity": 5
+      }
+    ],
+    "bboxMm": { "min": { "x": -69, "y": -20, "z": 0 }, "max": { "x": 69, "y": 46, "z": 33 } }
+  },
+  {
+    "id": "screwdriver-rail-slots6-holediameter5",
+    "category": "holders/screwdrivers",
+    "fitsTool": [
+      {
+        "toolClass": "screwdriver",
+        "dims": { "shaftDiameter": { "min": 2, "max": 4.6 } },
+        "capacity": 6
+      }
+    ],
+    "bboxMm": { "min": { "x": -82, "y": -20, "z": 0 }, "max": { "x": 82, "y": 46, "z": 33 } }
+  },
+  {
+    "id": "bit-block-bitsperrow10-rows1",
+    "category": "holders/small-parts",
+    "fitsTool": [{ "toolClass": "bit-set" }],
+    "bboxMm": { "min": { "x": -68, "y": -20, "z": 0 }, "max": { "x": 68, "y": 46, "z": 24 } }
+  },
+  {
+    "id": "bit-block-bitsperrow14-rows1",
+    "category": "holders/small-parts",
+    "fitsTool": [{ "toolClass": "bit-set" }],
+    "bboxMm": { "min": { "x": -92, "y": -20, "z": 0 }, "max": { "x": 92, "y": 46, "z": 24 } }
+  },
+  {
+    "id": "bit-block-bitsperrow18-rows1",
+    "category": "holders/small-parts",
+    "fitsTool": [{ "toolClass": "bit-set" }],
+    "bboxMm": { "min": { "x": -116, "y": -20, "z": 0 }, "max": { "x": 116, "y": 46, "z": 24 } }
+  },
+  {
+    "id": "bit-block-bitsperrow6-rows1",
+    "category": "holders/small-parts",
+    "fitsTool": [{ "toolClass": "bit-set" }],
+    "bboxMm": { "min": { "x": -44, "y": -20, "z": 0 }, "max": { "x": 44, "y": 46, "z": 24 } }
+  },
+  {
+    "id": "refit-bit-case-ledge",
+    "category": "holders/small-parts",
+    "fitsTool": [{ "toolClass": "bit-set", "capacity": 3 }],
+    "bboxMm": { "min": { "x": -128, "y": -76, "z": 0 }, "max": { "x": 128, "y": 35, "z": 64 } }
+  },
+  {
+    "id": "refit-tape-large",
+    "category": "holders/tape",
+    "fitsTool": [{ "toolClass": "tape-roll", "capacity": 1 }],
+    "bboxMm": { "min": { "x": -17, "y": -62, "z": 0 }, "max": { "x": 17, "y": 38, "z": 79 } }
+  },
+  {
+    "id": "refit-tape-small",
+    "category": "holders/tape",
+    "fitsTool": [{ "toolClass": "tape-roll", "capacity": 1 }],
+    "bboxMm": { "min": { "x": -14, "y": -47, "z": 0 }, "max": { "x": 14, "y": 24, "z": 39 } }
+  },
+  {
+    "id": "tape-roll-holder-corediameter25-rollwidth12",
+    "category": "holders/tape",
+    "fitsTool": [
+      {
+        "toolClass": "tape-roll",
+        "dims": { "coreDiameter": { "min": 24, "max": 27 }, "width": { "min": 4, "max": 14 } },
+        "capacity": 1
+      }
+    ],
+    "bboxMm": { "min": { "x": -20, "y": -31.6, "z": 0 }, "max": { "x": 20, "y": 31.6, "z": 26 } }
+  },
+  {
+    "id": "tape-roll-holder-corediameter25-rollwidth38",
+    "category": "holders/tape",
+    "fitsTool": [
+      {
+        "toolClass": "tape-roll",
+        "dims": { "coreDiameter": { "min": 24, "max": 27 }, "width": { "min": 30, "max": 40 } },
+        "capacity": 1
+      }
+    ],
+    "bboxMm": { "min": { "x": -20, "y": -31.6, "z": 0 }, "max": { "x": 20, "y": 31.6, "z": 52 } }
+  },
+  {
+    "id": "tape-roll-holder-corediameter40-rollwidth25",
+    "category": "holders/tape",
+    "fitsTool": [
+      {
+        "toolClass": "tape-roll",
+        "dims": { "coreDiameter": { "min": 39, "max": 42 }, "width": { "min": 17, "max": 27 } },
+        "capacity": 1
+      }
+    ],
+    "bboxMm": { "min": { "x": -27, "y": -55.2, "z": 0 }, "max": { "x": 27, "y": 55.2, "z": 39 } }
+  },
+  {
+    "id": "tape-roll-holder-corediameter76-rollwidth19",
+    "category": "holders/tape",
+    "fitsTool": [
+      {
+        "toolClass": "tape-roll",
+        "dims": { "coreDiameter": { "min": 75, "max": 78 }, "width": { "min": 11, "max": 21 } },
+        "capacity": 1
+      }
+    ],
+    "bboxMm": { "min": { "x": -38, "y": -55.2, "z": 0 }, "max": { "x": 38, "y": 55.2, "z": 33 } }
+  },
+  {
+    "id": "refit-wrench-pocket",
+    "category": "holders/wrenches",
+    "fitsTool": [{ "toolClass": "wrench", "capacity": 1 }],
+    "bboxMm": { "min": { "x": -21, "y": -247, "z": 0 }, "max": { "x": 21, "y": 18, "z": 57 } }
+  },
+  {
+    "id": "wrench-rack-slots2-maxwrenchwidth20",
+    "category": "holders/wrenches",
+    "fitsTool": [
+      { "toolClass": "wrench", "dims": { "headWidth": { "min": 12, "max": 20 } }, "capacity": 2 }
+    ],
+    "bboxMm": { "min": { "x": -32, "y": -20, "z": 0 }, "max": { "x": 32, "y": 46, "z": 24.7 } }
+  },
+  {
+    "id": "wrench-rack-slots3-maxwrenchwidth20",
+    "category": "holders/wrenches",
+    "fitsTool": [
+      { "toolClass": "wrench", "dims": { "headWidth": { "min": 12, "max": 20 } }, "capacity": 3 }
+    ],
+    "bboxMm": { "min": { "x": -45, "y": -20, "z": 0 }, "max": { "x": 45, "y": 46, "z": 24.7 } }
+  },
+  {
+    "id": "wrench-rack-slots4-maxwrenchwidth30",
+    "category": "holders/wrenches",
+    "fitsTool": [
+      { "toolClass": "wrench", "dims": { "headWidth": { "min": 22, "max": 30 } }, "capacity": 4 }
+    ],
+    "bboxMm": { "min": { "x": -78, "y": -20, "z": 0 }, "max": { "x": 78, "y": 46, "z": 26.3 } }
+  },
+  {
+    "id": "wrench-rack-slots5-maxwrenchwidth40",
+    "category": "holders/wrenches",
+    "fitsTool": [
+      { "toolClass": "wrench", "dims": { "headWidth": { "min": 32, "max": 40 } }, "capacity": 5 }
+    ],
+    "bboxMm": { "min": { "x": -121, "y": -20, "z": 0 }, "max": { "x": 121, "y": 46, "z": 27.9 } }
+  },
+  {
+    "id": "j-hook-reach100-bardiameter10",
+    "category": "hooks/hooks",
+    "fitsTool": [
+      { "toolClass": "cable", "capacity": 1 },
+      { "toolClass": "saw", "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -28, "y": -20, "z": 0 }, "max": { "x": 28, "y": 29.989, "z": 100 } }
+  },
+  {
+    "id": "j-hook-reach150-bardiameter12",
+    "category": "hooks/hooks",
+    "fitsTool": [
+      { "toolClass": "cable", "capacity": 1 },
+      { "toolClass": "saw", "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -28, "y": -20, "z": 0 }, "max": { "x": 28, "y": 30.987, "z": 150 } }
+  },
+  {
+    "id": "j-hook-reach40-bardiameter10",
+    "category": "hooks/hooks",
+    "fitsTool": [
+      { "toolClass": "cable", "capacity": 1 },
+      { "toolClass": "saw", "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -28, "y": -20, "z": 0 }, "max": { "x": 28, "y": 29.989, "z": 40 } }
+  },
+  {
+    "id": "j-hook-reach60-bardiameter6",
+    "category": "hooks/hooks",
+    "fitsTool": [
+      { "toolClass": "cable", "capacity": 1 },
+      { "toolClass": "saw", "capacity": 1 }
+    ],
+    "bboxMm": { "min": { "x": -28, "y": -20, "z": 0 }, "max": { "x": 28, "y": 27.994, "z": 60 } }
+  },
+  {
+    "id": "shelf-ledge-widthcells2-depth100",
+    "category": "shelves",
+    "fitsTool": [],
+    "bboxMm": { "min": { "x": -41, "y": -20, "z": 0 }, "max": { "x": 41, "y": 58, "z": 100 } }
+  },
+  {
+    "id": "shelf-ledge-widthcells3-depth40",
+    "category": "shelves",
+    "fitsTool": [],
+    "bboxMm": {
+      "min": { "x": -61.375, "y": -20, "z": 0 },
+      "max": { "x": 61.375, "y": 58, "z": 40 }
+    }
+  },
+  {
+    "id": "shelf-ledge-widthcells4-depth60",
+    "category": "shelves",
+    "fitsTool": [],
+    "bboxMm": {
+      "min": { "x": -81.875, "y": -20, "z": 0 },
+      "max": { "x": 81.875, "y": 58, "z": 60 }
+    }
+  },
+  {
+    "id": "shelf-ledge-widthcells5-depth80",
+    "category": "shelves",
+    "fitsTool": [],
+    "bboxMm": {
+      "min": { "x": -102.25, "y": -20, "z": 0 },
+      "max": { "x": 102.25, "y": 58, "z": 80 }
+    }
+  }
+]
