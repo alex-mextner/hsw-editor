@@ -1,0 +1,19 @@
+[project]
+name = "hsw-bank-tools"
+version = "0.1.0"
+description = "Mesh conversion, hashing and thumbnail rendering for the HSW element bank ingest"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "numpy>=2.0",
+  "trimesh>=4.5",
+  "pillow>=10.4",
+  "scipy>=1.14",
+  "networkx>=3.3",
+  "lxml>=5.3",
+  "pyrender>=0.1.45",
+  "cascadio>=0.0.13",
+  "manifold3d>=3.0",
+  "mapbox-earcut>=1.0",
+  "shapely>=2.0",
+  "rtree>=1.3",
+]
