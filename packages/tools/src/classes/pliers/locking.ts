@@ -117,7 +117,7 @@ export const lockingPliers = defineToolClass({
       pt(24.5, 150, 8),
       pt(21.5, 138),
     ];
-    const tailPlate: Pt[] = [pt(3.4, 140), pt(3.4, 119, 2), pt(19.6, 119, 2), pt(19.6, 140)];
+    const tailPlate: Pt[] = [pt(9.5, 140), pt(9.5, 124, 2), pt(20.5, 124, 2), pt(20.5, 140)];
     const steps = ctx.seg(5, 3);
     const zT = h;
     const body: Mesh[] = [plateMesh(fixedPlate, -zT, zT, { back: 0.9, front: 0.9 }, steps)];
@@ -175,8 +175,8 @@ export const lockingPliers = defineToolClass({
       [
         [X(4), S(108)],
         [X(19), S(108)],
-        [X(19.2), S(131)],
-        [X(4.4), S(131)],
+        [X(19.5), S(134)],
+        [X(10.5), S(134)],
       ],
       -3.6 * kt,
       3.6 * kt,
@@ -185,11 +185,11 @@ export const lockingPliers = defineToolClass({
     const release = plateMesh(
       [
         pt(19, 112, 1),
-        pt(30, 118, 2),
-        pt(31.5, 142, 2.5),
-        pt(26, 143, 1.5),
-        pt(25, 126, 1),
-        pt(19, 124),
+        pt(30, 116, 2),
+        pt(31, 126, 2.5),
+        pt(26, 127, 1.5),
+        pt(25, 120, 1),
+        pt(19, 121),
       ],
       -3 * kt,
       3 * kt,
@@ -223,9 +223,9 @@ export const lockingPliers = defineToolClass({
 
     // pivots: P1 movable jaw (head), P2 lever top
     const P1: V2 = [X(13), S(146)];
-    const P2: V2 = [X(11.5), S(125)];
+    const P2: V2 = [X(15), S(131)];
     const alpha = p.jawOpen;
-    const beta = p.jawOpen * 1.2;
+    const beta = p.jawOpen * 2.4; // net turn of the lever = 1.4 x the jaw angle, away from the fixed handle
     const jawPose = (m: Mesh): Mesh => swing(m, P1[0], P1[1], -alpha);
     // the lever turns about P2, which itself rides on the jaw arm
     const leverPose = (m: Mesh): Mesh => jawPose(swing(m, P2[0], P2[1], beta));
@@ -320,7 +320,7 @@ export const lockingPliers = defineToolClass({
     });
 
     const { width, thickness } = poseDims(parts);
-    const mouth = 2 * sag * k;
+    const mouth = 2 * X(sag);
     return {
       parts,
       hang: { point: [0, S(150), 0], kind: 'head' },
@@ -338,7 +338,7 @@ export const lockingPliers = defineToolClass({
         handleWidth: 2 * hw,
         headWidth: X(52),
         jawLength: S(56),
-        jawOpening: tipGap(S(Y_TIP - 146), p.jawOpen, 0.6) + mouth,
+        jawOpening: tipGap(S(Y_TIP - 146), p.jawOpen, 2 * X(0.3)) + mouth,
       },
     };
   },

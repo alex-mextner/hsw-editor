@@ -171,10 +171,10 @@ export const crimperStripper = defineToolClass({
     const edges: Mesh[] = [
       extrude(
         [
-          [2.4, yC - 5 * k],
-          [0, yC - 3 * k],
-          [0, yC + 0.2 * k],
-          [2.4, yC + 1.6 * k],
+          [2.4, yC + 0.8 * k],
+          [0, yC + 2.4 * k],
+          [0, yC + 5 * k],
+          [2.4, yC + 6.6 * k],
         ],
         -zEdge,
         zEdge,

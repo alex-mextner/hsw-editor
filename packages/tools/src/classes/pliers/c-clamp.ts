@@ -72,7 +72,7 @@ export const cClamp = defineToolClass({
     const seg = ctx.seg(28, 14);
     const steps = ctx.seg(5, 3);
     // y layout: handle bar at y = 4, rod up to the swivel pad; frame placed from the anvil
-    const rodLen = O + armH + 12;
+    const rodLen = O + armH + (p.handleStyle === 'wing' ? 34 : 12); // the wing hub hangs 28 mm below the arm
     const yPadTop = 4 + rodLen;
     const yAnvil = yPadTop + gap + 6; // inner face of the top arm; the anvil disc hangs 6 mm below it
     const yB1 = yAnvil - 6 - O; // top of the bottom arm (inner)
