@@ -5,6 +5,11 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv, type ProxyOptions } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import {
+  NAVIGATE_FALLBACK_DENYLIST,
+  PRECACHE_MAX_FILE_BYTES,
+  RUNTIME_CACHING,
+} from './src/pwa/runtimeCaching.ts';
 
 const stateLibDist = fileURLToPath(
   new URL('../../vendor/state-lib/dist/index.js', import.meta.url),
@@ -36,7 +41,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       tailwindcss(),
-      // Placeholder PWA config: precaches the app shell. Offline op queue and model caching: see issues.
+      // Precaches the app shell and runtime-caches the bank (rules + rationale: src/pwa/runtimeCaching.ts, docs/offline.md).
       VitePWA({
         registerType: 'autoUpdate',
         manifest: {
@@ -47,7 +52,14 @@ export default defineConfig(({ mode }) => {
           theme_color: '#0a0a0a',
           icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
         },
-        workbox: { navigateFallbackDenylist: [/^\/api\//] },
+        workbox: {
+          navigateFallbackDenylist: NAVIGATE_FALLBACK_DENYLIST,
+          maximumFileSizeToCacheInBytes: PRECACHE_MAX_FILE_BYTES,
+          cleanupOutdatedCaches: true,
+          skipWaiting: true,
+          clientsClaim: true,
+          runtimeCaching: RUNTIME_CACHING,
+        },
       }),
     ],
     define: { __STATE_BACKEND__: JSON.stringify(useStateLib ? 'state-lib' : 'baseline') },
