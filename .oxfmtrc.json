@@ -5,6 +5,8 @@
   "printWidth": 100,
   "ignorePatterns": [
     "vendor/**",
+    "apps/web/src/features/omp/vendor/omp-render/**",
+    "apps/web/src/features/omp/vendor/VENDORED.md",
     "node_modules/**",
     "dist/**",
     "bun.lock",

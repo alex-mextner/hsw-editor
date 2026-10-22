@@ -8,5 +8,6 @@
     }
   },
   "include": ["src", "vite.config.ts"],
-  "exclude": []
+  "references": [{ "path": "./tsconfig.omp-vendor.json" }],
+  "exclude": ["src/features/omp/vendor/omp-render"]
 }

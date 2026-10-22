@@ -10,5 +10,10 @@
     }
   },
   "include": ["src", "vite.config.ts"],
-  "exclude": ["src/state/statelib.ts", "src/state/statelib-scope.ts"]
+  "references": [{ "path": "./tsconfig.omp-vendor.json" }],
+  "exclude": [
+    "src/features/omp/vendor/omp-render",
+    "src/state/statelib.ts",
+    "src/state/statelib-scope.ts"
+  ]
 }

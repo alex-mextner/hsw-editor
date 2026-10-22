@@ -14,11 +14,12 @@
     "dev:server": "bun --watch apps/server/src/index.ts",
     "build": "bun run --filter @hsw-editor/web build",
     "typecheck": "bun scripts/typecheck.ts",
+    "vendor:omp-render": "bun scripts/vendor-omp-render.ts",
     "lint": "oxlint --deny-warnings",
     "lint:fix": "oxlint --fix",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
-    "test": "bun test packages apps",
+    "test": "bun test packages apps scripts",
     "setup:state-lib": "bun scripts/setup-state-lib.ts",
     "check": "bun run lint && bun run typecheck && bun run test && bun run build"
   },

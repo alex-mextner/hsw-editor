@@ -1,6 +1,6 @@
 node_modules/
 dist/
-vendor/
+/vendor/
 coverage/
 *.log
 .DS_Store
@@ -10,3 +10,4 @@ __pycache__/
 *.pyc
 test-results/
 playwright-report/
+*.tsbuildinfo
