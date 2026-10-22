@@ -25,6 +25,8 @@ interface ArrowProps {
   readonly to: Point;
   readonly color: string;
   readonly label: string;
+  /** Screen-space nudge (px) so the three labels of a small element do not sit on top of each other. */
+  readonly shiftPx: readonly [number, number];
 }
 
 const metres = (point: Point): [number, number, number] => [
@@ -34,7 +36,7 @@ const metres = (point: Point): [number, number, number] => [
 ];
 
 /** Double-headed dimension line with a label at its middle. Heads are dropped on very short lines. */
-function Arrow({ from, to, color, label }: ArrowProps) {
+function Arrow({ from, to, color, label, shiftPx }: ArrowProps) {
   const direction = new Vector3(to[0] - from[0], to[1] - from[1], to[2] - from[2]);
   const showHeads = direction.length() >= CONE_LENGTH_MM * 3;
   direction.normalize();
@@ -83,12 +85,12 @@ function Arrow({ from, to, color, label }: ArrowProps) {
       <Html
         position={metres(middle)}
         center
-        zIndexRange={[20, 0]}
+        zIndexRange={[10, 0]}
         style={{ pointerEvents: 'none' }}
       >
         <div
           className="rounded bg-background/90 px-1.5 py-0.5 font-mono text-[11px] whitespace-nowrap shadow"
-          style={{ color }}
+          style={{ color, transform: `translate(${shiftPx[0]}px, ${shiftPx[1]}px)` }}
         >
           {label}
         </div>
@@ -145,18 +147,21 @@ export function DimensionArrows({ wall, bank, palette }: DimensionArrowsProps) {
         to={[right, bottom - OFFSET_MM, front]}
         color={color}
         label={t('widgets.arrows.width', { value: formatLength(dims.x, unit) })}
+        shiftPx={[0, 14]}
       />
       <Arrow
         from={[left - OFFSET_MM, bottom, front]}
         to={[left - OFFSET_MM, bottom + dims.y, front]}
         color={color}
         label={t('widgets.arrows.height', { value: formatLength(dims.y, unit) })}
+        shiftPx={[-30, 0]}
       />
       <Arrow
         from={[right + OFFSET_MM, bottom, back]}
         to={[right + OFFSET_MM, bottom, front]}
         color={color}
         label={t('widgets.arrows.depth', { value: formatLength(dims.z, unit) })}
+        shiftPx={[30, -14]}
       />
     </group>
   );

@@ -53,12 +53,12 @@ export function useGridDetection(wallId: string, photoId: string) {
     setState({ phase: 'running', progress: null });
     try {
       let job = await startGridJob(wallId, photoId);
-      jobId.current = job.id;
       // Cancelled while the start request was in flight: nothing else will stop the server job.
       if (abort.signal.aborted) {
         cancelJob(job.id).catch(() => undefined);
         return;
       }
+      jobId.current = job.id;
       while (job.state === 'queued' || job.state === 'running') {
         if (abort.signal.aborted) return;
         setState({ phase: 'running', progress: job.progress ?? null });

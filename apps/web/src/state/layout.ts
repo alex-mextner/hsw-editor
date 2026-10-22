@@ -7,9 +7,13 @@ export interface LayoutState {
   readonly ompOpen: boolean;
 }
 
+// Below the `lg` breakpoint the panels are full-width sheets over the canvas, so a first visit on
+// a narrow screen starts with them closed (a stored choice still wins).
+const narrow = globalThis.matchMedia?.('(max-width: 1023px)').matches ?? false;
+
 const DEFAULT_LAYOUT: LayoutState = {
-  leftOpen: true,
-  rightOpen: true,
+  leftOpen: !narrow,
+  rightOpen: !narrow,
   bottomOpen: true,
   ompOpen: false,
 };

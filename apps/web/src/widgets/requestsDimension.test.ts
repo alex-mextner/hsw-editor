@@ -46,3 +46,27 @@ describe('parseDimensionInput', () => {
     );
   });
 });
+
+describe('limits without a minimum', () => {
+  const plain = [{ key: 'angle' }] as unknown as Parameters<typeof parseDimensionInput>[0];
+  const signed = [{ key: 'angle', min: -45, max: 45 }] as unknown as Parameters<
+    typeof parseDimensionInput
+  >[0];
+
+  test('zero and negatives are invalid unless the field allows them', () => {
+    expect(parseDimensionInput(plain, new Map([['angle', '-5']])).errors.get('angle')).toBe(
+      'invalid',
+    );
+    expect(parseDimensionInput(plain, new Map([['angle', '0']])).errors.get('angle')).toBe(
+      'invalid',
+    );
+  });
+
+  test('a signed field accepts zero and negatives and reports its own limits', () => {
+    expect(parseDimensionInput(signed, new Map([['angle', '-10']])).values).toEqual({ angle: -10 });
+    expect(parseDimensionInput(signed, new Map([['angle', '0']])).values).toEqual({ angle: 0 });
+    expect(parseDimensionInput(signed, new Map([['angle', '-60']])).errors.get('angle')).toBe(
+      'min',
+    );
+  });
+});

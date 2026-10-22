@@ -40,6 +40,7 @@ export function MeasureOverlay({ palette }: { readonly palette: ScenePalette }) 
           <Html
             position={[((a.x + b.x) / 2) * MM, ((a.y + b.y) / 2) * MM, 0.01]}
             center
+            zIndexRange={[10, 0]}
             style={{ pointerEvents: 'none' }}
           >
             <div className="rounded bg-background/90 px-1.5 py-0.5 font-mono text-[11px] whitespace-nowrap text-foreground shadow">

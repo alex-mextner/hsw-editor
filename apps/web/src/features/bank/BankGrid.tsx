@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { BankElement } from '@hsw-editor/bank';
 import { useI18n, type Locale } from '@/i18n/index.ts';
 import { useStore } from '@/state/react.ts';
@@ -9,6 +9,7 @@ import {
   CARD_GAP,
   GRID_PADDING,
   gridColumns,
+  isNavigationKey,
   moveIndex,
   rowStride,
   type NavigationKey,
@@ -88,17 +89,14 @@ export function BankGrid({ elements, locale, query, resetKey, onOpen, onAdd }: B
     target.focus({ preventScroll: true });
   });
 
-  const navigate = useCallback(
-    (from: number, key: NavigationKey): void => {
-      const next = moveIndex(from, key, columns, elements.length);
-      // At the grid edge there is no move, so no re-render would ever consume the flag.
-      if (next === from) return;
-      setFocusIndex(next);
-      pendingFocus.current = true;
-      scrollToRow(Math.floor(next / columns));
-    },
-    [columns, elements.length, scrollToRow],
-  );
+  const navigate = (from: number, key: NavigationKey): void => {
+    const next = moveIndex(from, key, columns, elements.length);
+    // At the grid edge there is no move, so no re-render would ever consume the flag.
+    if (next === from) return;
+    setFocusIndex(next);
+    pendingFocus.current = true;
+    scrollToRow(Math.floor(next / columns));
+  };
 
   const firstCard = (rows[0]?.index ?? 0) * columns;
   const lastCard = Math.min(elements.length - 1, ((rows.at(-1)?.index ?? 0) + 1) * columns - 1);
@@ -108,6 +106,16 @@ export function BankGrid({ elements, locale, query, resetKey, onOpen, onAdd }: B
   return (
     <div
       ref={setScroller}
+      role="presentation"
+      // Arrow/Home/End keys bubble up from the focused card: one handler here instead of a new
+      // callback per card keeps memo(BankCard) effective across scroll-frame re-renders.
+      onKeyDown={(event) => {
+        const card =
+          event.target instanceof HTMLElement ? event.target.dataset['cardMain'] : undefined;
+        if (card === undefined || !isNavigationKey(event.key)) return;
+        event.preventDefault();
+        navigate(Number(card), event.key);
+      }}
       onScroll={(event) => {
         if (event.currentTarget.clientWidth > 0)
           gridScrollMemory.top = event.currentTarget.scrollTop;
@@ -150,7 +158,6 @@ export function BankGrid({ elements, locale, query, resetKey, onOpen, onAdd }: B
                         previewing={previewSlot === hoverSlotKey(element.id)}
                         onOpen={onOpen}
                         onAdd={onAdd}
-                        onNavigate={navigate}
                         onFocusCard={setFocusIndex}
                       />
                     );

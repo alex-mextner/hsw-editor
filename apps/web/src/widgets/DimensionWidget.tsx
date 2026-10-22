@@ -166,7 +166,11 @@ function DimensionForm({
   const commitTyped = (def: ParamDef): void => {
     const pending = typing?.key === def.key ? typing.text : null;
     const parsed = pending === null ? null : parseField(def, pending, unit);
-    commit(parsed === null ? workingRef.current : withValue(defs, current(), def, parsed, aspect, item.params));
+    commit(
+      parsed === null
+        ? workingRef.current
+        : withValue(defs, current(), def, parsed, aspect, item.params),
+    );
   };
 
   const onText = (def: ParamDef, text: string): void => {

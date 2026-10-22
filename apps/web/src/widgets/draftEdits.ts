@@ -44,7 +44,7 @@ export function stepValue(def: ParamDef, value: number, direction: 1 | -1, multi
 
 /**
  * Sets `def.key` to `value` (normalised). With `keepAspect`, every other millimetre param is scaled
- * by the same ratio (relative to `base`) and clamped into its own range, so the object keeps its proportions.
+ * by the same ratio (a ratio of 1 restores them to `base`; relative to `base`) and clamped into its own range, so the object keeps its proportions.
  */
 export function withValue(
   defs: readonly ParamDef[],
@@ -59,10 +59,16 @@ export function withValue(
   // Proportions come from `base` (the params before the edit began), not from the previous live
   // preview: clamping a small intermediate value would otherwise lose the ratio for good.
   const before = valueOf(def, base);
-  if (!keepAspect || def.unit !== 'mm' || before <= 0 || next === before) return result;
+  if (!keepAspect || def.unit !== 'mm' || before <= 0) return result;
   const ratio = next / before;
   for (const other of defs) {
     if (other.key === def.key || other.unit !== 'mm') continue;
+    if (ratio === 1) {
+      // Back at the starting size: the others return to their starting state (defaults stay unset).
+      if (other.key in base) result[other.key] = valueOf(other, base);
+      else delete result[other.key];
+      continue;
+    }
     result[other.key] = normalizeValue(other, valueOf(other, base) * ratio);
   }
   return result;

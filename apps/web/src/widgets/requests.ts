@@ -32,6 +32,8 @@ export const requestsStore = createValueStore<RequestsState>(IDLE);
 let generation = 0;
 /** Requests resolved while a load was in flight: the (older) list response must not resurrect them. */
 const resolvedDuringLoad = new Set<string>();
+/** Requests raised by events while a load was in flight: newer than the response, so they are kept. */
+const arrivedDuringLoad = new Map<string, InputRequest>();
 
 function setRequests(requests: readonly InputRequest[]): void {
   requestsStore.set({ ...requestsStore.get(), requests });
@@ -39,12 +41,14 @@ function setRequests(requests: readonly InputRequest[]): void {
 
 function forget(id: string): void {
   resolvedDuringLoad.add(id);
+  arrivedDuringLoad.delete(id);
   setRequests(requestsStore.get().requests.filter((entry) => entry.id !== id));
 }
 
 export function clearRequests(): void {
   generation += 1;
   resolvedDuringLoad.clear();
+  arrivedDuringLoad.clear();
   requestsStore.set(IDLE);
 }
 
@@ -52,20 +56,26 @@ export async function loadOpenRequests(wallId: string): Promise<void> {
   generation += 1;
   const mine = generation;
   resolvedDuringLoad.clear();
-  requestsStore.set({ wallId, status: 'loading', requests: [] });
+  arrivedDuringLoad.clear();
+  // Reloading the same wall (SSE reconnect) keeps the cards on screen so half-filled forms survive;
+  // the server list below replaces them, so a request resolved while disconnected disappears.
+  const previous = requestsStore.get();
+  const kept = previous.wallId === wallId ? previous.requests : [];
+  requestsStore.set({ wallId, status: 'loading', requests: kept });
   try {
     const fetched = await listOpenRequests(wallId);
     if (mine !== generation) return;
-    // Events that arrived during the fetch are newer than the response: keep them, minus the resolved.
-    const live = requestsStore.get().requests;
-    const known = new Set(live.map((entry) => entry.id));
+    // Events seen during the fetch are newer than the response and win over its copy of the same id.
     const merged = [
-      ...live,
-      ...fetched.filter((entry) => !known.has(entry.id) && !resolvedDuringLoad.has(entry.id)),
+      ...fetched.filter(
+        (entry) => !resolvedDuringLoad.has(entry.id) && !arrivedDuringLoad.has(entry.id),
+      ),
+      ...arrivedDuringLoad.values(),
     ];
     requestsStore.set({ wallId, status: 'ready', requests: sortRequests(merged) });
   } catch {
-    if (mine === generation) requestsStore.set({ wallId, status: 'error', requests: [] });
+    if (mine === generation)
+      requestsStore.set({ wallId, status: 'error', requests: requestsStore.get().requests });
   }
 }
 
@@ -76,8 +86,17 @@ export function handleRequestEvent(
 ): void {
   const event = parseRequestEvent(name, data);
   if (!event) return;
-  if (event.type === 'resolved') resolvedDuringLoad.add(event.id);
-  else resolvedDuringLoad.delete(event.request.id);
+  if (event.type === 'resolved') {
+    resolvedDuringLoad.add(event.id);
+    arrivedDuringLoad.delete(event.id);
+  } else if (event.request.status === 'open') {
+    resolvedDuringLoad.delete(event.request.id);
+    arrivedDuringLoad.set(event.request.id, event.request);
+  } else {
+    // A re-announcement that is already answered/cancelled closes the request like a resolve does.
+    resolvedDuringLoad.add(event.request.id);
+    arrivedDuringLoad.delete(event.request.id);
+  }
   setRequests(applyRequestEvent(requestsStore.get().requests, event));
 }
 

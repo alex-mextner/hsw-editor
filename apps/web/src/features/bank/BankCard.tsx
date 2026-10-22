@@ -13,7 +13,7 @@ import { highlightSegments } from '@/bank/search.ts';
 import { useI18n, type Locale } from '@/i18n/index.ts';
 import { cn } from '@/lib/cn.ts';
 import { BANK_DRAG_TYPE, bankDragStore } from '@/scene/bankDrop.ts';
-import { CARD_INFO_HEIGHT, isNavigationKey, type NavigationKey } from './filters.ts';
+import { CARD_INFO_HEIGHT } from './filters.ts';
 import { HoverPreview } from './HoverPreview.tsx';
 import { cancelHoverPreview, scheduleHoverPreview } from './previewSlot.ts';
 import { Thumbnail } from './Thumbnail.tsx';
@@ -50,7 +50,6 @@ interface BankCardProps {
   readonly previewing: boolean;
   readonly onOpen: (element: BankElement) => void;
   readonly onAdd: (element: BankElement) => void;
-  readonly onNavigate: (position: number, key: NavigationKey) => void;
   readonly onFocusCard: (position: number) => void;
 }
 
@@ -63,7 +62,6 @@ export const BankCard = memo(function BankCard({
   previewing,
   onOpen,
   onAdd,
-  onNavigate,
   onFocusCard,
 }: BankCardProps) {
   const { t, tn } = useI18n();
@@ -97,9 +95,6 @@ export const BankCard = memo(function BankCard({
       // Enter would otherwise synthesise a click and open the detail view.
       event.preventDefault();
       if (!event.repeat) onAdd(element);
-    } else if (isNavigationKey(event.key)) {
-      event.preventDefault();
-      onNavigate(position, event.key);
     }
   };
 

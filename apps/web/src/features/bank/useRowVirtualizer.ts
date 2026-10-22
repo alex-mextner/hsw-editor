@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useReducer, useRef, useState } from 'react';
+import { useCallback, useLayoutEffect, useReducer, useState } from 'react';
 import { flushSync } from 'react-dom';
 import {
   Virtualizer,
@@ -52,14 +52,10 @@ export function useRowVirtualizer(
   };
   const [virtualizer] = useState(() => new Virtualizer<HTMLElement, Element>(options));
   virtualizer.setOptions(options);
-  // Row stride changed without a count change (card width at a breakpoint): cached offsets are stale.
-  const measuredSize = useRef(rowSize);
-  if (measuredSize.current !== rowSize) {
-    measuredSize.current = rowSize;
-    virtualizer.measure();
-  }
   useLayoutEffect(() => virtualizer._didMount(), [virtualizer]);
   useLayoutEffect(() => virtualizer._willUpdate());
+  // Row stride changed without a count change (card width at a breakpoint): cached offsets are stale.
+  useLayoutEffect(() => virtualizer.measure(), [virtualizer, rowSize]);
   // Stable identity (the instance never changes), so callers can depend on it in memoised callbacks.
   const scrollToRow = useCallback(
     (row: number) => virtualizer.scrollToIndex(row, { align: 'auto' }),

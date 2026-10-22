@@ -1,3 +1,4 @@
+import { layoutStore } from '@/state/layout.ts';
 import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeftIcon, PlusIcon } from 'lucide-react';
 import type { BankElement, BankIndex } from '@hsw-editor/bank';
@@ -83,7 +84,9 @@ export function BankDetail({ element, index, onBack, onAdd }: BankDetailProps) {
     const onKeyDown = (event: globalThis.KeyboardEvent): void => {
       if (event.key !== 'Escape' || isTypingTarget(event.target)) return;
       // An open dialog (compare, calibration) owns Escape.
-      if (document.querySelector('[role="dialog"]:not([data-hsw-inline])')) return;
+      if (document.querySelector('[role="dialog"]')) return;
+      // A closed (hidden) panel must not swallow Escape from the viewport.
+      if (!layoutStore.get().leftOpen) return;
       // Capture phase: going back wins over the global deselect shortcut.
       event.preventDefault();
       onBack();

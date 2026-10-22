@@ -71,6 +71,25 @@ describe('withValue', () => {
   });
 });
 
+describe('withValue returning to the starting size', () => {
+  test('restores scaled params to the base instead of keeping the last preview', () => {
+    const scaled = withValue(defs, {}, width, 60, true, {});
+    expect(scaled).toEqual({ width: 60, height: 30 });
+    expect(withValue(defs, scaled, width, 40, true, {})).toEqual({ width: 40 });
+  });
+
+  test('keeps explicit base overrides of the other params', () => {
+    const base = { height: 25 };
+    const scaled = withValue(defs, base, width, 60, true, base);
+    expect(withValue(defs, scaled, width, 40, true, base)).toEqual({ width: 40, height: 25 });
+  });
+
+  test('ratio comes from the base, so a clamped intermediate value does not lose it', () => {
+    const tiny = withValue(defs, {}, width, 10, true, {});
+    expect(withValue(defs, tiny, width, 80, true, {})).toEqual({ width: 80, height: 40 });
+  });
+});
+
 describe('diffParams and overrides', () => {
   test('reports changed, new and removed keys; null when equal', () => {
     expect(diffParams({ width: 40 }, { width: 40 })).toBeNull();
