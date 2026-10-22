@@ -1,0 +1,224 @@
+"""``hsw-editor doctor``: environment checks, each failure with a concrete fix hint.
+
+Required checks decide the exit code (1 on any failure); optional ones (GPU, vision sidecar, draw backends, ...)
+print ``warn`` with what is lost and how to fix it, but never fail the run. Other modules add checks through
+``EXTRA_CHECKS`` (the draw backends register theirs there).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import shutil
+import socket
+import subprocess
+import urllib.error
+import urllib.request
+from dataclasses import asdict, dataclass
+from pathlib import Path
+from typing import Callable
+
+HOST = "127.0.0.1"
+VISION_URL = os.environ.get("HSW_VISION_URL", "http://127.0.0.1:8795")
+
+
+@dataclass(frozen=True)
+class Check:
+    name: str
+    level: str  # ok | warn | fail
+    detail: str
+    fix: str = ""
+
+
+@dataclass(frozen=True)
+class Context:
+    port: int
+    repo_root: Path
+    data_dir: Path
+    lib_error: str | None  # None when agenttools_service imported fine
+    lib_path: str
+
+
+CheckFn = Callable[[Context], list[Check]]
+EXTRA_CHECKS: list[CheckFn] = []
+
+
+def _run(argv: list[str], timeout: float = 5.0) -> str | None:
+    try:
+        done = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return (done.stdout or done.stderr).strip() if done.returncode == 0 else None
+
+
+def _get_json(url: str, timeout: float = 2.0) -> dict | None:
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return json.load(resp)
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
+def _which(name: str) -> str | None:
+    return shutil.which(name) or (str(p) if (p := Path.home() / ".local/bin" / name).exists() else None)
+
+
+def check_agent_tools(ctx: Context) -> list[Check]:
+    if ctx.lib_error is None:
+        return [Check("agent-tools lib", "ok", ctx.lib_path)]
+    return [Check("agent-tools lib", "fail", ctx.lib_error, "export AGENT_TOOLS_LIB=<agent-tools>/lib (default ~/dev/agent-tools/lib)")]
+
+
+def check_bun(ctx: Context) -> list[Check]:
+    bun = _which("bun")
+    if bun is None:
+        return [Check("bun", "fail", "not found", "install bun: curl -fsSL https://bun.sh/install | bash")]
+    version = _run([bun, "--version"]) or "?"
+    wanted_file = ctx.repo_root / ".bun-version"
+    wanted = wanted_file.read_text().strip() if wanted_file.exists() else ""
+    if wanted and version != wanted:
+        return [Check("bun", "warn", f"{bun} {version} (repo pins {wanted})", f"bun upgrade --version {wanted}")]
+    return [Check("bun", "ok", f"{bun} {version}")]
+
+
+def check_web_build(ctx: Context) -> list[Check]:
+    dist = Path(os.environ.get("HSW_EDITOR_WEB_DIST") or ctx.repo_root / "apps/web/dist")
+    index = dist / "index.html"
+    if not index.exists():
+        return [Check("web build", "fail", f"{index} missing", "bun install && bun run build")]
+    checks = [Check("web build", "ok", str(dist))]
+    missing = [name for name in ("sw.js", "manifest.webmanifest") if not (dist / name).exists()]
+    if missing:
+        checks.append(Check("offline assets", "warn", f"{', '.join(missing)} missing in dist: the app will not work offline",
+                            "rebuild with the PWA plugin enabled: bun run build"))
+    else:
+        precached = len(list((dist / "assets").glob("*"))) if (dist / "assets").is_dir() else 0
+        checks.append(Check("offline assets", "ok", f"service worker + manifest present, {precached} hashed assets"))
+    return checks
+
+
+def check_state_lib(ctx: Context) -> list[Check]:
+    if (ctx.repo_root / "vendor/state-lib/dist/index.js").exists():
+        return [Check("state-lib", "ok", "vendored")]
+    return [Check("state-lib", "warn", "absent: the UI uses the baseline store backend", "optional: bun run setup:state-lib")]
+
+
+def check_port(ctx: Context) -> list[Check]:
+    with socket.socket() as sock:
+        sock.settimeout(0.5)
+        in_use = sock.connect_ex((HOST, ctx.port)) == 0
+    if not in_use:
+        return [Check(f"port {ctx.port}", "ok", "free")]
+    served = _get_json(f"http://{HOST}:{ctx.port}/api/health")
+    if served is not None and str(served.get("name", "")).startswith("hsw-editor"):
+        return [Check(f"port {ctx.port}", "ok", f"hsw-editor {served.get('version', '?')} is serving (home {served.get('home', '?')})")]
+    return [Check(f"port {ctx.port}", "fail", "occupied by another process",
+                  f"find it: ss -ltnp | grep :{ctx.port}; or use another port: hsw-editor --port <free> start")]
+
+
+def check_data_dir(ctx: Context) -> list[Check]:
+    path = ctx.data_dir
+    try:
+        (path / "walls").mkdir(parents=True, exist_ok=True)
+        probe = path / ".doctor-probe"
+        probe.write_text("ok")
+        probe.unlink()
+    except OSError as exc:
+        return [Check("data dir", "fail", f"{path}: {exc}", f"fix permissions: chmod u+rwx {path}  (or set HSW_EDITOR_HOME)")]
+    mode = path.stat().st_mode & 0o777
+    if mode & 0o002:
+        return [Check("data dir", "warn", f"{path} is world-writable ({mode:o})", f"chmod o-w {path}")]
+    return [Check("data dir", "ok", f"{path} (writable, mode {mode:o})")]
+
+
+def check_uv(ctx: Context) -> list[Check]:
+    uv = _which("uv")
+    if uv is None:
+        return [Check("uv", "warn", "not found: the vision sidecar cannot be installed", "install uv: curl -LsSf https://astral.sh/uv/install.sh | sh")]
+    return [Check("uv", "ok", f"{uv} {_run([uv, '--version']) or ''}".strip())]
+
+
+def check_omp(ctx: Context) -> list[Check]:
+    omp = _which("omp")
+    if omp is None:
+        return [Check("omp", "warn", "not found: the agent panel is unavailable", "install oh-my-pi: bun add -g @oh-my-pi/pi-coding-agent")]
+    return [Check("omp", "ok", f"{omp} {_run([omp, '--version']) or ''}".strip())]
+
+
+def check_gpu(ctx: Context) -> list[Check]:
+    smi = shutil.which("nvidia-smi")
+    if smi is None:
+        return [Check("GPU", "warn", "nvidia-smi not found: detection/segmentation run on CPU only", "install the NVIDIA driver (optional)")]
+    out = _run([smi, "--query-gpu=name,memory.total,memory.used", "--format=csv,noheader"])
+    if not out:
+        return [Check("GPU", "warn", "nvidia-smi failed (no usable GPU)", "check the driver: nvidia-smi")]
+    return [Check("GPU", "ok", out.splitlines()[0])]
+
+
+def check_vision(ctx: Context) -> list[Check]:
+    vision = ctx.repo_root / "services/vision"
+    installed = (vision / ".venv").is_dir()
+    served = _get_json(f"{VISION_URL}/health")
+    if served is not None:
+        return [Check("vision sidecar", "ok", f"{VISION_URL} {served.get('name', '')} {served.get('version', '')}".strip())]
+    if installed:
+        return [Check("vision sidecar", "warn", f"installed but not running on {VISION_URL}",
+                      f"start it: cd {vision} && uv run uvicorn hsw_vision.app:app --port {VISION_URL.rsplit(':', 1)[-1]}")]
+    return [Check("vision sidecar", "warn", "not installed: photo -> wall is unavailable", f"cd {vision} && uv sync")]
+
+
+def check_draw(ctx: Context) -> list[Check]:
+    backends = ["manual-upload"]
+    if _which("omp"):
+        backends.append("omp-generate-image")
+    profile = ctx.data_dir / "chatgpt-profile"
+    if profile.is_dir():
+        backends.append("chatgpt-browser")
+    detail = ", ".join(backends)
+    if len(backends) == 1:
+        return [Check("draw backends", "warn", f"only {detail}: missing views cannot be drawn automatically",
+                      "install omp (generate_image) or set up the ChatGPT browser profile")]
+    return [Check("draw backends", "ok", detail)]
+
+
+def check_systemd(ctx: Context) -> list[Check]:
+    if shutil.which("systemctl") is None:
+        return [Check("systemd --user", "warn", "systemctl not found: `enable` cannot install autostart", "start manually: hsw-editor start")]
+    ok = _run(["systemctl", "--user", "show-environment"]) is not None
+    return [Check("systemd --user", "ok" if ok else "warn", "available" if ok else "no user session bus: `enable` falls back to a plain start",
+                  "" if ok else "log in through a session with a user manager, or loginctl enable-linger $USER")]
+
+
+BASE_CHECKS: list[CheckFn] = [
+    check_agent_tools,
+    check_bun,
+    check_web_build,
+    check_state_lib,
+    check_port,
+    check_data_dir,
+    check_uv,
+    check_omp,
+    check_gpu,
+    check_vision,
+    check_draw,
+    check_systemd,
+]
+
+
+def run_checks(ctx: Context) -> list[Check]:
+    results: list[Check] = []
+    for fn in [*BASE_CHECKS, *EXTRA_CHECKS]:
+        results.extend(fn(ctx))
+    return results
+
+
+def render(results: list[Check], as_json: bool) -> str:
+    if as_json:
+        return json.dumps({"ok": not any(c.level == "fail" for c in results), "checks": [asdict(c) for c in results]}, indent=2)
+    lines = []
+    for check in results:
+        label = {"ok": "ok  ", "warn": "warn", "fail": "FAIL"}[check.level]
+        lines.append(f"{label} {check.name}: {check.detail}")
+        if check.fix and check.level != "ok":
+            lines.append(f"     fix: {check.fix}")
+    return "\n".join(lines)
