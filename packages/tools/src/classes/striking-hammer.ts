@@ -420,8 +420,8 @@ export const hammer = defineToolClass({
         handleThickness: 2 * B,
         headLength: head.xMax - head.xMin,
         faceDiameter: p.faceDiameter,
-        headWidth: 2 * Math.max(head.aE, p.head === 'sledge' ? R : 0),
-        headHeight: 2 * Math.max(head.bTop, p.head === 'sledge' ? R : 0),
+        headWidth: 2 * Math.max(head.aE, R),
+        headHeight: 2 * Math.max(head.bTop, R),
       },
     };
   },

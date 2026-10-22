@@ -200,7 +200,11 @@ export const chisel = defineToolClass({
     const R = p.handleDiameter / 2;
     const BL = p.bladeLength;
     const mortise = p.kind === 'mortise';
-    const t = mortise ? Math.max(5, w * 0.86) : Math.min(8, Math.max(2.6, 0.2 * w + 1.8));
+    const firmer = p.kind === 'firmer';
+    const edgeN = mortise ? 4.5 : firmer ? 8 : 3.1;
+    const t = mortise
+      ? Math.max(5, w * 0.86)
+      : Math.min(9, Math.max(2.6, (firmer ? 0.26 : 0.2) * w + 1.8));
     const shankR = Math.min(4.2, Math.max(2.4, w * 0.3));
     const neckLen = Math.max(14, 0.2 * BL);
     const bevelLen = Math.min(0.3 * BL, Math.max(3, t / Math.tan(25 * DEG)));
@@ -278,7 +282,7 @@ export const chisel = defineToolClass({
         name: 'strike-cap',
         role: 'ferrule',
         material: METALS.steel,
-        mesh: transformMesh(cylinder(R * 0.78, 3, ctx.seg(30, 14)), translation(0, 1.5, 0)),
+        mesh: transformMesh(cylinder(R * 0.9, 3, ctx.seg(30, 14)), translation(0, 1.5, 0)),
       });
     }
 
@@ -309,15 +313,15 @@ export const chisel = defineToolClass({
         return {
           a: lerp(shankR, 0.9 * (w / 2), s),
           b: lerp(shankR, t / 2, s),
-          n: lerp(2, mortise ? 4.5 : 3.1, s),
+          n: lerp(2, edgeN, s),
         };
       }).slice(1),
-      { y: yEnd - bevelLen, a: w / 2, b: t / 2, n: mortise ? 4.5 : 3.1 },
+      { y: yEnd - bevelLen, a: w / 2, b: t / 2, n: edgeN },
       {
         y: yEnd,
         a: w / 2,
         b: 0.2,
-        n: mortise ? 4.5 : 3.1,
+        n: edgeN,
         cz: t / 2 - 0.2,
       },
     ];
@@ -328,7 +332,6 @@ export const chisel = defineToolClass({
       mesh: loftFaceted(bladeKeys, N),
       crease: 30,
     });
-    // ground bevel edge shown as a lighter strip at the working end
     return {
       parts,
       hang: { point: [0, Lh - 6, 0], kind: 'neck' },
