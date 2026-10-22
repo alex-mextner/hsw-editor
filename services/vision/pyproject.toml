@@ -8,20 +8,10 @@ dependencies = [
     "uvicorn>=0.30",
     "numpy>=1.24",
     # All vision algorithms live in 3d-cli (single source of truth); this service only orchestrates them.
+    # Core deps only (numpy, opencv, pillow, scipy). The heavy runtime (torch cu128, onnxruntime-gpu 1.23.2, sam2,
+    # transformers, cma, trimesh) is NOT a locked extra: `hsw-editor vision setup` installs it into the vision venv
+    # (docs/vision.md "Install"), which keeps this lockfile small enough for the review gate and CI light.
     "threed-vision",
-]
-
-[project.optional-dependencies]
-# Heavy runtime: torch (SAM2, OWLv2, soft-silhouette fit), ORT-GPU (CLIP/DINOv2/u2net), CMA-ES.
-# `uv sync` (CI, doctor) stays light without it; `uv sync --extra ml` installs it.
-ml = [
-    "threed-vision[gpu,seg,fit]",
-    "torch==2.11.0",
-    "torchvision==0.26.0",
-    # CUDA-12 build; >=1.24 is a CUDA-13 build that silently runs on CPU with this driver stack.
-    "onnxruntime-gpu==1.23.2",
-    # GLB export of the fitted models (stages/fit.write_glb)
-    "trimesh>=4",
 ]
 
 [project.scripts]
@@ -32,14 +22,6 @@ dev = ["httpx>=0.27", "pytest>=8"]
 
 [tool.uv.sources]
 threed-vision = { git = "https://github.com/alex-mextner/3d-cli", subdirectory = "packages/threed-vision", rev = "0eddb522ee752362208efb74d1792a4365001264" }
-# torch must be the cu128 wheels: their nvidia-*-cu12 libraries are what onnxruntime-gpu 1.23 loads.
-torch = { index = "pytorch-cu128", extra = "ml" }
-torchvision = { index = "pytorch-cu128", extra = "ml" }
-
-[[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
-explicit = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
