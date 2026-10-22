@@ -1,0 +1,36 @@
+{
+  "name": "hsw-editor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local 3D wall editor for HSW honeycomb tool walls: photo to wall, offline PWA, omp agent panel.",
+  "license": "MIT",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --filter @hsw-editor/web dev",
+    "dev:server": "bun --watch apps/server/src/index.ts",
+    "build": "bun run --filter @hsw-editor/web build",
+    "typecheck": "bun scripts/typecheck.ts",
+    "lint": "oxlint --deny-warnings",
+    "lint:fix": "oxlint --fix",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "test": "bun test packages apps",
+    "setup:state-lib": "bun scripts/setup-state-lib.ts",
+    "check": "bun run lint && bun run typecheck && bun run test && bun run build"
+  },
+  "devDependencies": {
+    "@types/bun": "1.4.2",
+    "oxfmt": "0.67.0",
+    "oxlint": "1.82.0",
+    "oxlint-tsgolint": "7.0.2001",
+    "typescript": "^6.0.3"
+  },
+  "engines": {
+    "bun": ">=1.4.2"
+  },
+  "packageManager": "bun@1.4.2"
+}

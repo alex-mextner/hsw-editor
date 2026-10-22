@@ -1,0 +1,12 @@
+node_modules/
+dist/
+vendor/
+coverage/
+*.log
+.DS_Store
+.env*
+__pycache__/
+.venv/
+*.pyc
+test-results/
+playwright-report/
