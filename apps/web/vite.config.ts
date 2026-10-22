@@ -48,7 +48,7 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       host: '127.0.0.1',
-      port: Number(env['HSW_WEB_PORT'] ?? 5194),
+      port: Number.parseInt(env['HSW_WEB_PORT'] ?? '', 10) || 5194,
       strictPort: true,
       // The daemon serves the API and the bank assets; both are proxied in dev.
       proxy: {

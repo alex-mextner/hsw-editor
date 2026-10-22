@@ -18,6 +18,11 @@ const lookups: Readonly<Record<Locale, ReadonlyMap<string, string>>> = {
 export type Translate = (key: MessageKey, params?: MessageParams) => string;
 export type TranslatePlural = (key: PluralKey, count: number, params?: MessageParams) => string;
 
+const PLURAL_RULES: Readonly<Record<Locale, Intl.PluralRules>> = {
+  ru: new Intl.PluralRules('ru'),
+  en: new Intl.PluralRules('en'),
+};
+
 function translate(locale: Locale, key: MessageKey, params?: MessageParams): string {
   return interpolate(catalogues[locale][key], params);
 }
@@ -28,7 +33,7 @@ function translatePlural(
   count: number,
   params?: MessageParams,
 ): string {
-  const category = new Intl.PluralRules(locale).select(count);
+  const category = PLURAL_RULES[locale].select(count);
   const lookup = lookups[locale];
   const template =
     lookup.get(`${key}.${category}`) ?? catalogues[locale][`${key}.other` as MessageKey];
