@@ -1,6 +1,6 @@
-import { getCategory } from './categories.ts';
+import { categoryVocabulary } from './categories.ts';
 import { BankIndexSchema, type BankElement, type BankIndex } from './schema.ts';
-import { getToolClass } from './toolClasses.ts';
+import { toolClassVocabulary } from './toolClasses.ts';
 
 export type ValidationResult = { ok: true; index: BankIndex } | { ok: false; errors: string[] };
 
@@ -13,14 +13,21 @@ const NON_REDISTRIBUTABLE_LICENSES = new Set([
 
 const DIM_TOLERANCE_MM = 0.01;
 
-function checkElement(e: BankElement, errors: string[]): void {
+/** Ids the elements of one index may reference: what the index declares, else the built-in vocabulary. */
+interface Vocabulary {
+  categories: ReadonlySet<string>;
+  toolClasses: ReadonlySet<string>;
+}
+
+function checkElement(e: BankElement, vocabulary: Vocabulary, errors: string[]): void {
   const at = (msg: string): void => {
     errors.push(`${e.id}: ${msg}`);
   };
-  if (!getCategory(e.category)) at(`unknown category ${e.category}`);
-  for (const t of e.toolClasses) if (!getToolClass(t)) at(`unknown tool class ${t}`);
+  if (!vocabulary.categories.has(e.category)) at(`unknown category ${e.category}`);
+  for (const t of e.toolClasses) if (!vocabulary.toolClasses.has(t)) at(`unknown tool class ${t}`);
   for (const f of e.fitsTool) {
-    if (!getToolClass(f.toolClass)) at(`fitsTool references unknown class ${f.toolClass}`);
+    if (!vocabulary.toolClasses.has(f.toolClass))
+      at(`fitsTool references unknown class ${f.toolClass}`);
     for (const [key, range] of Object.entries(f.dims ?? {})) {
       if (range.min > range.max) at(`fitsTool ${f.toolClass}.${key} has min > max`);
     }
@@ -89,11 +96,15 @@ export function validateBankIndex(raw: unknown): ValidationResult {
   const index = parsed.data;
   const errors: string[] = [];
 
+  const vocabulary: Vocabulary = {
+    categories: new Set(categoryVocabulary(index.categories).map((c) => c.id)),
+    toolClasses: new Set(toolClassVocabulary(index.toolClasses).map((t) => t.id)),
+  };
   const ids = new Set<string>();
   for (const e of index.elements) {
     if (ids.has(e.id)) errors.push(`${e.id}: duplicate element id`);
     ids.add(e.id);
-    checkElement(e, errors);
+    checkElement(e, vocabulary, errors);
   }
   const hashes = new Map<string, string>();
   for (const e of index.elements) {

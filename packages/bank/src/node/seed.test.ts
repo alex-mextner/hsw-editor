@@ -1,9 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdir, mkdtemp, readdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createBank } from '../bank.ts';
 import { BankIndexSchema } from '../schema.ts';
 import { bankPaths } from './paths.ts';
-import { SEED_BUDGET_BYTES } from './seed.ts';
+import { makeElement, makeIndex } from '../testing.ts';
+import { exportSeed, SEED_BUDGET_BYTES } from './seed.ts';
 
 const seed = bankPaths().seedDir;
 
@@ -25,5 +28,27 @@ describe('committed seed', () => {
     expect(bank.search('плоскогубцы').some((r) => r.element.category === 'holders/pliers')).toBe(
       true,
     );
+  });
+});
+
+describe('exportSeed', () => {
+  test('an over-budget export fails and leaves the existing seed untouched', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'bank-seed-'));
+    const paths = { ...bankPaths(), bankDir: join(root, 'bank'), seedDir: join(root, 'seed') };
+    await mkdir(join(paths.bankDir, 'glb'), { recursive: true });
+    await mkdir(join(paths.bankDir, 'thumb'), { recursive: true });
+    await mkdir(paths.seedDir);
+    await Bun.write(join(paths.seedDir, 'index.json'), 'previous seed');
+    await Bun.write(
+      join(paths.bankDir, 'glb/0000000000000000.glb'),
+      new Uint8Array(SEED_BUDGET_BYTES),
+    );
+    await Bun.write(join(paths.bankDir, 'thumb/0000000000000000.webp'), new Uint8Array(10));
+    const element = makeElement({ id: 'big', ru: 'Б', en: 'Big', category: 'hooks' });
+    await Bun.write(join(paths.bankDir, 'index.json'), JSON.stringify(makeIndex([element])));
+
+    await expect(exportSeed(paths)).rejects.toThrow(/over the/);
+    expect(await Bun.file(join(paths.seedDir, 'index.json')).text()).toBe('previous seed');
+    expect((await readdir(root)).sort()).toEqual(['bank', 'seed']);
   });
 });

@@ -1,11 +1,13 @@
 /** On-demand rebuild of a parametric element at other dimensions (dimension widget). */
-import { copyFile, mkdir } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { FamilyFileSchema } from '../families.ts';
 import type { BankElement, VariantResponse } from '../schema.ts';
 import { compressGlb } from './compress.ts';
 import { openscadAvailable, runMeshTool } from './exec.ts';
-import type { BuildResult } from './meshTool.ts';
+import { buildCodeHash } from './fingerprint.ts';
+import { artefactInputs, geometryOf, type BuiltGeometry } from './geometry.ts';
+import type { AnchorMode, BuildResult } from './meshTool.ts';
 import type { BankPaths } from './paths.ts';
 import { renderMissing, scadKey, type ScadJob } from './scad.ts';
 import { MESH_TOOL_VERSION } from './sources.ts';
@@ -40,31 +42,30 @@ export function normalizeParams(
   return values;
 }
 
-interface VariantBuild {
-  glb: string;
-  bboxMm: VariantResponse['bboxMm'];
-  footprint: VariantResponse['footprint'];
+/** What a finished variant build stores next to its GLB. */
+type VariantBuild = { glb: string } & BuiltGeometry;
+
+/** Heavy renders (OpenSCAD + mesh_tool + compression) allowed at once across all variant requests. */
+const MAX_CONCURRENT_BUILDS = 2;
+let activeBuilds = 0;
+const waiting: (() => void)[] = [];
+
+async function withBuildSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeBuilds >= MAX_CONCURRENT_BUILDS) await new Promise<void>((r) => waiting.push(r));
+  else activeBuilds++;
+  try {
+    return await fn();
+  } finally {
+    const next = waiting.shift();
+    if (next) next();
+    else activeBuilds--;
+  }
 }
 
 const inFlight = new Map<string, Promise<VariantResponse>>();
 
-/** Concurrent requests for the same parameters share one build. */
-export function buildVariant(
-  paths: BankPaths,
-  element: BankElement,
-  requested: Record<string, number>,
-): Promise<VariantResponse> {
-  const key = `${element.id}:${JSON.stringify(Object.entries(normalizeParams(element, requested)).sort())}`;
-  const running = inFlight.get(key);
-  if (running) return running;
-  const started = buildVariantUncached(paths, element, requested).finally(() =>
-    inFlight.delete(key),
-  );
-  inFlight.set(key, started);
-  return started;
-}
-
-async function buildVariantUncached(
+/** Concurrent requests that resolve to the same build (same paramHash) share one run. */
+export async function buildVariant(
   paths: BankPaths,
   element: BankElement,
   requested: Record<string, number>,
@@ -75,7 +76,7 @@ async function buildVariantUncached(
   if (!openscadAvailable()) throw new VariantError(503, 'openscad is not installed');
 
   const families = FamilyFileSchema.parse(
-    await Bun.file(join(paths.repoRoot, 'packages/bank/generators/families.json')).json(),
+    await Bun.file(join(paths.generatorsDir, 'families.json')).json(),
   );
   const family = families.families.find((f) => f.id === element.family);
   if (!family)
@@ -87,78 +88,134 @@ async function buildVariantUncached(
     version: generator.version,
     values: params,
   };
-  const paramHash = (await scadKey(paths, job)).slice(0, 16);
+  // the geometry key plus everything else that shapes the stored artefacts
+  const inputs = artefactInputs(element.category);
+  const paramHash = sha256(
+    JSON.stringify([
+      await scadKey(paths, job),
+      MESH_TOOL_VERSION,
+      await buildCodeHash(paths),
+      family.anchor,
+      inputs,
+      element.mounting.kind,
+    ]),
+  ).slice(0, 16);
+
+  // a finished build needs no render slot and no in-flight bookkeeping
   const dir = join(paths.cacheDir, 'variants', paramHash);
   const doneFile = Bun.file(join(dir, 'done.json'));
-  const bankGlb = join(paths.bankDir, 'variant', `${paramHash}.glb`);
-
-  let build: VariantBuild;
-  let cached = false;
-  if ((await doneFile.exists()) && (await Bun.file(bankGlb).exists())) {
-    build = (await doneFile.json()) as VariantBuild;
-    cached = true;
-  } else {
-    await mkdir(dir, { recursive: true });
-    const rendered = await renderMissing(paths, [job]);
-    const stl = [...rendered.stl.values()][0];
-    if (!stl)
-      throw new VariantError(500, [...rendered.failed.values()][0] ?? 'render produced no output');
-    const result = await runMeshTool<BuildResult>(
-      paths,
-      {
-        op: 'build',
-        grid: paths.grid,
-        items: [
-          {
-            key: paramHash,
-            path: stl,
-            partId: '0',
-            orient: { out: '+z', up: '+y' },
-            anchor: family.anchor,
-            backSlabMm: 1,
-            glb: join(dir, 'raw.glb'),
-            views: ['iso'],
-            color: '#4f7fb0',
-          },
-        ],
-      },
-      `variant-${paramHash}`,
-    );
-    const built = result.items[0];
-    if (result.toolVersion !== MESH_TOOL_VERSION || !built?.ok || !built.bboxMm) {
-      throw new VariantError(500, built?.error ?? 'variant build failed');
-    }
-    const compressed = await compressGlb(
-      new Uint8Array(await Bun.file(join(dir, 'raw.glb')).arrayBuffer()),
-    );
-    await Bun.write(join(dir, 'variant.glb'), compressed.lod0);
-    await mkdir(join(paths.bankDir, 'variant'), { recursive: true });
-    await copyFile(join(dir, 'variant.glb'), bankGlb);
-    const cells = (built.cells ?? [[0, 0]]).map(([dCol, dRow2]) => ({ dCol, dRow2 }));
-    const cols = cells.map((c) => c.dCol);
-    const rows2 = cells.map((c) => c.dRow2);
-    build = {
-      glb: `variant/${paramHash}.glb`,
-      bboxMm: {
-        min: { x: built.bboxMm.min[0], y: built.bboxMm.min[1], z: built.bboxMm.min[2] },
-        max: { x: built.bboxMm.max[0], y: built.bboxMm.max[1], z: built.bboxMm.max[2] },
-      },
-      footprint: {
-        cells,
-        cols: Math.max(...cols) - Math.min(...cols) + 1,
-        rows: Math.ceil((Math.max(...rows2) - Math.min(...rows2)) / 2) + 1,
-      },
-    };
-    await Bun.write(join(dir, 'done.json'), JSON.stringify(build));
+  if ((await doneFile.exists()) && (await Bun.file(variantGlbPath(paths, paramHash)).exists())) {
+    return respond((await doneFile.json()) as VariantBuild, paramHash, params, true);
   }
-  const { min, max } = build.bboxMm;
+
+  const running = inFlight.get(paramHash);
+  if (running) return running;
+  const started = withBuildSlot(() =>
+    buildVariantUncached(paths, element.mounting.kind, family.anchor, inputs, job, paramHash),
+  ).finally(() => inFlight.delete(paramHash));
+  inFlight.set(paramHash, started);
+  return started;
+}
+
+function variantGlbPath(paths: BankPaths, paramHash: string): string {
+  return join(paths.bankDir, 'variant', `${paramHash}.glb`);
+}
+
+function respond(
+  build: VariantBuild,
+  paramHash: string,
+  params: Record<string, number>,
+  cached: boolean,
+): VariantResponse {
   return {
     glbUrl: `/bank/assets/${build.glb}`,
     bboxMm: build.bboxMm,
-    dimsMm: { x: max.x - min.x, y: max.y - min.y, z: max.z - Math.max(0, min.z) },
+    dimsMm: build.dimsMm,
     footprint: build.footprint,
+    mountingCells: build.mountingCells,
     paramHash,
     params,
     cached,
   };
+}
+
+function sha256(text: string): string {
+  return new Bun.CryptoHasher('sha256').update(text).digest('hex');
+}
+
+async function buildVariantUncached(
+  paths: BankPaths,
+  mountKind: BankElement['mounting']['kind'],
+  anchor: AnchorMode,
+  inputs: ReturnType<typeof artefactInputs>,
+  job: ScadJob,
+  paramHash: string,
+): Promise<VariantResponse> {
+  const dir = join(paths.cacheDir, 'variants', paramHash);
+  await mkdir(dir, { recursive: true });
+  const rendered = await renderMissing(paths, [job]);
+  const stl = [...rendered.stl.values()][0];
+  if (!stl)
+    throw new VariantError(500, [...rendered.failed.values()][0] ?? 'render produced no output');
+  const result = await runMeshTool<BuildResult>(
+    paths,
+    {
+      op: 'build',
+      grid: paths.grid,
+      items: [
+        {
+          key: paramHash,
+          path: stl,
+          partId: '0',
+          orient: { out: '+z', up: '+y' },
+          anchor,
+          glb: join(dir, 'raw.glb'),
+          ...inputs,
+        },
+      ],
+    },
+    `variant-${paramHash}`,
+  );
+  const built = result.items[0];
+  if (result.toolVersion !== MESH_TOOL_VERSION || !built?.ok || !built.bboxMm) {
+    throw new VariantError(500, built?.error ?? 'variant build failed');
+  }
+  const compressed = await compressGlb(
+    new Uint8Array(await Bun.file(join(dir, 'raw.glb')).arrayBuffer()),
+  );
+  await Bun.write(join(dir, 'variant.glb'), compressed.lod0);
+  await mkdir(join(paths.bankDir, 'variant'), { recursive: true });
+  await copyFile(join(dir, 'variant.glb'), variantGlbPath(paths, paramHash));
+  const build: VariantBuild = { glb: `variant/${paramHash}.glb`, ...geometryOf(built, mountKind) };
+  await Bun.write(join(dir, 'done.json'), JSON.stringify(build));
+  return respond(build, paramHash, job.values, false);
+}
+
+const VARIANT_MAX_AGE_MS = 14 * 24 * 3600 * 1000;
+const VARIANT_MAX_BYTES = 256 * 1024 * 1024;
+
+/** Deletes variant GLBs (and their build dirs) older than 14 days, then the oldest until under 256 MiB. */
+export async function collectVariantGarbage(paths: BankPaths, now = Date.now()): Promise<void> {
+  const dir = join(paths.bankDir, 'variant');
+  const names = await readdir(dir).catch(() => []);
+  const files = (
+    await Promise.all(
+      names.map(async (name) => {
+        const info = await stat(join(dir, name)).catch(() => null);
+        return info ? { name, size: info.size, mtimeMs: info.mtimeMs } : null;
+      }),
+    )
+  )
+    .filter((f) => f !== null)
+    .sort((a, b) => b.mtimeMs - a.mtimeMs);
+  let total = 0;
+  for (const file of files) {
+    total += file.size;
+    if (now - file.mtimeMs <= VARIANT_MAX_AGE_MS && total <= VARIANT_MAX_BYTES) continue;
+    await rm(join(dir, file.name), { force: true });
+    await rm(join(paths.cacheDir, 'variants', file.name.replace(/\.glb$/, '')), {
+      recursive: true,
+      force: true,
+    });
+  }
 }

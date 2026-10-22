@@ -320,6 +320,8 @@ def _anchor_and_cells(mesh: trimesh.Trimesh, col_pitch: float, row_pitch: float,
     lo3, hi3 = mesh.bounds
     bbox_centre = ((lo3[0] + hi3[0]) / 2, (lo3[1] + hi3[1]) / 2)
     sil = _wall_silhouette(mesh, back_mm)
+    if sil is None and anchor_mode == "origin":
+        raise ValueError("origin anchor needs a wall-facing silhouette, but the section is empty")
     if anchor_mode == "panel" or sil is None:
         anchor = bbox_centre
         cells = [(c, r) for c, r, x, y in _lattice_points(lo3, hi3, anchor, col_pitch, row_pitch)

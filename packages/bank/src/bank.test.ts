@@ -129,6 +129,14 @@ describe('listElements', () => {
     expect(page.items).toHaveLength(2);
   });
 
+  test('a negative offset starts at the first element; limit 0 returns no items', () => {
+    const first = bank.listElements({ sort: 'name-en', offset: 0, limit: 2 });
+    expect(bank.listElements({ sort: 'name-en', offset: -1, limit: 2 }).items).toEqual(first.items);
+    const none = bank.listElements({ limit: 0 });
+    expect(none.items).toHaveLength(0);
+    expect(none.total).toBe(7);
+  });
+
   test('fits filter checks tool class and dimension ranges', () => {
     const withRange = makeElement({
       id: 'a',
@@ -136,10 +144,8 @@ describe('listElements', () => {
       en: 'A',
       category: 'holders/screwdrivers',
       toolClasses: ['screwdriver'],
+      fitsTool: [{ toolClass: 'screwdriver', dims: { shaftDiameter: { min: 4, max: 7 } } }],
     });
-    withRange.fitsTool = [
-      { toolClass: 'screwdriver', dims: { shaftDiameter: { min: 4, max: 7 } } },
-    ];
     const b = createBank(makeIndex([withRange]));
     expect(
       b.listElements({ fits: { toolClass: 'screwdriver', dims: { shaftDiameter: 6 } } }).total,
@@ -163,6 +169,12 @@ describe('stemTerm', () => {
     expect(stemTerm('boxes')).toBe('box');
     expect(stemTerm('для')).toBeNull();
     expect(stemTerm('M3')).toBe('m3');
+  });
+
+  test('keeps the breve of й so masculine adjective endings stem like the other forms', () => {
+    expect(stemTerm('большой')).toBe(stemTerm('большая'));
+    expect(stemTerm('большой')).toBe('больш');
+    expect(stemTerm('красный')).toBe(stemTerm('красная'));
   });
 });
 
@@ -220,6 +232,29 @@ describe('validateBankIndex', () => {
       expect(result.errors.join('\n')).toContain('unknown category');
       expect(result.errors.join('\n')).toContain('unknown tool class');
     }
+  });
+
+  test('the categories and tool classes the index declares are the vocabulary', () => {
+    const e = makeElement({
+      id: 'm',
+      ru: 'М',
+      en: 'M',
+      category: 'holders/magnetic',
+      toolClasses: ['screwdriver'],
+    });
+    const index = makeIndex([e]);
+    expect(validateBankIndex(index).ok).toBe(false);
+    index.categories = [
+      ...index.categories,
+      {
+        id: 'holders/magnetic',
+        parent: 'holders',
+        name: { ru: 'Магнитные', en: 'Magnetic' },
+        order: 99,
+      },
+    ];
+    expect(validateBankIndex(index).ok).toBe(true);
+    expect(createBank(index).search('magnetic')).toHaveLength(1);
   });
 
   test('counts must match the elements', () => {

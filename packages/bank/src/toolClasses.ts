@@ -153,6 +153,11 @@ function tc(id: string, ru: string, en: string, synRu: string[], synEn: string[]
 }
 
 const BY_ID = new Map(TOOL_CLASSES.map((t) => [t.id, t]));
+/** The tool classes an index declares; the built-in list when it declares none. */
+export function toolClassVocabulary(declared: readonly ToolClass[]): readonly ToolClass[] {
+  return declared.length > 0 ? declared : TOOL_CLASSES;
+}
+
 export function getToolClass(id: string): ToolClass | undefined {
   return BY_ID.get(id);
 }

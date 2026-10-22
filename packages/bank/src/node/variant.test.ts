@@ -1,6 +1,10 @@
 import { describe, expect, test } from 'bun:test';
+import { mkdir, mkdtemp, readdir, rm, utimes } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { makeElement } from '../testing.ts';
-import { normalizeParams, VariantError } from './variant.ts';
+import { bankPaths } from './paths.ts';
+import { collectVariantGarbage, normalizeParams, VariantError } from './variant.ts';
 
 function parametric() {
   const element = makeElement({
@@ -56,6 +60,32 @@ describe('normalizeParams', () => {
       throw new Error('expected VariantError');
     } catch (error) {
       expect(error instanceof VariantError && error.status).toBe(409);
+    }
+  });
+});
+
+describe('collectVariantGarbage', () => {
+  test('removes variants older than the age limit and keeps recent ones', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'bank-variants-'));
+    try {
+      const paths = { ...bankPaths(), bankDir: join(root, 'bank'), cacheDir: join(root, 'cache') };
+      await mkdir(join(paths.bankDir, 'variant'), { recursive: true });
+      await mkdir(join(paths.cacheDir, 'variants', 'aaaaaaaaaaaaaaaa'), { recursive: true });
+      const now = Date.now();
+      for (const [name, ageDays] of [
+        ['aaaaaaaaaaaaaaaa', 30],
+        ['bbbbbbbbbbbbbbbb', 1],
+      ] as const) {
+        const file = join(paths.bankDir, 'variant', `${name}.glb`);
+        await Bun.write(file, 'glb');
+        const seconds = (now - ageDays * 86_400_000) / 1000;
+        await utimes(file, seconds, seconds);
+      }
+      await collectVariantGarbage(paths, now);
+      expect(await readdir(join(paths.bankDir, 'variant'))).toEqual(['bbbbbbbbbbbbbbbb.glb']);
+      expect(await readdir(join(paths.cacheDir, 'variants'))).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
     }
   });
 });

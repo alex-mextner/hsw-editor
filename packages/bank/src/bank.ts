@@ -1,5 +1,5 @@
 import type MiniSearch from 'minisearch';
-import { BANK_CATEGORIES, isInCategory } from './categories.ts';
+import { categoryVocabulary, isInCategory } from './categories.ts';
 import type {
   BankCategory,
   BankElement,
@@ -9,6 +9,7 @@ import type {
   Vec3,
 } from './schema.ts';
 import { buildSearchIndex, loadSearchIndex, runSearch, type SearchHit } from './search.ts';
+import { toolClassVocabulary } from './toolClasses.ts';
 
 export type MountingKind = (typeof MOUNTING_KINDS)[number];
 
@@ -106,7 +107,12 @@ export function createBank(index: BankIndex, serializedSearch?: string): Bank {
   const loaded: MiniSearch | null = serializedSearch
     ? loadSearchIndex(serializedSearch, index.contentHash)
     : null;
-  const search = loaded ?? buildSearchIndex(index.elements);
+  const search =
+    loaded ??
+    buildSearchIndex(index.elements, {
+      categories: categoryVocabulary(index.categories),
+      toolClasses: toolClassVocabulary(index.toolClasses),
+    });
   const families = new Map<string, BankElement[]>();
   for (const e of index.elements) {
     if (e.family === undefined) continue;
@@ -119,7 +125,8 @@ export function createBank(index: BankIndex, serializedSearch?: string): Bank {
     index,
     getElement: (id) => byId.get(id),
     listElements(options = {}) {
-      const { sort, offset = 0, limit, ...filter } = options;
+      const { sort, offset: requestedOffset = 0, limit, ...filter } = options;
+      const offset = Math.max(0, requestedOffset);
       const all = index.elements.filter((e) => matches(e, filter));
       if (sort) all.sort(SORTERS[sort]);
       return {
@@ -143,6 +150,6 @@ export function createBank(index: BankIndex, serializedSearch?: string): Bank {
     },
     familyOf: (element) =>
       element.family === undefined ? [element] : (families.get(element.family) ?? [element]),
-    categories: () => (index.categories.length > 0 ? index.categories : BANK_CATEGORIES),
+    categories: () => categoryVocabulary(index.categories),
   };
 }

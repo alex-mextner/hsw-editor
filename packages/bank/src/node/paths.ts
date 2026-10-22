@@ -8,6 +8,8 @@ export interface BankPaths {
   bankDir: string;
   /** Scratch and caches of the pipeline. */
   cacheDir: string;
+  /** Python virtualenv of scripts/bank/py (uv). */
+  venvDir: string;
   /** The HSW project holding downloaded models, catalog and refit sources. */
   sourcesDir: string;
   /** Committed seed (redistributable subset). */
@@ -28,6 +30,7 @@ export function bankPaths(env: Record<string, string | undefined> = process.env)
     repoRoot: REPO_ROOT,
     bankDir: env.HSW_BANK_DIR ?? join(data, 'bank'),
     cacheDir: join(cache, 'bank-build'),
+    venvDir: join(cache, 'bank-venv'),
     sourcesDir: env.HSW_SOURCES_DIR ?? join(home, 'dev/garage-band/projects/HSW'),
     seedDir: join(REPO_ROOT, 'packages/bank/seed'),
     generatorsDir: env.HSW_BANK_GENERATORS_DIR ?? join(REPO_ROOT, 'packages/bank/generators'),

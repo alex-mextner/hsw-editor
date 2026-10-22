@@ -90,6 +90,10 @@ release: [docs/cli.md](docs/cli.md). HTTP API: [docs/api.md](docs/api.md). Relea
 - [#23](https://github.com/alex-mextner/hsw-editor/issues/23) (w) Domain hsw-editor.rs and landing page
 - [#24](https://github.com/alex-mextner/hsw-editor/issues/24) (x) i18n ru/en
 
+## Bank
+
+The bank (`packages/bank`, [docs/bank.md](docs/bank.md)) indexes **428 elements**: 144 curated from the HSW sources and 284 generated parametric family rungs (19 families). **301** are redistributable (MIT / CC-BY) and **127** are not (CC-BY-NC, CC-BY-NC-SA, Standard Digital File, unknown). Licence policy: only redistributable elements may be committed; **103** of them (4 MB) are the seed in `packages/bank/seed`. Non-redistributable elements are indexed with `license.redistributable = false`, are never committed, and are ingested locally from the sources. Run `bun run bank:ingest` and `bun run bank:verify`.
+
 Full design: [docs/specs/2026-10-22-hsw-editor-design.md](docs/specs/2026-10-22-hsw-editor-design.md). Agent rules: [AGENTS.md](AGENTS.md).
 
 ## License

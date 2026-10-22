@@ -14,5 +14,15 @@ if (process.argv.includes('--check')) {
   }
 } else {
   await Bun.write(target, text);
+  // keep the committed file in the repo's formatting so `format:check` accepts it
+  const formatter = Bun.spawnSync([
+    resolve(import.meta.dir, '../../node_modules/.bin/oxfmt'),
+    '--write',
+    target,
+  ]);
+  if (formatter.exitCode !== 0) {
+    console.error(formatter.stderr.toString());
+    process.exit(1);
+  }
   console.info(`wrote ${target}`);
 }

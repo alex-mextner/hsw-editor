@@ -67,4 +67,17 @@ describe('expandFamily', () => {
     expect(() => expandFamily({ ...spec, grid: { slots: [20] } })).toThrow(/outside/);
     expect(() => expandFamily({ ...spec, grid: { nope: [1] } })).toThrow(/undeclared/);
   });
+
+  test('rejects exclude rules that are empty or name a non-grid key', () => {
+    expect(() => expandFamily({ ...spec, exclude: [{}] })).toThrow(/empty exclude rule/);
+    expect(() =>
+      expandFamily({
+        ...spec,
+        fixed: { holeDiameter: 8 },
+        grid: { slots: [3] },
+        exclude: [{ holeDiameter: 8 }],
+      }),
+    ).toThrow(/not a grid param/);
+    expect(() => expandFamily({ ...spec, exclude: [{ wall: 2 }] })).toThrow(/not a grid param/);
+  });
 });

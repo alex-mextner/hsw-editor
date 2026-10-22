@@ -120,6 +120,11 @@ export function getCategory(id: string): BankCategory | undefined {
   return BY_ID.get(id);
 }
 
+/** The categories an index declares; the built-in tree when it declares none. One authority for validation, search and listing. */
+export function categoryVocabulary(declared: readonly BankCategory[]): readonly BankCategory[] {
+  return declared.length > 0 ? declared : BANK_CATEGORIES;
+}
+
 /** True if `id` is `ancestor` itself or lies below it in the tree. */
 export function isInCategory(id: string, ancestor: string): boolean {
   return id === ancestor || id.startsWith(`${ancestor}/`);

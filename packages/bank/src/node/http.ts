@@ -9,14 +9,17 @@ import { BankIndexSchema, MOUNTING_KINDS, VariantRequestSchema } from '../schema
 import { buildVariant, VariantError } from './variant.ts';
 import type { BankPaths } from './paths.ts';
 
-const ASSET_PATH = /^\/bank\/assets\/((?:glb|thumb|variant)\/[0-9a-f]{16}\.(?:glb|webp))$/;
+// the extension is bound to the kind: GLB models under glb/ and variant/, WebP thumbnails under thumb/
+const ASSET_PATH =
+  /^\/bank\/assets\/((?:(?:glb|variant)\/[0-9a-f]{16}\.glb)|(?:thumb\/[0-9a-f]{16}\.webp))$/;
 const ELEMENT_PATH = /^\/api\/bank\/elements\/([a-z0-9-]+)(\/variant)?$/;
 const IMMUTABLE = 'public, max-age=31536000, immutable';
 
 interface Loaded {
   bank: Bank;
   etag: string;
-  mtimeMs: number;
+  /** mtimes of every root's index.json when this bank was chosen (see `stampOf`). */
+  stamp: string;
   searchJson: string | undefined;
 }
 
@@ -37,22 +40,41 @@ function json(body: unknown, init: ResponseInit = {}): Response {
   });
 }
 
-async function loadFrom(roots: string[]): Promise<{ root: string; loaded: Loaded } | null> {
-  for (const root of roots) {
-    const info = await stat(join(root, 'index.json')).catch(() => null);
-    if (!info) continue;
+/** mtime of each root's index.json: changes when a built bank appears, is replaced, or is removed. */
+async function stampOf(roots: string[]): Promise<string> {
+  const mtimes = await Promise.all(
+    roots.map(async (root) => (await stat(join(root, 'index.json')).catch(() => null))?.mtimeMs),
+  );
+  return mtimes.map((m) => m ?? '-').join(',');
+}
+
+async function loadRoot(root: string, stamp: string): Promise<Loaded | null> {
+  try {
     const index = BankIndexSchema.parse(await Bun.file(join(root, 'index.json')).json());
     const searchFile = Bun.file(join(root, 'search-index.json'));
     const searchJson = (await searchFile.exists()) ? await searchFile.text() : undefined;
     return {
-      root,
-      loaded: {
-        bank: createBank(index, searchJson),
-        etag: `"${index.contentHash}"`,
-        mtimeMs: info.mtimeMs,
-        searchJson,
-      },
+      bank: createBank(index, searchJson),
+      etag: `"${index.contentHash}"`,
+      stamp,
+      searchJson,
     };
+  } catch {
+    return null; // missing, half-written or invalid
+  }
+}
+
+/**
+ * The first root that has an index.json decides: when it cannot be read, no later root (the seed) takes
+ * over silently; the caller keeps the bank in use instead. A root without index.json is skipped.
+ */
+async function loadFrom(
+  roots: string[],
+  stamp: string,
+): Promise<{ root: string; loaded: Loaded | null } | null> {
+  for (const root of roots) {
+    if (!(await stat(join(root, 'index.json')).catch(() => null))) continue;
+    return { root, loaded: await loadRoot(root, stamp) };
   }
   return null;
 }
@@ -62,13 +84,17 @@ export function createBankHandler(
 ): (request: Request) => Promise<Response | null> {
   let current: { root: string; loaded: Loaded } | null = null;
 
-  /** Reloads when index.json changed on disk (a new ingest) so the server needs no restart. */
+  /**
+   * Reloads when any root's index.json changed on disk (a new ingest, or a built bank appearing after
+   * the seed was loaded) so the server needs no restart. When the new files cannot be loaded (an ingest
+   * is mid-write) the bank in use stays.
+   */
   async function bank(): Promise<{ root: string; loaded: Loaded } | null> {
-    if (current) {
-      const info = await stat(join(current.root, 'index.json')).catch(() => null);
-      if (info && info.mtimeMs === current.loaded.mtimeMs) return current;
-    }
-    current = await loadFrom(options.roots);
+    const stamp = await stampOf(options.roots);
+    if (current && current.loaded.stamp === stamp) return current;
+    const next = await loadFrom(options.roots, stamp);
+    if (next?.loaded) current = { root: next.root, loaded: next.loaded };
+    else if (current) current = { ...current, loaded: { ...current.loaded, stamp } };
     return current;
   }
 
@@ -76,6 +102,20 @@ export function createBankHandler(
     const url = new URL(request.url);
     const { pathname } = url;
     if (!pathname.startsWith('/api/bank/') && !pathname.startsWith('/bank/assets/')) return null;
+
+    const elementMatch = ELEMENT_PATH.exec(pathname);
+    const isVariant = elementMatch?.[2] !== undefined;
+    const readRoute =
+      !isVariant &&
+      (ASSET_PATH.test(pathname) ||
+        elementMatch !== null ||
+        pathname === '/api/bank/index' ||
+        pathname === '/api/bank/search-index' ||
+        pathname === '/api/bank/search');
+    if (readRoute && request.method !== 'GET' && request.method !== 'HEAD')
+      return json({ error: 'use GET' }, { status: 405, headers: { allow: 'GET, HEAD' } });
+    if (isVariant && request.method !== 'POST')
+      return json({ error: 'use POST' }, { status: 405, headers: { allow: 'POST' } });
 
     const asset = ASSET_PATH.exec(pathname);
     if (asset) {
@@ -129,12 +169,10 @@ export function createBankHandler(
       return json({ results });
     }
 
-    const element = ELEMENT_PATH.exec(pathname);
-    if (element) {
-      const found = data.getElement(element[1] ?? '');
+    if (elementMatch) {
+      const found = data.getElement(elementMatch[1] ?? '');
       if (!found) return json({ error: 'unknown element' }, { status: 404 });
-      if (!element[2]) return json(found);
-      if (request.method !== 'POST') return json({ error: 'use POST' }, { status: 405 });
+      if (!isVariant) return json(found);
       const body = VariantRequestSchema.safeParse(await request.json().catch(() => null));
       if (!body.success)
         return json({ error: 'body must be { params: { key: number } }' }, { status: 400 });

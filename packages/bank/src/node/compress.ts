@@ -40,15 +40,14 @@ async function createIo(): Promise<NodeIO> {
 }
 
 export function countTriangles(doc: Document): number {
-  let triangles = 0;
+  let indexCount = 0;
   for (const mesh of doc.getRoot().listMeshes()) {
     for (const prim of mesh.listPrimitives()) {
       const indices = prim.getIndices();
-      triangles +=
-        (indices ? indices.getCount() : (prim.getAttribute('POSITION')?.getCount() ?? 0)) / 3;
+      indexCount += indices ? indices.getCount() : (prim.getAttribute('POSITION')?.getCount() ?? 0);
     }
   }
-  return triangles;
+  return Math.floor(indexCount / 3);
 }
 
 async function writeCompressed(io: NodeIO, doc: Document): Promise<Uint8Array> {

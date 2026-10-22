@@ -49,6 +49,28 @@ describe('clusterParts', () => {
     );
   });
 
+  test('clusters compare against the representative, so tolerances do not chain', () => {
+    const a = part('a', 1, 'h-a', [10, 20, 30], 1000, 500);
+    const b = part('b', 2, 'h-b', [10, 20, 30], 1004, 503);
+    const c = part('c', 3, 'h-c', [10, 20, 30], 1008, 506);
+    // a~b and b~c within tolerance, a~c is not: c must not join a's cluster through b
+    const clusters = clusterParts([a, b, c]);
+    expect(clusters).toHaveLength(2);
+    expect(clusters[0]?.duplicates.map((d) => d.key)).toEqual(['b']);
+  });
+
+  test('two zero-volume parts merge when dims and surface area agree', () => {
+    const stl = part('open.stl', 1, 'h1', [10, 20, 30], 0, 1200);
+    const threeMf = part('open.3mf', 2, 'h2', [10, 20, 30], 0, 1205);
+    const bigger = part('open-big.stl', 3, 'h3', [10, 20, 30], 0, 1500);
+    const clusters = clusterParts([stl, threeMf, bigger]);
+    expect(clusters).toHaveLength(2);
+    expect(clusters[0]?.duplicates.map((d) => d.key)).toEqual(['open.3mf']);
+    expect(
+      clusterParts([part('x', 1, 'a', [1, 2, 3], 0, 0), part('y', 2, 'b', [1, 2, 3], 0, 0)]),
+    ).toHaveLength(2);
+  });
+
   test('parts with equal bounding boxes but different volume or surface area stay separate', () => {
     const plain = part('plain', 1, 'a', [16, 35, 65], 8000);
     const reinforced = part('reinforced', 2, 'b', [16, 35, 65], 8800);

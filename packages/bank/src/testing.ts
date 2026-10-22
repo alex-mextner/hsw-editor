@@ -1,5 +1,5 @@
 import { BANK_CATEGORIES } from './categories.ts';
-import type { BankElement, BankIndex } from './schema.ts';
+import type { BankElement, BankIndex, FitsTool } from './schema.ts';
 import { TOOL_CLASSES } from './toolClasses.ts';
 
 const ZERO_HASH = '0'.repeat(64);
@@ -17,6 +17,7 @@ export interface ElementSpec {
   family?: string;
   redistributable?: boolean;
   geometryHash?: string;
+  fitsTool?: FitsTool[];
 }
 
 function hashOf(spec: ElementSpec): string {
@@ -36,7 +37,7 @@ export function makeElement(spec: ElementSpec): BankElement {
     category: spec.category,
     tags: { ru: spec.tagsRu ?? [], en: spec.tagsEn ?? [] },
     toolClasses: spec.toolClasses ?? [],
-    fitsTool: (spec.toolClasses ?? []).map((toolClass) => ({ toolClass })),
+    fitsTool: spec.fitsTool ?? (spec.toolClasses ?? []).map((toolClass) => ({ toolClass })),
     footprint: { cells: [{ dCol: 0, dRow2: 0 }], cols: 1, rows: 1 },
     bboxMm: { min: { x: -x / 2, y: -y / 2, z: 0 }, max: { x: x / 2, y: y / 2, z } },
     dimsMm: { x, y, z },

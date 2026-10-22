@@ -218,6 +218,17 @@ export interface Inventory {
   unreadable: { rel: string; error: string }[];
 }
 
+const IO_CHUNK = 32;
+
+/** `fn` over `items` with at most IO_CHUNK calls in flight; results keep the input order. */
+async function mapChunked<T, R>(items: readonly T[], fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = [];
+  for (let i = 0; i < items.length; i += IO_CHUNK) {
+    out.push(...(await Promise.all(items.slice(i, i + IO_CHUNK).map(fn))));
+  }
+  return out;
+}
+
 export async function scanSources(paths: BankPaths): Promise<Inventory> {
   const abs: string[] = [];
   for (const root of SOURCE_ROOTS) await walk(join(paths.sourcesDir, root), abs);
@@ -227,27 +238,35 @@ export async function scanSources(paths: BankPaths): Promise<Inventory> {
   const hashCache = (await loadJson<Record<string, HashCacheEntry>>(hashCachePath)) ?? {};
   const hashes = new Map<string, string>();
   let hashCacheDirty = false;
-  for (const file of abs) {
+  const hashed = await mapChunked(abs, async (file) => {
     const rel = relative(paths.sourcesDir, file);
     const info = await stat(file);
     const cached = hashCache[rel];
     if (cached && cached.size === info.size && cached.mtimeMs === info.mtimeMs) {
-      hashes.set(rel, cached.sha256);
-      continue;
+      return { rel, entry: cached, fresh: false };
     }
-    const sha256 = await sha256Of(file);
-    hashCache[rel] = { size: info.size, mtimeMs: info.mtimeMs, sha256 };
-    hashes.set(rel, sha256);
-    hashCacheDirty = true;
+    const entry = { size: info.size, mtimeMs: info.mtimeMs, sha256: await sha256Of(file) };
+    return { rel, entry, fresh: true };
+  });
+  for (const { rel, entry, fresh } of hashed) {
+    hashes.set(rel, entry.sha256);
+    if (fresh) {
+      hashCache[rel] = entry;
+      hashCacheDirty = true;
+    }
   }
   if (hashCacheDirty) await Bun.write(hashCachePath, JSON.stringify(hashCache));
 
   const probes = new Map<string, ProbeFile>();
   const missing: { path: string }[] = [];
-  for (const file of abs) {
-    const rel = relative(paths.sourcesDir, file);
-    const cached = await loadJson<ProbeFile>(probeCachePath(paths, hashes.get(rel) ?? ''));
-    if (cached) probes.set(rel, { ...cached, path: file });
+  const cachedProbes = await mapChunked(abs, async (file) => ({
+    file,
+    cached: await loadJson<ProbeFile>(
+      probeCachePath(paths, hashes.get(relative(paths.sourcesDir, file)) ?? ''),
+    ),
+  }));
+  for (const { file, cached } of cachedProbes) {
+    if (cached) probes.set(relative(paths.sourcesDir, file), { ...cached, path: file });
     else missing.push({ path: file });
   }
   if (missing.length > 0) {

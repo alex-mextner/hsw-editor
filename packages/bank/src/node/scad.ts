@@ -1,7 +1,7 @@
 /** OpenSCAD rendering of generator parts: parameter sets -> STL, cached by content hash. */
-import { mkdir, rename } from 'node:fs/promises';
+import { mkdir, rename, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import { heavyPrefix, run } from './exec.ts';
+import { heavyPrefix, run, withHeavyLock } from './exec.ts';
 import type { BankPaths } from './paths.ts';
 
 const OPENSCAD_BACKEND = 'manifold';
@@ -23,13 +23,47 @@ function hashOf(text: string): string {
   return new Bun.CryptoHasher('sha256').update(text).digest('hex');
 }
 
+const generatorHashes = new Map<string, { size: number; mtimeMs: number; hash: string }>();
+
+/** Content hash of a generator file; re-read only when its size or mtime changed (one ladder = many keys). */
+async function generatorHash(paths: BankPaths, generator: string): Promise<string> {
+  const file = generatorPath(paths, generator);
+  const info = await stat(file);
+  const cached = generatorHashes.get(file);
+  if (cached && cached.size === info.size && cached.mtimeMs === info.mtimeMs) return cached.hash;
+  const hash = hashOf(await Bun.file(file).text());
+  generatorHashes.set(file, { size: info.size, mtimeMs: info.mtimeMs, hash });
+  return hash;
+}
+
 /** Cache key of a render: generator source, part, family version and the sorted values. */
 export async function scadKey(paths: BankPaths, job: ScadJob): Promise<string> {
-  const source = await Bun.file(generatorPath(paths, job.generator)).text();
   const values = Object.entries(job.values).sort(([a], [b]) => a.localeCompare(b));
   return hashOf(
-    JSON.stringify([hashOf(source), job.part, job.version, values, OPENSCAD_BACKEND]),
+    JSON.stringify([
+      await generatorHash(paths, job.generator),
+      job.part,
+      job.version,
+      values,
+      OPENSCAD_BACKEND,
+    ]),
   ).slice(0, 32);
+}
+
+/**
+ * SHA-256 of a rendered STL, remembered in a sidecar next to it: the STL is immutable for its key,
+ * so an unchanged rerun never re-reads the mesh.
+ */
+export async function stlHash(stl: string): Promise<string> {
+  const sidecar = Bun.file(`${stl}.sha256`);
+  if (await sidecar.exists()) return (await sidecar.text()).trim();
+  const hash = new Bun.CryptoHasher('sha256')
+    .update(new Uint8Array(await Bun.file(stl).arrayBuffer()))
+    .digest('hex');
+  const tmp = `${stl}.sha256.${process.pid}.${crypto.randomUUID()}.tmp`;
+  await Bun.write(tmp, hash);
+  await rename(tmp, `${stl}.sha256`);
+  return hash;
 }
 
 export function scadStlPath(paths: BankPaths, key: string): string {
@@ -94,6 +128,9 @@ export async function renderMissing(paths: BankPaths, jobs: ScadJob[]): Promise<
       stl.set(key, out);
     }
   };
-  await Promise.all(Array.from({ length: PARALLEL_RENDERS }, worker));
+  if (queue.length > 0) {
+    // one lock acquisition for the whole pool: the workers stay parallel
+    await withHeavyLock(() => Promise.all(Array.from({ length: PARALLEL_RENDERS }, worker)));
+  }
   return { stl, failed };
 }

@@ -15,11 +15,12 @@ import {
   BANK_SCHEMA_VERSION,
   type BankElement,
   type BankIndex,
-  type CellOffset,
   type FitsTool,
   type License,
   type Provenance,
 } from '../schema.ts';
+import { categoryVocabulary } from '../categories.ts';
+import { toolClassVocabulary } from '../toolClasses.ts';
 import { buildSearchIndex, serializeSearchIndex } from '../search.ts';
 import { TOOL_CLASSES } from '../toolClasses.ts';
 import { validateBankIndex } from '../validate.ts';
@@ -29,23 +30,14 @@ import { runMeshTool } from './exec.ts';
 import { normalizeLicense } from './license.ts';
 import type { AnchorMode, BuildItem, BuildResult, Orientation } from './meshTool.ts';
 import type { BankPaths } from './paths.ts';
-import { renderMissing, scadKey, type ScadJob } from './scad.ts';
+import { buildCodeHash, codeFingerprint } from './fingerprint.ts';
+import { artefactInputs, geometryOf } from './geometry.ts';
+import { collectVariantGarbage } from './variant.ts';
+import { renderMissing, scadKey, stlHash, type ScadJob } from './scad.ts';
 import { MESH_TOOL_VERSION, scanSources, type SourceFile } from './sources.ts';
 
-/** Thickness of the wall-facing slab whose silhouette defines the footprint. */
-const BACK_SLAB_MM = 1;
 const BUILD_BATCH = 24;
 const GENERATOR_ORIENT: Orientation = { out: '+z', up: '+y' };
-
-const CATEGORY_COLORS: Record<string, string> = {
-  holders: '#4f7fb0',
-  hooks: '#c27a3a',
-  bins: '#4f9a6b',
-  shelves: '#8a6bb0',
-  inserts: '#7d8793',
-  accessories: '#3f9aa3',
-  panels: '#a8b0ba',
-};
 
 export interface IngestOptions {
   /** Rebuild every element even when cached. */
@@ -128,42 +120,6 @@ function clusterLicense(members: PartCandidate[]): License {
   return (restricted ?? members[0])!.file.origin.license;
 }
 
-/** Hash of the given files/directories (non-recursive, test files excluded). */
-async function codeFingerprint(paths: BankPaths, roots: string[]): Promise<string> {
-  const hasher = new Bun.CryptoHasher('sha256');
-  for (const root of roots) {
-    const target = join(paths.repoRoot, root);
-    const info = await stat(target).catch(() => null);
-    if (info === null) continue;
-    const names = info.isDirectory() ? (await readdir(target)).sort() : [''];
-    for (const name of names) {
-      if (name !== '' && (!/\.(ts|py|scad|json|toml)$/.test(name) || name.endsWith('.test.ts')))
-        continue;
-      hasher.update(`${root}/${name}\0`);
-      hasher.update(await Bun.file(join(target, name)).arrayBuffer());
-    }
-  }
-  return hasher.digest('hex');
-}
-
-function toCells(pairs: [number, number][]): CellOffset[] {
-  return pairs.map(([dCol, dRow2]) => ({ dCol, dRow2 }));
-}
-
-function footprintOf(cells: CellOffset[]): BankElement['footprint'] {
-  const cols = cells.map((c) => c.dCol);
-  const rows2 = cells.map((c) => c.dRow2);
-  return {
-    cells,
-    cols: Math.max(...cols) - Math.min(...cols) + 1,
-    rows: Math.ceil((Math.max(...rows2) - Math.min(...rows2)) / 2) + 1,
-  };
-}
-
-function round3(n: number): number {
-  return Math.round(n * 1000) / 1000;
-}
-
 async function loadFamilies(paths: BankPaths): Promise<{ spec: FamilySpec; rungs: Rung[] }[]> {
   const file = Bun.file(join(paths.generatorsDir, 'families.json'));
   if (!(await file.exists())) return [];
@@ -175,12 +131,9 @@ export async function ingest(paths: BankPaths, options: IngestOptions = {}): Pro
   const log = options.log ?? ((line: string) => console.info(line));
   await mkdir(paths.cacheDir, { recursive: true });
   // Per-element artefacts depend only on the mesh tool and the compressor; the fingerprint on everything.
-  const buildCode = await codeFingerprint(paths, [
-    'scripts/bank/py',
-    'packages/bank/src/node/compress.ts',
-  ]);
+  const buildCode = await buildCodeHash(paths);
   const code = await codeFingerprint(paths, [
-    'packages/bank/src/node',
+    'packages/bank/src',
     'packages/bank/curation',
     'scripts/bank/py',
   ]);
@@ -287,7 +240,17 @@ export async function ingest(paths: BankPaths, options: IngestOptions = {}): Pro
     }));
     plans.push({
       id: entry.id,
-      key: sha256(JSON.stringify(['src', buildCode, rep.file.sha256, rep.partId, orient, anchor])),
+      key: sha256(
+        JSON.stringify([
+          'src',
+          buildCode,
+          rep.file.sha256,
+          rep.partId,
+          orient,
+          anchor,
+          artefactInputs(entry.category),
+        ]),
+      ),
       category: entry.category,
       name: { ru: entry.ru, en: entry.en },
       tags: { ru: entry.tagsRu, en: entry.tagsEn },
@@ -372,14 +335,19 @@ export async function ingest(paths: BankPaths, options: IngestOptions = {}): Pro
         });
         continue;
       }
-      plan.provenance.geometryHash = sha256(
-        await Bun.file(stl)
-          .arrayBuffer()
-          .then((b) => new Uint8Array(b)),
-      );
+      plan.provenance.geometryHash = await stlHash(stl);
       plans.push({
         ...plan,
-        key: sha256(JSON.stringify(['gen', buildCode, scadHash, GENERATOR_ORIENT, anchor])),
+        key: sha256(
+          JSON.stringify([
+            'gen',
+            buildCode,
+            scadHash,
+            GENERATOR_ORIENT,
+            anchor,
+            artefactInputs(plan.category),
+          ]),
+        ),
         build: { path: stl, partId: '0', orient: GENERATOR_ORIENT, anchor },
       });
     }
@@ -427,11 +395,9 @@ export async function ingest(paths: BankPaths, options: IngestOptions = {}): Pro
       partId: p.build.partId,
       orient: p.build.orient,
       anchor: p.build.anchor,
-      backSlabMm: BACK_SLAB_MM,
       glb: join(dirOf(p), 'raw.glb'),
       thumbnail: join(dirOf(p), 'thumb.webp'),
-      views: ['iso'],
-      color: CATEGORY_COLORS[p.category.split('/')[0] ?? ''] ?? '#4f7fb0',
+      ...artefactInputs(p.category),
     }));
     const result = await runMeshTool<BuildResult>(
       paths,
@@ -492,14 +458,7 @@ export async function ingest(paths: BankPaths, options: IngestOptions = {}): Pro
     const lod1 =
       build.trianglesLod1 === build.trianglesLod0 ? lod0 : await asset('glb', build.lod1, 'glb');
     const thumbnail = await asset('thumb', build.thumbnail, 'webp');
-    const bbox = build.result.bboxMm!;
-    const footprintCells = toCells(build.result.cells ?? [[0, 0]]);
-    const mountingCells =
-      plan.mountKind === 'none'
-        ? []
-        : plan.mountKind === 'm3-screw' && (build.result.mountingCells?.length ?? 0) > 0
-          ? toCells(build.result.mountingCells ?? [])
-          : footprintCells;
+    const geometry = geometryOf(build.result, plan.mountKind);
     elements.push({
       id: plan.id,
       name: plan.name,
@@ -507,21 +466,10 @@ export async function ingest(paths: BankPaths, options: IngestOptions = {}): Pro
       tags: plan.tags,
       toolClasses: plan.toolClasses,
       fitsTool: plan.fitsTool,
-      footprint: footprintOf(footprintCells),
-      bboxMm: {
-        min: {
-          x: round3(bbox.min[0]),
-          y: round3(bbox.min[1]),
-          z: Math.max(0, round3(bbox.min[2])),
-        },
-        max: { x: round3(bbox.max[0]), y: round3(bbox.max[1]), z: round3(bbox.max[2]) },
-      },
-      dimsMm: {
-        x: round3(bbox.max[0] - bbox.min[0]),
-        y: round3(bbox.max[1] - bbox.min[1]),
-        z: round3(bbox.max[2] - Math.max(0, bbox.min[2])),
-      },
-      mounting: { kind: plan.mountKind, cells: mountingCells },
+      footprint: geometry.footprint,
+      bboxMm: geometry.bboxMm,
+      dimsMm: geometry.dimsMm,
+      mounting: { kind: plan.mountKind, cells: geometry.mountingCells },
       ...(plan.params ? { params: plan.params } : {}),
       ...(plan.family ? { family: plan.family } : {}),
       ...(plan.variantLabel ? { variantLabel: plan.variantLabel } : {}),
@@ -561,7 +509,13 @@ export async function ingest(paths: BankPaths, options: IngestOptions = {}): Pro
   await Bun.write(join(paths.bankDir, 'index.json'), JSON.stringify(index));
   await Bun.write(
     join(paths.bankDir, 'search-index.json'),
-    serializeSearchIndex(buildSearchIndex(elements), index.contentHash),
+    serializeSearchIndex(
+      buildSearchIndex(elements, {
+        categories: categoryVocabulary(index.categories),
+        toolClasses: toolClassVocabulary(index.toolClasses),
+      }),
+      index.contentHash,
+    ),
   );
   await collectGarbage(paths, referenced);
 
@@ -580,7 +534,7 @@ export async function ingest(paths: BankPaths, options: IngestOptions = {}): Pro
   return report;
 }
 
-/** Removes asset files no longer referenced by the index (variants are managed separately). */
+/** Removes asset files no longer referenced by the index, and stale on-demand variants. */
 async function collectGarbage(paths: BankPaths, referenced: Set<string>): Promise<void> {
   for (const kind of ['glb', 'thumb'] as const) {
     const dir = join(paths.bankDir, kind);
@@ -588,6 +542,7 @@ async function collectGarbage(paths: BankPaths, referenced: Set<string>): Promis
       if (!referenced.has(`${kind}/${name}`)) await rm(join(dir, name));
     }
   }
+  await collectVariantGarbage(paths);
 }
 
 export function reportMarkdown(report: IngestReport): string {

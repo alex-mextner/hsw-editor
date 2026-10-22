@@ -29,10 +29,13 @@ export function sameShape(a: Candidate['part'], b: Candidate['part']): boolean {
   for (let i = 0; i < 3; i++) {
     if (Math.abs((a.sortedDimsMm[i] ?? 0) - (b.sortedDimsMm[i] ?? 0)) > DIM_TOL_MM) return false;
   }
-  const larger = Math.max(a.volumeMm3, b.volumeMm3);
-  if (larger === 0) return false;
-  if (Math.abs(a.volumeMm3 - b.volumeMm3) / larger > VOLUME_TOL) return false;
-  return Math.abs(a.areaMm2 - b.areaMm2) / Math.max(a.areaMm2, b.areaMm2) <= AREA_TOL;
+  // Non-watertight parts report volume 0 on both sides: dims and surface area then decide.
+  const largerVolume = Math.max(a.volumeMm3, b.volumeMm3);
+  if (largerVolume > 0 && Math.abs(a.volumeMm3 - b.volumeMm3) / largerVolume > VOLUME_TOL)
+    return false;
+  const largerArea = Math.max(a.areaMm2, b.areaMm2);
+  if (largerArea === 0) return false;
+  return Math.abs(a.areaMm2 - b.areaMm2) / largerArea <= AREA_TOL;
 }
 
 export function clusterParts<T extends Candidate>(candidates: readonly T[]): Cluster<T>[] {
@@ -41,9 +44,8 @@ export function clusterParts<T extends Candidate>(candidates: readonly T[]): Clu
   );
   const clusters: Cluster<T>[] = [];
   for (const candidate of sorted) {
-    const home = clusters.find((c) =>
-      [c.representative, ...c.duplicates].some((member) => sameShape(member.part, candidate.part)),
-    );
+    // against the representative only: matching any member would chain tolerances and fold mirror twins
+    const home = clusters.find((c) => sameShape(c.representative.part, candidate.part));
     if (home) home.duplicates.push(candidate);
     else clusters.push({ representative: candidate, duplicates: [] });
   }

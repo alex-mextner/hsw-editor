@@ -1,11 +1,11 @@
 import MiniSearch from 'minisearch';
 import { BANK_CATEGORIES } from './categories.ts';
-import { getToolClass } from './toolClasses.ts';
-import type { BankElement } from './schema.ts';
+import type { BankCategory, BankElement, ToolClass } from './schema.ts';
+import { TOOL_CLASSES } from './toolClasses.ts';
 import { stemTerm, tokenize } from './text.ts';
 
 /** Bumped whenever the document shape or tokenisation changes; stored in the serialised index. */
-export const SEARCH_INDEX_VERSION = 2;
+export const SEARCH_INDEX_VERSION = 3;
 
 interface SearchDoc {
   id: string;
@@ -27,12 +27,25 @@ const BOOST: Record<string, number> = {
   extra: 0.6,
 };
 
-const CATEGORY_NAMES = new Map(BANK_CATEGORIES.map((c) => [c.id, `${c.name.ru} ${c.name.en}`]));
+/** Vocabulary the documents are expanded with; defaults to the built-in tree and tool classes. */
+export interface SearchVocabulary {
+  categories: readonly BankCategory[];
+  toolClasses: readonly ToolClass[];
+}
 
-function toDoc(element: BankElement): SearchDoc {
+const BUILT_IN_VOCABULARY: SearchVocabulary = {
+  categories: BANK_CATEGORIES,
+  toolClasses: TOOL_CLASSES,
+};
+
+function toDoc(
+  element: BankElement,
+  categoryNames: ReadonlyMap<string, string>,
+  toolClasses: ReadonlyMap<string, ToolClass>,
+): SearchDoc {
   const tools = element.toolClasses
     .map((id) => {
-      const cls = getToolClass(id);
+      const cls = toolClasses.get(id);
       return cls
         ? [cls.name.ru, cls.name.en, ...cls.synonyms.ru, ...cls.synonyms.en].join(' ')
         : id;
@@ -44,7 +57,7 @@ function toDoc(element: BankElement): SearchDoc {
     nameEn: element.name.en,
     tags: [...element.tags.ru, ...element.tags.en].join(' '),
     tools,
-    category: CATEGORY_NAMES.get(element.category) ?? element.category,
+    category: categoryNames.get(element.category) ?? element.category,
     extra: [
       element.description?.ru,
       element.description?.en,
@@ -63,9 +76,16 @@ const SEARCH_OPTIONS = {
   processTerm: (term: string): string | null => stemTerm(term),
 };
 
-export function buildSearchIndex(elements: readonly BankElement[]): MiniSearch<SearchDoc> {
+export function buildSearchIndex(
+  elements: readonly BankElement[],
+  vocabulary: SearchVocabulary = BUILT_IN_VOCABULARY,
+): MiniSearch<SearchDoc> {
+  const categoryNames = new Map(
+    vocabulary.categories.map((c) => [c.id, `${c.name.ru} ${c.name.en}`]),
+  );
+  const toolClasses = new Map(vocabulary.toolClasses.map((t) => [t.id, t]));
   const index = new MiniSearch<SearchDoc>(SEARCH_OPTIONS);
-  index.addAll(elements.map(toDoc));
+  index.addAll(elements.map((e) => toDoc(e, categoryNames, toolClasses)));
   return index;
 }
 

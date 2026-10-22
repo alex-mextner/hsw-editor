@@ -60,14 +60,18 @@ stemmer (`text.ts`): AND over the query words first, OR + fuzzy as fallback.
 | `GET /api/bank/elements/:id` | one `BankElement`, 404 if unknown. |
 | `GET /api/bank/search?q=&category=&tool=&mounting=&limit=` | `{ results: [{ id, score }] }` ranked. |
 | `GET /bank/assets/<glb\|thumb\|variant>/<16 hex>.<glb\|webp>` | Asset bytes, `Cache-Control: public, max-age=31536000, immutable` (names are content hashes → safe for the service worker). |
-| `POST /api/bank/elements/:id/variant` body `{ params: { key: number } }` | `VariantResponse` `{ glbUrl, bboxMm, dimsMm, footprint, paramHash, params, cached }`. 400 invalid, 404 unknown element, 409 element has no generator, 500 render/build failed, 503 OpenSCAD unavailable. Values are clamped to the element's `params` ranges. Results are cached by parameter hash. |
+| `POST /api/bank/elements/:id/variant` body `{ params: { key: number } }` | `VariantResponse` `{ glbUrl, bboxMm, dimsMm, footprint, mountingCells, paramHash, params, cached }`. 400 invalid, 404 unknown element, 409 element has no generator, 500 render/build failed, 503 OpenSCAD unavailable. Values are clamped to the element's `params` ranges. Results are cached by a hash of the parameters plus the mesh-tool/compressor code, at most 2 variant builds run at once, and `variant/` files older than 14 days (or beyond 256 MiB, oldest first) are removed by `bank:ingest`. |
 
-Asset URLs are `/bank/assets/` + `asset.path` from the index.
+Asset URLs are `/bank/assets/` + `asset.path` from the index. Read routes answer only `GET`/`HEAD` and the variant route
+only `POST` (otherwise 405 with `Allow`); the asset extension must match its kind (`.glb` under `glb/` and `variant/`,
+`.webp` under `thumb/`).
 
 Mounting in the server: `const bankHandler = createBankHandler({ roots: [paths.bankDir, paths.seedDir], paths: bankPaths() })`
 and, first thing in `fetch`, `const response = await bankHandler(request); if (response) return response;` (it returns
 `null` for URLs that are not bank routes). It serves the built bank from `~/.local/share/hsw-editor/bank` and falls back
-to the committed seed, reloads when `index.json` changes, and never needs a restart after `bank:ingest`.
+to the committed seed, reloads when the `index.json` of any root changes (including a built bank appearing after the seed
+was loaded), keeps serving the bank in use when a new index cannot be read (an ingest mid-write), and never needs a restart
+after `bank:ingest`.
 
 ## Ingestion pipeline (`bun run bank:ingest`)
 
@@ -87,11 +91,16 @@ frame, anchor, footprint cells, smooth normals, thumbnail rendered headlessly wi
 content-hashed assets + `index.json` + `search-index.json` + `report.json` in `~/.local/share/hsw-editor/bank`.
 
 - Idempotent/incremental: per-element artefacts are cached under `~/.cache/hsw-editor/bank-build/elements/<key>` where the
-  key covers the source hash, part, orientation and the mesh-tool/compressor code. A fingerprint over all inputs makes an
-  unchanged rerun a no-op that only stats the source files.
+  key covers the source hash, part, orientation, the mesh-tool/compressor code and the per-element build inputs (colour,
+  back-slab thickness, views). A fingerprint over all inputs (`packages/bank/src` recursively, curation, generators,
+  `scripts/bank/py`, the element keys) makes an unchanged rerun a no-op that only stats the source files; the hash of every
+  rendered STL is remembered next to it (`<key>.stl.sha256`), so a rerun does not re-read the meshes.
 - Python (trimesh, shapely, pyrender, cascadio for STEP) lives in `scripts/bank/py`, environment in `~/.cache/hsw-editor/bank-venv`
   (`uv sync` runs automatically). Child processes run in a `systemd-run --user --scope` with memory/CPU caps; set
-  `HSW_BANK_LOCK=1` to additionally serialise behind `/tmp/3d-cli-heavy.lock`, `HSW_BANK_NO_WRAPPER=1` to disable the scope.
+  `HSW_BANK_NO_WRAPPER=1` to disable the scope. `HSW_BANK_LOCK=1` additionally holds `/tmp/3d-cli-heavy.lock`: once around
+  the whole OpenSCAD render pool (its 4 workers stay parallel) and around each mesh-tool run, and children get
+  `HSW_HEAVY_LOCK_HELD=1` so they never queue on it again. If the whole pipeline is already started under
+  `flock /tmp/3d-cli-heavy.lock ...`, export `HSW_HEAVY_LOCK_HELD=1` (it is then not taken a second time, which would deadlock).
 - The report lists ingested, skipped (deliberate, with reason), failed, uncurated geometries and curation orphans. A
   geometry without a curation entry is reported and not ingested; nothing is silently dropped.
 - Orientation of source parts is guessed (`provenance.orientation = 'auto'`): a hex plug end or the largest flat face on the
@@ -101,7 +110,7 @@ content-hashed assets + `index.json` + `search-index.json` + `report.json` in `~
 ### Licence policy
 
 Only permissive terms may be committed to this MIT repo: the project's own work (`MIT`) and original CC-BY works.
-Everything else (CC-BY-NC, CC-BY-NC-SA, Standard Digital File License, unknown, and remixes whose upstream terms are not
+Everything else (CC-BY-NC, CC-BY-NC-SA, CC-BY-SA, CC-BY-ND, Standard Digital File License, unknown, bare "Attribution" wording with any NonCommercial/ShareAlike/NoDerivatives qualifier, and remixes whose upstream terms are not
 verified) is indexed with `license.redistributable = false`, kept out of `packages/bank/seed`, and ingested locally from
 the HSW source tree on the machine that has it (`bank:ingest`). The attribution and source URL of every element stay in the
 index. A duplicate cluster is as restricted as its most restricted member.
@@ -109,7 +118,9 @@ index. A duplicate cluster is as restricted as its most restricted member.
 ### Seed
 
 `bun run bank:ingest --seed` copies the redistributable subset (index, search index, hashed GLB/thumbnails,
-`ATTRIBUTION.md`) to `packages/bank/seed` and fails above 5 MiB. A fresh clone serves it without any source files.
+`ATTRIBUTION.md`) to `packages/bank/seed` and fails above 5 MiB. The budget counts the UTF-8 bytes of every file in the
+seed (assets, JSON, attribution); the seed is built in a temporary directory and swapped in only when it fits, so a failed
+export leaves the committed seed untouched. A fresh clone serves it without any source files.
 
 ### Parametric families and variants
 

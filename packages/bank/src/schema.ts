@@ -252,6 +252,8 @@ export const VariantResponseSchema = z.object({
   bboxMm: BboxMmSchema,
   dimsMm: Vec3Schema,
   footprint: FootprintSchema,
+  /** Cells that carry the mounting hardware at the new dimensions. */
+  mountingCells: z.array(CellOffsetSchema),
   paramHash: z.string(),
   /** Values after clamping to the element's ParamDef ranges. */
   params: z.record(z.string(), z.number()),

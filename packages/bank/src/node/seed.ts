@@ -2,9 +2,11 @@
  * The committed seed: the redistributable subset of the built bank (project originals, generated
  * families, CC-BY sources) so that a fresh clone has a working bank without the HSW source tree.
  */
-import { copyFile, mkdir, rm } from 'node:fs/promises';
+import { copyFile, mkdir, rename, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BankIndexSchema, type BankElement, type BankIndex } from '../schema.ts';
+import { categoryVocabulary } from '../categories.ts';
+import { toolClassVocabulary } from '../toolClasses.ts';
 import { buildSearchIndex, serializeSearchIndex } from '../search.ts';
 import { validateBankIndex } from '../validate.ts';
 import type { BankPaths } from './paths.ts';
@@ -123,26 +125,53 @@ export async function exportSeed(paths: BankPaths): Promise<SeedResult> {
   const validation = validateBankIndex(index);
   if (!validation.ok) throw new Error(`seed index invalid:\n${validation.errors.join('\n')}`);
 
-  await rm(paths.seedDir, { recursive: true, force: true });
-  await mkdir(join(paths.seedDir, 'glb'), { recursive: true });
-  await mkdir(join(paths.seedDir, 'thumb'), { recursive: true });
-  const assets = new Set<string>();
-  for (const e of keep) {
-    for (const a of [e.assets.lod0, e.assets.lod1, e.assets.thumbnail]) assets.add(a.path);
+  // Build next to the seed and swap in only when within budget: a failed export never touches the committed seed.
+  const staging = `${paths.seedDir}.tmp-${process.pid}-${crypto.randomUUID()}`;
+  try {
+    await mkdir(join(staging, 'glb'), { recursive: true });
+    await mkdir(join(staging, 'thumb'), { recursive: true });
+    const assets = new Set<string>();
+    for (const e of keep) {
+      for (const a of [e.assets.lod0, e.assets.lod1, e.assets.thumbnail]) assets.add(a.path);
+    }
+    let bytes = 0;
+    for (const path of assets) {
+      await copyFile(join(paths.bankDir, path), join(staging, path));
+      bytes += Bun.file(join(staging, path)).size;
+    }
+    const files = {
+      'index.json': JSON.stringify(index),
+      'search-index.json': serializeSearchIndex(
+        buildSearchIndex(keep, {
+          categories: categoryVocabulary(index.categories),
+          toolClasses: toolClassVocabulary(index.toolClasses),
+        }),
+        index.contentHash,
+      ),
+      'ATTRIBUTION.md': attributionMarkdown(keep),
+    };
+    for (const [name, text] of Object.entries(files)) {
+      await Bun.write(join(staging, name), text);
+      bytes += Buffer.byteLength(text, 'utf8');
+    }
+    if (bytes > SEED_BUDGET_BYTES) {
+      throw new Error(`seed is ${bytes} bytes, over the ${SEED_BUDGET_BYTES} byte budget`);
+    }
+    // never a moment without a seed: park the old one, move the new one in, drop the old one
+    const previous = `${staging}.previous`;
+    const hadSeed = await rename(paths.seedDir, previous).then(
+      () => true,
+      () => false,
+    );
+    try {
+      await rename(staging, paths.seedDir);
+    } catch (error) {
+      if (hadSeed) await rename(previous, paths.seedDir);
+      throw error;
+    }
+    await rm(previous, { recursive: true, force: true });
+    return { elements: keep.length, bytes, excluded: built.elements.length - keep.length };
+  } finally {
+    await rm(staging, { recursive: true, force: true });
   }
-  let bytes = 0;
-  for (const path of assets) {
-    await copyFile(join(paths.bankDir, path), join(paths.seedDir, path));
-    bytes += Bun.file(join(paths.seedDir, path)).size;
-  }
-  const indexJson = JSON.stringify(index);
-  const searchJson = serializeSearchIndex(buildSearchIndex(keep), index.contentHash);
-  await Bun.write(join(paths.seedDir, 'index.json'), indexJson);
-  await Bun.write(join(paths.seedDir, 'search-index.json'), searchJson);
-  await Bun.write(join(paths.seedDir, 'ATTRIBUTION.md'), attributionMarkdown(keep));
-  bytes += indexJson.length + searchJson.length;
-  if (bytes > SEED_BUDGET_BYTES) {
-    throw new Error(`seed is ${bytes} bytes, over the ${SEED_BUDGET_BYTES} byte budget`);
-  }
-  return { elements: keep.length, bytes, excluded: built.elements.length - keep.length };
 }

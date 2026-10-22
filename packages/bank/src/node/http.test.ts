@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, utimes } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { makeElement, makeIndex } from '../testing.ts';
@@ -84,5 +84,106 @@ describe('bank HTTP handler', () => {
       (await post('/api/bank/elements/screwdriver-clip/variant', { nope: true }))?.status,
     ).toBe(400);
     expect((await post('/api/bank/elements/missing/variant', { params: {} }))?.status).toBe(404);
+  });
+});
+
+describe('bank HTTP handler robustness', () => {
+  const sample = (id: string, contentHash: string) => ({
+    ...makeIndex([
+      makeElement({ id, ru: 'Крюк', en: 'Hook', category: 'hooks', toolClasses: ['screwdriver'] }),
+    ]),
+    contentHash,
+  });
+  const write = async (dir: string, body: string, seconds: number): Promise<void> => {
+    await Bun.write(join(dir, 'index.json'), body);
+    await utimes(join(dir, 'index.json'), seconds, seconds);
+  };
+
+  test('read routes are GET/HEAD only, the variant route is POST only, with Allow headers', async () => {
+    const del = await handler(
+      new Request('http://localhost/api/bank/elements/screwdriver-clip', { method: 'DELETE' }),
+    );
+    expect(del?.status).toBe(405);
+    expect(del?.headers.get('allow')).toBe('GET, HEAD');
+    const put = await handler(
+      new Request('http://localhost/api/bank/search?q=a', { method: 'PUT' }),
+    );
+    expect(put?.status).toBe(405);
+    const getVariant = await get('/api/bank/elements/screwdriver-clip/variant');
+    expect(getVariant?.status).toBe(405);
+    expect(getVariant?.headers.get('allow')).toBe('POST');
+    expect(
+      (await handler(new Request('http://localhost/api/bank/index', { method: 'HEAD' })))?.status,
+    ).toBe(200);
+  });
+
+  test('the asset extension must match its kind', async () => {
+    expect((await get('/bank/assets/thumb/0000000000000000.glb'))?.status).toBe(404);
+    expect((await get('/bank/assets/variant/0000000000000000.webp'))?.status).toBe(404);
+    expect((await get('/bank/assets/glb/0000000000000000.glb'))?.status).toBe(200);
+  });
+
+  test('a built bank that appears after the seed was loaded replaces it without a restart', async () => {
+    const seed = await mkdtemp(join(tmpdir(), 'bank-seed-'));
+    const built = await mkdtemp(join(tmpdir(), 'bank-built-'));
+    try {
+      await write(seed, JSON.stringify(sample('seed-hook', 'a'.repeat(64))), 1000);
+      const h = createBankHandler({
+        roots: [built, seed],
+        paths: bankPaths({ HSW_BANK_DIR: built }),
+      });
+      const ids = async (): Promise<string[]> => {
+        const res = await h(new Request('http://localhost/api/bank/index'));
+        const body = (await res?.json()) as { elements: { id: string }[] };
+        return body.elements.map((e) => e.id);
+      };
+      expect(await ids()).toEqual(['seed-hook']);
+      await write(built, JSON.stringify(sample('built-hook', 'b'.repeat(64))), 2000);
+      expect(await ids()).toEqual(['built-hook']);
+    } finally {
+      await rm(seed, { recursive: true, force: true });
+      await rm(built, { recursive: true, force: true });
+    }
+  });
+
+  test('a broken built index keeps serving the built bank, not the seed', async () => {
+    const seed = await mkdtemp(join(tmpdir(), 'bank-seed-'));
+    const built = await mkdtemp(join(tmpdir(), 'bank-built-'));
+    try {
+      await write(seed, JSON.stringify(sample('seed-hook', 'a'.repeat(64))), 1000);
+      await write(built, JSON.stringify(sample('built-hook', 'b'.repeat(64))), 2000);
+      const h = createBankHandler({
+        roots: [built, seed],
+        paths: bankPaths({ HSW_BANK_DIR: built }),
+      });
+      const get = async (id: string): Promise<number | undefined> =>
+        (await h(new Request(`http://localhost/api/bank/elements/${id}`)))?.status;
+      expect(await get('built-hook')).toBe(200);
+      await write(built, '{"version": 1, "elem', 3000);
+      expect(await get('built-hook')).toBe(200);
+      expect(await get('seed-hook')).toBe(404);
+    } finally {
+      await rm(seed, { recursive: true, force: true });
+      await rm(built, { recursive: true, force: true });
+    }
+  });
+
+  test('an index that cannot be parsed keeps the bank in use, and the next valid write is picked up', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'bank-torn-'));
+    try {
+      await write(dir, JSON.stringify(sample('first', 'a'.repeat(64))), 1000);
+      const h = createBankHandler({ roots: [dir], paths: bankPaths({ HSW_BANK_DIR: dir }) });
+      const status = async (): Promise<[number | undefined, string]> => {
+        const res = await h(new Request('http://localhost/api/bank/elements/first'));
+        return [res?.status, res ? await res.text() : ''];
+      };
+      expect((await status())[0]).toBe(200);
+      await write(dir, '{"version": 1, "elem', 2000);
+      expect((await status())[0]).toBe(200);
+      await write(dir, JSON.stringify(sample('second', 'b'.repeat(64))), 3000);
+      expect((await h(new Request('http://localhost/api/bank/elements/second')))?.status).toBe(200);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
