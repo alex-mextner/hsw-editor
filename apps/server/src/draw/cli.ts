@@ -20,6 +20,7 @@ import {
 } from '@hsw-editor/draw';
 import { probeChatgptLogin } from './backends/chatgpt-browser.ts';
 import { loginBrowser, stopBrowser } from './browser-process.ts';
+import { acquireOwnerLock } from './owner-lock.ts';
 import { createDrawRuntime } from './runtime.ts';
 import { getBackendStatuses } from './status.ts';
 
@@ -99,7 +100,12 @@ async function login(target: string | undefined): Promise<number> {
     `Chrome opens on ${display} with the DEDICATED profile ${runtime.paths.chatgptProfileDir}.`,
   );
   console.log('Log in to chatgpt.com (solve any challenge yourself), then close the window.');
-  await loginBrowser(runtime.chatgpt.browser, display);
+  const lock = await acquireOwnerLock(runtime.chatgpt.ownerLockFile, 'dedicated ChatGPT browser');
+  try {
+    await loginBrowser(runtime.chatgpt.browser, display);
+  } finally {
+    await lock.release();
+  }
   console.log('Window closed; checking the login...');
   const result = await probeChatgptLogin(runtime.chatgpt);
   if (result.loggedIn) {

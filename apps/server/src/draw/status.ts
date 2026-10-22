@@ -124,6 +124,7 @@ async function chatgptStatus(
   let probed = false;
   if (options.probe && existsSync(join(config.browser.profileDir, 'Default'))) {
     try {
+      // Fails fast with 'already in use' when a draw (or another probe) owns the browser.
       const result = await probeChatgptLogin(config);
       probed = true;
       await runtime.store.update('chatgpt-browser', (g) =>

@@ -66,7 +66,15 @@ export class Cdp {
     const opened = Promise.withResolvers<void>();
     ws.onopen = () => opened.resolve();
     ws.onerror = () => opened.reject(new Error('cdp: websocket error'));
-    await opened.promise;
+    const timer = setTimeout(() => opened.reject(new Error('cdp: websocket open timed out')), 5000);
+    try {
+      await opened.promise;
+    } catch (error) {
+      ws.close();
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
     return new Cdp(ws);
   }
 

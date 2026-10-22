@@ -42,6 +42,9 @@ function isToolEnd(value: unknown): value is ToolEnd {
   );
 }
 
+/** A second omp run needs at least this much of the request budget left to be worth spawning. */
+const MIN_RETRY_BUDGET_MS = 15_000;
+
 export const OMP_LOGIN_STEPS = [
   'omp login openai-codex   # ChatGPT Plus/Pro (headless: openai-codex-device)',
   'or export one of OPENROUTER_API_KEY / GEMINI_API_KEY / XAI_API_KEY',
@@ -112,7 +115,11 @@ export class OmpBackend implements DrawBackend {
       // The driver model occasionally answers in prose instead of calling the tool; one retry.
       let end: ToolEnd | undefined;
       for (let attempt = 0; attempt < 2 && !end; attempt++) {
+        if (attempt > 0 && deadline - Date.now() < MIN_RETRY_BUDGET_MS) break;
         end = await this.runOnce(req, overlay, instruction, signal, deadline);
+      }
+      if (!end && Date.now() >= deadline - 1000) {
+        throw new DrawError('timeout', 'omp did not finish generate_image before the deadline');
       }
       if (!end) {
         throw new DrawError(

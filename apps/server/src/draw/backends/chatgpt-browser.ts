@@ -164,6 +164,7 @@ export class ChatgptBrowserBackend implements DrawBackend {
     let weStartedBrowser = false;
     let cdp: Cdp | undefined;
     let page: Page | undefined;
+    let closeOnAbort: (() => void) | undefined;
     try {
       weStartedBrowser = (await startBrowser(this.config.browser)).started;
       cdp = await Cdp.connect(this.config.browser.cdpPort).catch(() => {
@@ -176,7 +177,8 @@ export class ChatgptBrowserBackend implements DrawBackend {
         );
       });
       const session = cdp;
-      signal.addEventListener('abort', () => session.close(), { once: true });
+      closeOnAbort = () => session.close();
+      signal.addEventListener('abort', closeOnAbort, { once: true });
       page = await cdp.openPage('about:blank');
       const images: DrawImage[] = [];
       let conversationUrl = '';
@@ -241,6 +243,7 @@ export class ChatgptBrowserBackend implements DrawBackend {
         meta: { elapsedMs: Date.now() - started, conversationUrl },
       };
     } finally {
+      if (closeOnAbort) signal.removeEventListener('abort', closeOnAbort);
       await page?.close().catch(() => undefined);
       cdp?.close();
       if (weStartedBrowser && this.config.stopWhenDone) await stopBrowser(this.config.browser);

@@ -36,3 +36,13 @@ test('release never deletes a lock somebody else holds now', async () => {
   await lock.release();
   expect(await Bun.file(file).text()).toBe('999999:someone-else');
 });
+
+test('a lock held by this very process is never mistaken for a stale leftover', async () => {
+  const file = `${scratch.dir}/owner.lock`;
+  const first = await acquireOwnerLock(file, 'test browser');
+  const second = await acquireOwnerLock(file, 'test browser').catch((e: unknown) => e);
+  expect(second).toBeInstanceOf(DrawError);
+  expect((second as DrawError).message).toContain('already in use by this process');
+  await first.release();
+  await (await acquireOwnerLock(file, 'test browser')).release();
+});

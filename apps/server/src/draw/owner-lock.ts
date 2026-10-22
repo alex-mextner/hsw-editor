@@ -17,13 +17,27 @@ export interface OwnerLock {
 }
 
 /** Lock content is `<pid>:<nonce>`; only the holder that wrote the nonce may remove the file. */
+/** Locks held by this process: a same-pid lock file is only a stale leftover when it is not in here. */
+const heldHere = new Set<string>();
+
 export async function acquireOwnerLock(file: string, what: string): Promise<OwnerLock> {
+  if (heldHere.has(file)) {
+    throw new DrawError('backend_unavailable', `${what} is already in use by this process`, {
+      retryable: true,
+    });
+  }
   await mkdir(dirname(file), { recursive: true });
   const content = `${process.pid}:${crypto.randomUUID()}`;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       await writeFile(file, content, { flag: 'wx', mode: 0o600 });
-      return { release: () => removeIfContent(file, content) };
+      heldHere.add(file);
+      return {
+        release: async () => {
+          heldHere.delete(file);
+          await removeIfContent(file, content);
+        },
+      };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       const seen = await readFile(file, 'utf8').catch(() => '');

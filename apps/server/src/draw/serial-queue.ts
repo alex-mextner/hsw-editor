@@ -8,3 +8,6 @@ export class SerialQueue {
     return next;
   }
 }
+
+/** One draw request at a time for the whole server (quota safety, one browser tab). */
+export const drawQueue = new SerialQueue();
