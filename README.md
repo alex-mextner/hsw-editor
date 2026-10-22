@@ -6,15 +6,14 @@ and works offline.
 
 **Status:** skeleton. The monorepo, daemon, CLI, CI and roadmap exist; features are tracked as issues below.
 
-**Live:** https://hsw.mextner.com — the static web bundle (GitHub Pages, built by `.github/workflows/pages.yml`, DNS on Cloudflare).
-It runs without the daemon, so photo fitting and saved walls need the local install below.
-
 ## Why
+
 - Designing a tool wall from a photo is slow by hand. Fitting should be fast and **not need AI** (AI is optional for hard cases).
 - Humans and agents (omp / oh-my-pi) edit the same wall through one op stream with undo/redo.
 - Walls live on disk (`~/.local/share/hsw-editor/walls/`), the app is an offline-capable PWA, no cloud.
 
 ## Layout
+
 ```
 apps/web        Vite + React 19 + R3F + shadcn (base-ui) + Tailwind v4, PWA
 apps/server     Bun daemon: REST/SSE, wall store, asset serving
@@ -26,13 +25,14 @@ docs/specs/     design spec
 ```
 
 ## Quickstart
+
 Requires Bun >= 1.4.2, Python 3 and the [agent-tools](https://git.hyperide.ai/ultrabricks/agent-tools) checkout
 (`~/dev/agent-tools/lib`, or set `AGENT_TOOLS_LIB`). No network is needed if the lib is present.
 
 ```sh
 bun install
 bun run build
-ln -sfn "$PWD/cli/hsw_editor.py" ~/.local/bin/hsw-editor
+scripts/install.sh        # idempotent: deps, web build, ~/.local/bin/hsw-editor symlink
 hsw-editor doctor
 hsw-editor start          # http://127.0.0.1:8794
 hsw-editor open
@@ -43,23 +43,28 @@ Checks: `bun run lint`, `bun run typecheck`, `bun run test`, `bun run build` (or
 Vision sidecar: `cd services/vision && uv sync && uv run pytest`.
 
 ### state-lib (optional, private)
+
 The UI state layer can use `@ultrabricks/state-lib` (not on npm). `bun run setup:state-lib` builds it from a local checkout
 into `vendor/state-lib/` (gitignored; override the source with `STATE_LIB_RUNTIME`). Without it, or with
 `VITE_STATE_BACKEND=baseline`, the app uses a dependency-free baseline store. CI always runs the baseline backend.
 
 ## CLI
-| Command | Effect |
-| --- | --- |
-| `hsw-editor run` | run in the foreground |
-| `hsw-editor start` / `stop` / `restart` | background daemon (pidfile) |
-| `hsw-editor status` | running state, pid, url (exit 3 if stopped) |
-| `hsw-editor enable` / `disable` | systemd user autostart (and start/stop) |
-| `hsw-editor open` | open the editor in the browser |
-| `hsw-editor doctor` | check agent-tools lib, bun, build, state-lib, port |
 
-`--port N` overrides the default 8794 (recorded in `~/.config/hsw-editor/config.json`).
+| Command                                                              | Effect                                                                                                               |
+| -------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `hsw-editor run`                                                     | run in the foreground                                                                                                |
+| `hsw-editor start` / `stop` / `restart`                              | background daemon (pidfile)                                                                                          |
+| `hsw-editor status`                                                  | running state, pid, url (exit 3 if stopped)                                                                          |
+| `hsw-editor enable` / `disable`                                      | systemd user autostart (and start/stop)                                                                              |
+| `hsw-editor open`                                                    | open the editor in the browser                                                                                       |
+| `hsw-editor doctor`                                                  | check agent-tools lib, bun, build, offline assets, port, data dir, uv, omp, GPU, vision, draw (fix hint per failure) |
+| `hsw-editor wall list\|new\|show\|apply\|undo\|redo\|export\|delete` | edit walls through the daemon API (`--json`), see [docs/cli.md](docs/cli.md)                                         |
+
+`--port N` overrides the default 8794 (recorded in `~/.config/hsw-editor/config.json`). Exit codes, doctor checks, install and
+release: [docs/cli.md](docs/cli.md). HTTP API: [docs/api.md](docs/api.md). Release: `bun run release`.
 
 ## Roadmap
+
 - [#1](https://github.com/alex-mextner/hsw-editor/issues/1) (a) Wall store, ops and history
 - [#2](https://github.com/alex-mextner/hsw-editor/issues/2) (b) REST + SSE API
 - [#3](https://github.com/alex-mextner/hsw-editor/issues/3) (c) CLI verbs and doctor
@@ -88,4 +93,5 @@ into `vendor/state-lib/` (gitignored; override the source with `STATE_LIB_RUNTIM
 Full design: [docs/specs/2026-10-22-hsw-editor-design.md](docs/specs/2026-10-22-hsw-editor-design.md). Agent rules: [AGENTS.md](AGENTS.md).
 
 ## License
+
 MIT
