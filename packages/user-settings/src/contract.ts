@@ -4,7 +4,7 @@
  * owned by its feature. Merging is namespace-granular: a PUT replaces whole namespaces, `null` deletes one.
  * Contract: docs/api.md, "Settings".
  */
-import { formatIssues, type JsonValue } from '@hsw-editor/core';
+import { type ApiErrorBody, formatIssues, type JsonValue } from '@hsw-editor/core';
 import { z } from 'zod';
 
 export const SETTINGS_SCHEMA_VERSION = 1;
@@ -94,8 +94,7 @@ export interface SettingsPutBody {
 }
 
 /** Body of `409 rev_conflict`: the standard error plus the document the client should reconcile with. */
-export interface SettingsRevConflictBody {
-  error: { code: 'rev_conflict'; message: string; details?: unknown };
+export interface SettingsRevConflictBody extends ApiErrorBody {
   settings: SettingsDocument;
   currentRev: number;
 }

@@ -15,6 +15,9 @@ import {
 } from '@hsw-editor/user-settings';
 import { atomicWrite, isNotFound } from './store/fsutil.ts';
 
+/** Settings are per-user: owner read/write only. */
+const SETTINGS_FILE_MODE = 0o600;
+
 export class SettingsConflictError extends Error {
   constructor(readonly settings: SettingsDocument) {
     super(`settings are at rev ${settings.rev}, baseRev was stale`);
@@ -53,7 +56,9 @@ export class SettingsStore {
       }
       const next = applySettingsPut(current, body, this.now());
       if (next === current) return current;
-      await atomicWrite(this.path, `${JSON.stringify(next, null, 2)}\n`, undefined, 0o600);
+      await atomicWrite(this.path, `${JSON.stringify(next, null, 2)}\n`, {
+        mode: SETTINGS_FILE_MODE,
+      });
       this.cached = next;
       for (const listener of this.listeners) {
         try {
@@ -73,7 +78,7 @@ export class SettingsStore {
   }
 
   private serialize<T>(task: () => Promise<T>): Promise<T> {
-    const run = this.tail.then(task, task);
+    const run = this.tail.then(task);
     this.tail = run.catch(() => undefined);
     return run;
   }

@@ -2,7 +2,6 @@
 import {
   parseSettingsPutBody,
   SETTINGS_MAX_BYTES,
-  SettingsContractError,
   type SettingsChangedEvent,
 } from '@hsw-editor/user-settings';
 import { HttpError } from './http-error.ts';
@@ -35,16 +34,6 @@ async function readCappedText(request: Request): Promise<string> {
   return new TextDecoder().decode(Buffer.concat(chunks));
 }
 
-function contractToHttp(error: SettingsContractError): HttpError {
-  const status = error.code === 'payload_too_large' ? 413 : 400;
-  return new HttpError(
-    status,
-    error.code,
-    error.message,
-    error.issues.length > 0 ? error.issues : undefined,
-  );
-}
-
 /** `rest` = path segments after `settings`. Returns null for unknown routes (the caller answers 404). */
 export async function settingsRoutes(
   request: Request,
@@ -62,11 +51,7 @@ export async function settingsRoutes(
     } catch {
       throw new HttpError(400, 'invalid_json', 'request body is not valid JSON');
     }
-    try {
-      return Response.json(await settings.put(parseSettingsPutBody(raw)));
-    } catch (error) {
-      throw error instanceof SettingsContractError ? contractToHttp(error) : error;
-    }
+    return Response.json(await settings.put(parseSettingsPutBody(raw)));
   }
   if (rest.length === 1 && rest[0] === 'events' && method === 'GET') {
     return sseResponse(request, {
@@ -76,7 +61,12 @@ export async function settingsRoutes(
           sink.send('settings', { rev } satisfies SettingsChangedEvent);
         // Subscribe first so a PUT landing between the two steps is still announced (a repeated rev is harmless).
         const unsubscribe = settings.subscribe((document) => send(document.rev));
-        send((await settings.get()).rev);
+        try {
+          send((await settings.get()).rev);
+        } catch (error) {
+          unsubscribe();
+          throw error;
+        }
         return unsubscribe;
       },
     });

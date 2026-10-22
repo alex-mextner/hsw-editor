@@ -435,7 +435,7 @@ export class WallStore {
       await atomicWrite(
         join(dir, 'wall.json'),
         `${JSON.stringify(wall, null, 2)}\n`,
-        this.hooks.beforeWallRename,
+        this.hooks.beforeWallRename ? { beforeRename: this.hooks.beforeWallRename } : {},
       );
     } catch (error) {
       // The disk is the truth: rebuild from it (history may already contain the entry) and tell listeners.

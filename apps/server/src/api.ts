@@ -25,7 +25,7 @@ import {
   WallParseError,
   formatIssues,
 } from '@hsw-editor/core';
-import type { SettingsRevConflictBody } from '@hsw-editor/user-settings';
+import { SettingsContractError, type SettingsRevConflictBody } from '@hsw-editor/user-settings';
 import type { z } from 'zod';
 import { HttpError } from './http-error.ts';
 import { SERVER_VERSION } from './version.ts';
@@ -69,9 +69,16 @@ export function errorResponse(error: unknown): Response {
       status: error.status,
     });
   }
+  if (error instanceof SettingsContractError) {
+    const status = error.code === 'payload_too_large' ? 413 : 400;
+    return Response.json(
+      errorBody(error.code, error.message, error.issues.length > 0 ? error.issues : undefined),
+      { status },
+    );
+  }
   if (error instanceof SettingsConflictError) {
     const body: SettingsRevConflictBody = {
-      error: { code: 'rev_conflict', message: error.message },
+      ...errorBody('rev_conflict', error.message),
       settings: error.settings,
       currentRev: error.settings.rev,
     };

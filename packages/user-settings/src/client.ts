@@ -307,8 +307,9 @@ export function createSettingsClient(options: SettingsClientOptions = {}): Setti
   function finish(status: SyncStatus): SyncStatus {
     currentStatus = status === 'synced' && pendingCount() > 0 ? 'pending' : status;
     if (currentStatus === 'synced') syncedAt = now().toISOString();
-    if (status === 'synced' && announcedRev !== null && announcedRev !== mirror.serverRev) {
-      announcedRev = null;
+    const announced = announcedRev;
+    announcedRev = null;
+    if (status === 'synced' && announced !== null && announced !== mirror.serverRev) {
       void enqueue(true);
     }
     return currentStatus;
@@ -349,11 +350,13 @@ export function createSettingsClient(options: SettingsClientOptions = {}): Setti
       return enqueue(true);
     },
     notifyServerRev(rev) {
-      announcedRev = rev;
+      // The answer to a PUT in flight already carries the latest document; finish() settles the announcement.
+      if (inFlight !== null) {
+        announcedRev = rev;
+        return queue.then(() => currentStatus);
+      }
       // `!==`, not `>`: a reset or restored settings.json legitimately moves the server's rev backwards.
       const behind = mirror.serverRev !== rev;
-      // The answer to a PUT already carries the latest document, so an announcement during one is settled in finish().
-      if (inFlight !== null) return queue.then(() => currentStatus);
       if (behind || pendingCount() > 0 || currentStatus !== 'synced') return enqueue(true);
       return Promise.resolve(currentStatus);
     },
