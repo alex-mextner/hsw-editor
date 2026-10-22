@@ -21,6 +21,9 @@
     "format:check": "oxfmt --check .",
     "test": "bun test packages apps scripts",
     "setup:state-lib": "bun scripts/setup-state-lib.ts",
+    "bank:build-variant": "bun scripts/bank/build-variant.ts",
+    "bank:ingest": "bun scripts/bank/ingest.ts",
+    "bank:verify": "bun scripts/bank/verify.ts",
     "bank:schema": "bun scripts/bank/schema.ts",
     "check": "bun run lint && bun run typecheck && bun scripts/bank/schema.ts --check && bun run test && bun run build"
   },

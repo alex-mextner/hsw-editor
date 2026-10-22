@@ -1,6 +1,6 @@
 """Mesh helper for the HSW bank ingest: probe, normalise-to-GLB and thumbnail rendering.
 
-Protocol: `mesh_tool.py <job.json>` reads a job file, writes one JSON document to stdout.
+Protocol: `mesh_tool.py <job.json> <result.json>` reads a job file and writes one JSON document to the result file.
 Job kinds (field `op`):
   probe   {"files": [{"path": str}]}                     -> parts of each file with geometry hashes
   build   {"items": [BuildItem]}                        -> normalised GLB + thumbnail per item
@@ -25,7 +25,7 @@ os.environ.setdefault("PYOPENGL_PLATFORM", "egl")
 import numpy as np  # noqa: E402
 import trimesh  # noqa: E402
 
-TOOL_VERSION = 4
+TOOL_VERSION = 5
 HASH_DECIMALS = 2  # 0.01 mm
 STEP_LINEAR_TOL_MM = 0.05
 AXES = {
@@ -100,6 +100,13 @@ def geometry_hash(mesh: trimesh.Trimesh) -> str:
     return hashlib.sha256(faces.tobytes()).hexdigest()
 
 
+def _mirrored(mesh: trimesh.Trimesh, axis: int) -> trimesh.Trimesh:
+    flipped = mesh.copy()
+    flipped.vertices[:, axis] *= -1
+    flipped.faces = flipped.faces[:, ::-1]  # keep the winding consistent with the mirrored vertices
+    return flipped
+
+
 def shape_signature(mesh: trimesh.Trimesh) -> dict:
     """Tessellation-independent fingerprint used to cluster STEP/STL/3MF copies of the same part."""
     dims = sorted(float(d) for d in mesh.extents)
@@ -126,14 +133,15 @@ def _plug_end(mesh: trimesh.Trimesh):
     for axis in range(3):
         others = [a for a in range(3) if a != axis]
         for sign, extreme in ((-1, lo[axis]), (1, hi[axis])):
-            slab = verts[np.abs(verts[:, axis] - extreme) < 0.6]
-            if len(slab) < 6:
-                continue
-            ext = slab.max(axis=0) - slab.min(axis=0)
-            for corner, flat in (others, others[::-1]):
-                err = abs(ext[corner] - HEX_CORNER_MM) + abs(ext[flat] - HEX_FLAT_MM)
-                if err < 0.8 and (best is None or err < best[0]):
-                    best = (err, axis, sign, corner, flat)
+            for depth in (0.6, 1.5, 3.0, 5.0, 8.0):
+                slab = verts[np.abs(verts[:, axis] - extreme) < depth]
+                if len(slab) < 6:
+                    continue
+                ext = slab.max(axis=0) - slab.min(axis=0)
+                for corner, flat in (others, others[::-1]):
+                    err = abs(ext[corner] - HEX_CORNER_MM) + abs(ext[flat] - HEX_FLAT_MM)
+                    if err < 1.0 and (best is None or err < best[0]):
+                        best = (err, axis, sign, corner, flat)
     if best is None:
         return None
     _, axis, sign, corner, flat = best
@@ -188,8 +196,9 @@ def op_probe(job: dict) -> dict:
     result = []
     for item in job["files"]:
         path = item["path"]
-        entry = {"path": path, "sha256": sha256_file(path), "parts": [], "error": None, "meta": {}}
+        entry = {"path": path, "sha256": "", "parts": [], "error": None, "meta": {}}
         try:
+            entry["sha256"] = sha256_file(path)
             if path.lower().endswith(".3mf"):
                 entry["meta"] = read_3mf_metadata(path)
             for part_id, mesh in _load_scene(path):
@@ -199,6 +208,7 @@ def op_probe(job: dict) -> dict:
                     "triangles": int(len(mesh.faces)),
                     "bboxMm": [[round(float(c), 3) for c in lo], [round(float(c), 3) for c in hi]],
                     "geometryHash": geometry_hash(mesh),
+                    "mirrorHashes": [geometry_hash(_mirrored(mesh, axis)) for axis in range(3)],
                     "watertight": bool(mesh.is_watertight),
                     **shape_signature(mesh),
                     "guess": guess_orientation(mesh),
@@ -211,64 +221,135 @@ def op_probe(job: dict) -> dict:
 
 # ---------------------------------------------------------------- build
 
-def _anchor_and_cells(mesh: trimesh.Trimesh, col_pitch: float, row_pitch: float, back_mm: float, anchor_mode: str):
-    """Anchor (x,y mm) and footprint cells for a mesh already in the wall frame with min z = 0.
-
-    anchor_mode "origin" keeps the source origin (parts modelled around a mount point); "back-bbox"
-    centres the anchor on the bounding box of the wall-facing slab (z <= back_mm).
-    """
-    verts = mesh.vertices
-    slab = verts[verts[:, 2] <= back_mm]
-    if len(slab) == 0:
-        slab = verts
-    lo, hi = slab[:, :2].min(axis=0), slab[:, :2].max(axis=0)
-    if anchor_mode == "origin":
-        ax, ay = 0.0, 0.0
-    else:
-        ax, ay = float((lo[0] + hi[0]) / 2), float((lo[1] + hi[1]) / 2)
-    # cells of the lattice whose centres fall inside the wall-facing silhouette
-    cells = _cells_in_silhouette(mesh, back_mm, ax, ay, col_pitch, row_pitch)
-    return ax, ay, cells
-
-
-def _cells_in_silhouette(mesh, back_mm, ax, ay, col_pitch, row_pitch):
-    from shapely.geometry import Point
+def _wall_silhouette(mesh: trimesh.Trimesh, back_mm: float):
+    """Shapely geometry (xy, wall frame) of the cross-section half way through the wall-facing slab."""
+    from shapely.affinity import affine_transform
     from shapely.ops import unary_union
 
-    section = mesh.section(plane_origin=[0, 0, min(back_mm, mesh.bounds[1][2]) * 0.5 + 0.01], plane_normal=[0, 0, 1])
-    polygons = []
-    if section is not None:
-        planar, to_3d = section.to_2D()
-        polys = list(planar.polygons_full)
-        polygons = [p for p in polys if p.is_valid and p.area > 1.0]
-        if polygons:
-            # to_2D may rotate/translate: map points through the transform instead of assuming identity
-            inv = np.linalg.inv(to_3d)
-            def to_planar(x, y):
-                p = inv @ np.array([x, y, 0.0, 1.0])
-                return p[0], p[1]
-        else:
-            to_planar = None
-    else:
-        to_planar = None
-    if not polygons:
+    z = min(back_mm, float(mesh.bounds[1][2])) * 0.5 + 0.01
+    section = mesh.section(plane_origin=[0, 0, z], plane_normal=[0, 0, 1])
+    if section is None:
         return None
-    union = unary_union(polygons).buffer(0.5)
+    planar, to_3d = section.to_2D()
+    m = to_3d
+    matrix = [m[0, 0], m[0, 1], m[1, 0], m[1, 1], m[0, 3], m[1, 3]]
+    polys = [affine_transform(p, matrix) for p in planar.polygons_full if p.is_valid and p.area > 1.0]
+    return unary_union(polys) if polys else None
+
+
+def _lattice_points(lo, hi, anchor, col_pitch: float, row_pitch: float):
+    """All lattice points around `anchor` covering the box, as (dCol, dRow2, x, y)."""
     half_row = row_pitch / 2
-    lo, hi = mesh.bounds
-    cells = []
-    d_col_max = int(np.ceil((hi[0] - lo[0]) / col_pitch)) + 2
-    d_row2_max = int(np.ceil((hi[1] - lo[1]) / half_row)) + 2
-    for d_col in range(-d_col_max, d_col_max + 1):
-        for d_row2 in range(-d_row2_max, d_row2_max + 1):
-            if (d_row2 - d_col) % 2:
-                continue
-            x = ax + d_col * col_pitch
-            y = ay + d_row2 * half_row
-            px, py = to_planar(x, y)
-            if union.contains(Point(px, py)):
-                cells.append((d_col, d_row2))
-    return cells
+    reach_c = int(np.ceil(max(abs(lo[0] - anchor[0]), abs(hi[0] - anchor[0])) / col_pitch)) + 1
+    reach_r = int(np.ceil(max(abs(lo[1] - anchor[1]), abs(hi[1] - anchor[1])) / half_row)) + 1
+    pts = []
+    for d_col in range(-reach_c, reach_c + 1):
+        for d_row2 in range(-reach_r, reach_r + 1):
+            if (d_row2 - d_col) % 2 == 0:
+                pts.append((d_col, d_row2, anchor[0] + d_col * col_pitch, anchor[1] + d_row2 * half_row))
+    return pts
+
+
+PLUG_CORE_ERODE_MM = 5.0
+
+
+def _find_phase(sil, bbox_centre, col_pitch: float, row_pitch: float):
+    """Lattice point that best explains the silhouette (the anchor), or None.
+
+    Scores a phase by how many lattice points lie deep inside the silhouette (a plug core), then by how
+    deep they sit, so a single plug anchors on its own centre to within 0.25 mm.
+    """
+    import shapely
+
+    core = sil.buffer(-PLUG_CORE_ERODE_MM)
+    if core.is_empty:
+        return None
+    lo, hi = np.array(sil.bounds[:2]), np.array(sil.bounds[2:])
+    boundary = core.boundary
+    shapely.prepare(core)
+    centroid = np.array(sil.centroid.coords[0])
+
+    def evaluate(ox: float, oy: float):
+        origin = (bbox_centre[0] + ox, bbox_centre[1] + oy)
+        pts = _lattice_points(lo, hi, origin, col_pitch, row_pitch)
+        xs = np.array([p[2] for p in pts])
+        ys = np.array([p[3] for p in pts])
+        inside = np.flatnonzero(shapely.contains_xy(core, xs, ys))
+        if len(inside) == 0:
+            return 0, 0.0, []
+        depth = float(shapely.distance(boundary, shapely.points(xs[inside], ys[inside])).sum())
+        return len(inside), depth, [pts[i] for i in inside]
+
+    coarse = []
+    for ox in np.arange(0.0, col_pitch, 1.0):
+        for oy in np.arange(0.0, row_pitch, 1.0):
+            count = evaluate(ox, oy)[0]
+            if count:
+                coarse.append((count, ox, oy))
+    if not coarse:
+        return None
+    top = max(c[0] for c in coarse)
+    best = None
+    for count, ox, oy in coarse:
+        if count != top:
+            continue
+        for fx in np.arange(-0.75, 0.76, 0.25):
+            for fy in np.arange(-0.75, 0.76, 0.25):
+                n, depth, inner = evaluate(ox + fx, oy + fy)
+                if n >= top and (best is None or (n, depth) > (best[0], best[1])):
+                    best = (n, depth, inner)
+    if best is None:
+        return None
+    point = min(best[2], key=lambda p: (p[2] - centroid[0]) ** 2 + (p[3] - centroid[1]) ** 2)
+    return (point[2], point[3])
+
+
+def _anchor_and_cells(mesh: trimesh.Trimesh, col_pitch: float, row_pitch: float, back_mm: float, anchor_mode: str):
+    """Anchor (x, y mm), footprint cells and mounting cells for a mesh in the wall frame with min z = 0.
+
+    anchor_mode "origin": keep the source origin, which must lie on the lattice (refit holders, modelled
+    around an M3 insert); "back-bbox": find the lattice phase from the wall-facing silhouette and anchor
+    on the lattice point nearest its centre; "panel": anchor on the bbox centre, cells = lattice points
+    inside the bbox.
+    Cells are (dCol, dRow2) offsets. Mounting cells: lattice points inside holes of the silhouette (screw
+    holes) when there are any, else the footprint cells.
+    """
+    from shapely.geometry import Polygon
+    from shapely.ops import unary_union
+
+    lo3, hi3 = mesh.bounds
+    bbox_centre = ((lo3[0] + hi3[0]) / 2, (lo3[1] + hi3[1]) / 2)
+    sil = _wall_silhouette(mesh, back_mm)
+    if anchor_mode == "panel" or sil is None:
+        anchor = bbox_centre
+        cells = [(c, r) for c, r, x, y in _lattice_points(lo3, hi3, anchor, col_pitch, row_pitch)
+                 if lo3[0] <= x <= hi3[0] and lo3[1] <= y <= hi3[1]]
+        return anchor[0], anchor[1], cells, []
+    geoms = list(sil.geoms) if hasattr(sil, "geoms") else [sil]
+    solid = unary_union([Polygon(g.exterior) for g in geoms])
+    filled = solid.buffer(0.5)
+    holes = [Polygon(r) for g in geoms for r in g.interiors]
+    if anchor_mode == "origin":
+        anchor = (0.0, 0.0)
+    else:
+        found = _find_phase(solid, bbox_centre, col_pitch, row_pitch)
+        anchor = found if found is not None else bbox_centre
+    import shapely
+
+    pts = _lattice_points(filled.bounds[:2], filled.bounds[2:], anchor, col_pitch, row_pitch)
+    xs = np.array([p[2] for p in pts])
+    ys = np.array([p[3] for p in pts])
+    inside = shapely.contains_xy(filled, xs, ys)
+    cells = [(pts[i][0], pts[i][1]) for i in np.flatnonzero(inside)]
+    if (0, 0) not in cells:
+        cells.append((0, 0))
+    mounting = []
+    if holes:
+        hole_union = unary_union(holes).buffer(0.3)
+        in_hole = shapely.contains_xy(hole_union, xs, ys)
+        mounting = [(pts[i][0], pts[i][1]) for i in np.flatnonzero(in_hole)]
+    return anchor[0], anchor[1], cells, mounting
+
 
 
 def _smooth_normals(mesh: trimesh.Trimesh) -> trimesh.Trimesh:
@@ -285,30 +366,23 @@ def op_build(job: dict) -> dict:
             mesh = parts[item["partId"]].copy()
             mesh.merge_vertices()
             mesh.remove_unreferenced_vertices()
-            if item.get("scale", 1.0) != 1.0:
-                mesh.apply_scale(item["scale"])
             rot = orientation_matrix(item["orient"]["out"], item["orient"]["up"])
             transform = np.eye(4)
             transform[:3, :3] = rot
             mesh.apply_transform(transform)
-            if item["orient"].get("mirrorX"):
-                # Only for sources flagged as mirrored copies; keeps winding valid.
-                mesh.apply_transform(np.diag([-1, 1, 1, 1]))
-                mesh.invert()
             mesh.fix_normals()
             anchor_mode = item["anchor"]
             lo = mesh.bounds[0]
             # wall face at z = 0
             mesh.apply_translation([0, 0, -lo[2]])
-            ax, ay, cells = _anchor_and_cells(mesh, pitch["colPitchMm"], pitch["rowPitchMm"], item["backSlabMm"], anchor_mode)
-            if cells is None or len(cells) == 0:
-                cells = [(0, 0)]
+            ax, ay, cells, mounting = _anchor_and_cells(mesh, pitch["colPitchMm"], pitch["rowPitchMm"], item["backSlabMm"], anchor_mode)
             if anchor_mode != "origin":
                 mesh.apply_translation([-ax, -ay, 0])
             lo, hi = mesh.bounds
             entry["bboxMm"] = {"min": [round(float(c), 3) for c in lo], "max": [round(float(c), 3) for c in hi]}
             entry["triangles"] = int(len(mesh.faces))
-            entry["cells"] = [list(map(int, c)) for c in cells]
+            entry["cells"] = sorted([int(c), int(r)] for c, r in cells)
+            entry["mountingCells"] = sorted([int(c), int(r)] for c, r in mounting)
             entry["watertight"] = bool(mesh.is_watertight)
             entry["anchorSourceMm"] = [round(ax, 3), round(ay, 3)]
             shaded = _smooth_normals(mesh)
@@ -389,7 +463,7 @@ def render_thumbnail(mesh, out_path: str, color: str, views: list[str]) -> None:
 
     size = 384
     images = [Image.fromarray(render_png(mesh, v, color, size)) for v in views]
-    target = 192 if len(images) == 1 else 192
+    target = 192
     tiles = [im.resize((target, target), Image.LANCZOS) for im in images]
     sheet = Image.new("RGBA", (target * len(tiles), target), (0, 0, 0, 0))
     for i, tile in enumerate(tiles):
@@ -400,6 +474,7 @@ def render_thumbnail(mesh, out_path: str, color: str, views: list[str]) -> None:
 
 def main() -> None:
     job = json.loads(Path(sys.argv[1]).read_text())
+    out_path = Path(sys.argv[2])
     op = job["op"]
     if op == "probe":
         out = op_probe(job)
@@ -407,7 +482,7 @@ def main() -> None:
         out = op_build(job)
     else:
         raise SystemExit(f"unknown op {op}")
-    json.dump(out, sys.stdout)
+    out_path.write_text(json.dumps(out))  # a file, not stdout: GL/pyglet libraries print to stdout
 
 
 if __name__ == "__main__":

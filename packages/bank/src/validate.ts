@@ -2,9 +2,7 @@ import { getCategory } from './categories.ts';
 import { BankIndexSchema, type BankElement, type BankIndex } from './schema.ts';
 import { getToolClass } from './toolClasses.ts';
 
-export type ValidationResult =
-  | { ok: true; index: BankIndex; warnings: string[] }
-  | { ok: false; errors: string[] };
+export type ValidationResult = { ok: true; index: BankIndex } | { ok: false; errors: string[] };
 
 const NON_REDISTRIBUTABLE_LICENSES = new Set([
   'CC-BY-NC-4.0',
@@ -90,7 +88,6 @@ export function validateBankIndex(raw: unknown): ValidationResult {
   }
   const index = parsed.data;
   const errors: string[] = [];
-  const warnings: string[] = [];
 
   const ids = new Set<string>();
   for (const e of index.elements) {
@@ -123,5 +120,5 @@ export function validateBankIndex(raw: unknown): ValidationResult {
     const actual = index.counts[key as keyof typeof expected];
     if (actual !== value) errors.push(`counts.${key} is ${actual}, expected ${value}`);
   }
-  return errors.length > 0 ? { ok: false, errors } : { ok: true, index, warnings };
+  return errors.length > 0 ? { ok: false, errors } : { ok: true, index };
 }

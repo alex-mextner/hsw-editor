@@ -52,12 +52,14 @@ export function makeElement(spec: ElementSpec): BankElement {
     provenance: generated
       ? {
           origin: 'generated',
+          orientation: 'generator',
           generator: { generator: 'families.scad', part: 'x', version: 1, values: {} },
           geometryHash: hashOf(spec),
           duplicates: [],
         }
       : {
           origin: 'source-file',
+          orientation: 'auto',
           source: { site: 'hsw-project', file: `${spec.id}.stl`, sourceSha256: ZERO_HASH },
           geometryHash: hashOf(spec),
           duplicates: [],

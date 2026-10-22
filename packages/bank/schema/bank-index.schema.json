@@ -649,6 +649,10 @@
                 "required": ["generator", "part", "version", "values"],
                 "additionalProperties": false
               },
+              "orientation": {
+                "type": "string",
+                "enum": ["curated", "auto", "generator"]
+              },
               "geometryHash": {
                 "type": "string",
                 "pattern": "^[0-9a-f]{64}$"
@@ -660,7 +664,7 @@
                 }
               }
             },
-            "required": ["origin", "geometryHash", "duplicates"],
+            "required": ["origin", "orientation", "geometryHash", "duplicates"],
             "additionalProperties": false
           },
           "license": {

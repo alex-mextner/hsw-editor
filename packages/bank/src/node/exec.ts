@@ -5,27 +5,32 @@ import type { BankPaths } from './paths.ts';
 
 const HEAVY_LOCK = '/tmp/3d-cli-heavy.lock';
 
-/** Prefix that serialises heavy work behind the workstation's shared lock with a memory/CPU cap. */
+/**
+ * Resource limits for the pipeline's child processes (mesh conversion, thumbnail rendering, OpenSCAD):
+ * a systemd scope with memory/CPU caps at low priority. These jobs take seconds and a few hundred MB,
+ * so they do NOT queue behind the workstation's shared heavy lock (held for hours by torch/slicer
+ * jobs); set HSW_BANK_LOCK=1 to serialise behind it anyway. HSW_BANK_NO_WRAPPER=1 disables all of it.
+ */
 export function heavyPrefix(): string[] {
-  if (process.env.HSW_BANK_NO_WRAPPER === '1') return [];
-  if (!Bun.which('flock') || !Bun.which('systemd-run')) return [];
-  return [
-    'flock',
-    HEAVY_LOCK,
+  if (process.env.HSW_BANK_NO_WRAPPER === '1' || !Bun.which('systemd-run')) return [];
+  const scope = [
     'systemd-run',
     '--user',
     '--scope',
     '-q',
     '-p',
-    'MemoryMax=6G',
+    'MemoryMax=4G',
     '-p',
     'MemorySwapMax=0',
     '-p',
-    'CPUQuota=600%',
+    'CPUQuota=400%',
     'nice',
     '-n',
     '10',
   ];
+  return process.env.HSW_BANK_LOCK === '1' && Bun.which('flock')
+    ? ['flock', HEAVY_LOCK, ...scope]
+    : scope;
 }
 
 export interface RunResult {
@@ -75,7 +80,8 @@ async function ensureVenv(paths: BankPaths): Promise<void> {
 /** Runs scripts/bank/py/mesh_tool.py on a job document and returns its JSON result. */
 export async function runMeshTool<T>(paths: BankPaths, job: object, name: string): Promise<T> {
   await ensureVenv(paths);
-  const jobFile = join(paths.cacheDir, 'jobs', `${name}.json`);
+  const jobFile = join(paths.cacheDir, 'jobs', `${name}-${process.pid}.json`);
+  const resultFile = join(paths.cacheDir, 'jobs', `${name}-${process.pid}.result.json`);
   await Bun.write(jobFile, JSON.stringify(job));
   const project = join(paths.repoRoot, 'scripts/bank/py');
   const result = await run(
@@ -89,12 +95,13 @@ export async function runMeshTool<T>(paths: BankPaths, job: object, name: string
       'python',
       join(project, 'mesh_tool.py'),
       jobFile,
+      resultFile,
     ],
     { env: pythonEnv(paths) },
   );
   if (result.exitCode !== 0)
     throw new Error(`mesh_tool ${name} failed (${result.exitCode}): ${result.stderr.slice(-2000)}`);
-  return JSON.parse(result.stdout) as T;
+  return (await Bun.file(resultFile).json()) as T;
 }
 
 export function openscadAvailable(): boolean {

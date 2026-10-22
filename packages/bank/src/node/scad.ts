@@ -1,5 +1,5 @@
 /** OpenSCAD rendering of generator parts: parameter sets -> STL, cached by content hash. */
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { heavyPrefix, run } from './exec.ts';
 import type { BankPaths } from './paths.ts';
@@ -16,7 +16,7 @@ export interface ScadJob {
 }
 
 export function generatorPath(paths: BankPaths, generator: string): string {
-  return join(paths.repoRoot, 'packages/bank/generators', generator);
+  return join(paths.generatorsDir, generator);
 }
 
 function hashOf(text: string): string {
@@ -37,6 +37,14 @@ export function scadStlPath(paths: BankPaths, key: string): string {
 }
 
 export function openscadArgs(paths: BankPaths, job: ScadJob, out: string): string[] {
+  for (const [key, value] of Object.entries(job.values)) {
+    // keys end up in `-D key=value`: only plain identifiers and finite numbers may pass
+    if (!/^[a-zA-Z][a-zA-Z0-9]*$/.test(key))
+      throw new Error(`invalid generator parameter name ${key}`);
+    if (!Number.isFinite(value))
+      throw new Error(`generator parameter ${key} is not a finite number`);
+  }
+  if (!/^[a-z0-9_]+$/.test(job.part)) throw new Error(`invalid generator part ${job.part}`);
   const defines = [
     `part="${job.part}"`,
     ...Object.entries(job.values).map(([k, v]) => `${k}=${v}`),
@@ -52,38 +60,40 @@ export function openscadArgs(paths: BankPaths, job: ScadJob, out: string): strin
   ];
 }
 
-/** Renders every job whose STL is missing; throws listing the failures. Returns key -> STL path. */
-export async function renderMissing(
-  paths: BankPaths,
-  jobs: ScadJob[],
-): Promise<Map<string, string>> {
+export interface RenderResult {
+  /** Cache key -> STL path of every job that has an STL (cached or freshly rendered). */
+  stl: Map<string, string>;
+  /** Cache key -> OpenSCAD error of the jobs that failed. */
+  failed: Map<string, string>;
+}
+
+/** Renders every job whose STL is missing, up to PARALLEL_RENDERS at a time. Never throws for a failed render. */
+export async function renderMissing(paths: BankPaths, jobs: ScadJob[]): Promise<RenderResult> {
   await mkdir(join(paths.cacheDir, 'scad'), { recursive: true });
-  const result = new Map<string, string>();
-  const todo: { key: string; job: ScadJob; out: string }[] = [];
+  const stl = new Map<string, string>();
+  const failed = new Map<string, string>();
+  const todo = new Map<string, { job: ScadJob; out: string }>();
   for (const job of jobs) {
     const key = await scadKey(paths, job);
     const out = scadStlPath(paths, key);
-    result.set(key, out);
-    if (!(await Bun.file(out).exists())) todo.push({ key, job, out });
+    if (await Bun.file(out).exists()) stl.set(key, out);
+    else todo.set(key, { job, out });
   }
-  const failures: string[] = [];
-  let next = 0;
+  const queue = [...todo];
   const worker = async (): Promise<void> => {
-    for (let item = todo[next++]; item; item = todo[next++]) {
-      const tmp = `${item.out}.tmp.stl`;
-      const proc = await run([...heavyPrefix(), ...openscadArgs(paths, item.job, tmp)]);
+    for (let next = queue.pop(); next; next = queue.pop()) {
+      const [key, { job, out }] = next;
+      // unique temp name + rename: concurrent renders of the same key never see a partial STL
+      const tmp = `${out}.${process.pid}.${crypto.randomUUID()}.tmp.stl`;
+      const proc = await run([...heavyPrefix(), ...openscadArgs(paths, job, tmp)]);
       if (proc.exitCode !== 0 || !(await Bun.file(tmp).exists())) {
-        failures.push(
-          `${item.job.part} ${JSON.stringify(item.job.values)}: ${proc.stderr.slice(-400)}`,
-        );
+        failed.set(key, `${job.part} ${JSON.stringify(job.values)}: ${proc.stderr.slice(-400)}`);
         continue;
       }
-      await Bun.write(item.out, Bun.file(tmp));
-      await Bun.file(tmp).delete();
+      await rename(tmp, out);
+      stl.set(key, out);
     }
   };
   await Promise.all(Array.from({ length: PARALLEL_RENDERS }, worker));
-  if (failures.length > 0)
-    throw new Error(`OpenSCAD failed for ${failures.length} part(s):\n${failures.join('\n')}`);
-  return result;
+  return { stl, failed };
 }

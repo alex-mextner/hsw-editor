@@ -13,6 +13,8 @@ export interface ProbePart {
   triangles: number;
   bboxMm: [[number, number, number], [number, number, number]];
   geometryHash: string;
+  /** geometryHash of the part mirrored about x, y and z: identifies left/right hand twins. */
+  mirrorHashes: [string, string, string];
   watertight: boolean;
   sortedDimsMm: [number, number, number];
   volumeMm3: number;
@@ -57,6 +59,7 @@ export interface BuildItemResult {
   bboxMm?: { min: [number, number, number]; max: [number, number, number] };
   triangles?: number;
   cells?: [number, number][];
+  mountingCells?: [number, number][];
   watertight?: boolean;
   anchorSourceMm?: [number, number];
 }

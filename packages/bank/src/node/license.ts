@@ -16,15 +16,21 @@ export function normalizeLicense({ observed, attribution, url }: ObservedLicense
   const text = observed.trim();
   const compact = text.toUpperCase().replace(/[\s_]+/g, '-');
   const base = { observed: text || 'not recorded', attribution, ...(url ? { url } : {}) };
-  if (/^PROJECT-ORIGINAL$/.test(compact)) return { ...base, spdx: 'MIT', redistributable: true };
-  if (/BY-NC-SA|BY-SA-NC/.test(compact))
-    return { ...base, spdx: 'CC-BY-NC-SA-4.0', redistributable: false };
-  if (/BY-NC/.test(compact)) return { ...base, spdx: 'CC-BY-NC-4.0', redistributable: false };
-  if (/^(?:CC-)?(?:BY|BY-4\.0|ATTRIBUTION)$/.test(compact) || /^CC-ATTRIBUTION/.test(compact)) {
-    return { ...base, spdx: 'CC-BY-4.0', redistributable: true };
-  }
+  if (compact === 'PROJECT-ORIGINAL') return { ...base, spdx: 'MIT', redistributable: true };
   if (/STANDARD-DIGITAL-FILE/.test(compact)) {
     return { ...base, spdx: 'LicenseRef-Standard-Digital-File', redistributable: false };
+  }
+  // Any restriction wording wins over a "BY"/"Attribution" prefix: the product is public and MIT.
+  const noDerivatives = /NO-?DERIV|(?:^|-)ND(?:-|$)/.test(compact);
+  const shareAlike = /SHARE-?ALIKE|(?:^|-)SA(?:-|$)/.test(compact);
+  const nonCommercial = /NON-?COMMERCIAL|(?:^|-)NC(?:-|$)/.test(compact);
+  if (noDerivatives) return { ...base, spdx: 'LicenseRef-Unknown', redistributable: false };
+  if (nonCommercial && shareAlike)
+    return { ...base, spdx: 'CC-BY-NC-SA-4.0', redistributable: false };
+  if (nonCommercial) return { ...base, spdx: 'CC-BY-NC-4.0', redistributable: false };
+  if (shareAlike) return { ...base, spdx: 'LicenseRef-Unknown', redistributable: false };
+  if (/^(?:CC-)?BY(?:-4\.0)?$/.test(compact) || /^CC-ATTRIBUTION(?:-4\.0)?$/.test(compact)) {
+    return { ...base, spdx: 'CC-BY-4.0', redistributable: true };
   }
   return { ...base, spdx: 'LicenseRef-Unknown', redistributable: false };
 }

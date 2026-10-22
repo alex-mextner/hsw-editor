@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { createBank } from './bank.ts';
+import { buildSearchIndex, loadSearchIndex, serializeSearchIndex } from './search.ts';
 import { BankIndexSchema } from './schema.ts';
 import { makeElement, makeIndex } from './testing.ts';
 import { stemTerm } from './text.ts';
@@ -225,5 +226,52 @@ describe('validateBankIndex', () => {
     const index = makeIndex(elements);
     index.counts.total = 99;
     expect(validateBankIndex(index).ok).toBe(false);
+  });
+});
+
+describe('serialised search index', () => {
+  const contentHash = 'a'.repeat(64);
+  const index = { ...makeIndex(elements), contentHash };
+
+  test('a matching serialised index is used and answers like a rebuilt one', () => {
+    const serialized = serializeSearchIndex(buildSearchIndex(elements), contentHash);
+    const loaded = createBank(index, serialized);
+    expect(loaded.search('отвертка').map((r) => r.element.id)).toEqual(
+      createBank(index)
+        .search('отвертка')
+        .map((r) => r.element.id),
+    );
+  });
+
+  test('wrong bank hash, wrong version and corrupt JSON fall back to a rebuild', () => {
+    const serialized = serializeSearchIndex(buildSearchIndex(elements), 'b'.repeat(64));
+    expect(loadSearchIndex(serialized, contentHash)).toBeNull();
+    expect(loadSearchIndex('{"searchIndexVersion":0}', contentHash)).toBeNull();
+    expect(loadSearchIndex('{not json', contentHash)).toBeNull();
+    expect(createBank(index, '{not json').search('отвертка').length).toBeGreaterThan(0);
+  });
+});
+
+describe('listElements filters', () => {
+  test('size, cell count, family, generated and licence filters', () => {
+    expect(bank.listElements({ minDimsMm: { x: 100 } }).items.map((e) => e.id)).toEqual([
+      'screwdriver-rail-6',
+    ]);
+    expect(bank.listElements({ maxCells: 0 }).total).toBe(0);
+    expect(bank.listElements({ family: 'cup' }).total).toBe(2);
+    expect(bank.listElements({ generated: true }).total).toBe(2);
+    const nc = createBank(
+      makeIndex([
+        makeElement({ id: 'free', ru: 'А', en: 'A', category: 'hooks' }),
+        makeElement({ id: 'nc', ru: 'Б', en: 'B', category: 'hooks', redistributable: false }),
+      ]),
+    );
+    expect(nc.listElements({ redistributable: false }).items.map((e) => e.id)).toEqual(['nc']);
+  });
+
+  test('Russian adjectives ending in й match across forms (круглый / круглая / круглого)', () => {
+    for (const q of ['круглый', 'круглая', 'круглого']) {
+      expect(bank.search(q).map((r) => r.element.id)).toContain('cup-round');
+    }
   });
 });

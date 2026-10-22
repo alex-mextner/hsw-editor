@@ -5,17 +5,18 @@
  * parameter set rendered by OpenSCAD and ingested as its own `generated: true` element.
  */
 import { z } from 'zod';
+import { getCategory } from './categories.ts';
+import { getToolClass } from './toolClasses.ts';
 import {
   LocalizedTextSchema,
   MountingSchema,
   ParamDefSchema,
   PrintNotesSchema,
+  slugSchema as slug,
   type FitsTool,
   type LocalizedText,
   type ParamDef,
 } from './schema.ts';
-
-const slug = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 
 /** Range of an object dimension derived from a generator parameter: [param + minDelta, param + maxDelta]. */
 const DerivedRangeSchema = z.object({
@@ -125,23 +126,41 @@ function paramByKey(params: readonly ParamDef[]): Map<string, ParamDef> {
 export function checkFamily(spec: FamilySpec): void {
   const params = paramByKey(spec.params);
   if (params.size !== spec.params.length) throw new Error(`${spec.id}: duplicate param keys`);
+  if (!getCategory(spec.category)) throw new Error(`${spec.id}: unknown category ${spec.category}`);
+  for (const toolClass of [...spec.toolClasses, ...spec.fits.map((f) => f.toolClass)]) {
+    if (!getToolClass(toolClass)) throw new Error(`${spec.id}: unknown tool class ${toolClass}`);
+  }
   const known = (key: string, where: string): ParamDef => {
     const p = params.get(key);
     if (!p) throw new Error(`${spec.id}: ${where} references undeclared param ${key}`);
     return p;
   };
+  const inRange = (key: string, value: number, where: string): void => {
+    const p = known(key, where);
+    if (value < p.min || value > p.max) {
+      throw new Error(`${spec.id}: ${where} ${key}=${value} outside [${p.min}, ${p.max}]`);
+    }
+  };
   for (const [key, values] of Object.entries(spec.grid)) {
-    const p = known(key, 'grid');
-    for (const v of values) {
-      if (v < p.min || v > p.max)
-        throw new Error(`${spec.id}: grid ${key}=${v} outside [${p.min}, ${p.max}]`);
+    for (const v of values) inRange(key, v, 'grid');
+  }
+  for (const [key, value] of Object.entries(spec.fixed ?? {})) inRange(key, value, 'fixed');
+  for (const rule of spec.exclude ?? []) {
+    const keys = Object.keys(rule);
+    if (keys.length === 0) throw new Error(`${spec.id}: empty exclude rule would drop every rung`);
+    for (const key of keys) {
+      if (!(key in spec.grid))
+        throw new Error(`${spec.id}: exclude key ${key} is not a grid param`);
     }
   }
-  for (const key of Object.keys(spec.fixed ?? {})) known(key, 'fixed');
   for (const fit of spec.fits) {
-    if (typeof fit.capacity === 'object') known(fit.capacity.param, 'fits.capacity');
-    for (const range of Object.values(fit.dims ?? {}))
+    if (typeof fit.capacity === 'object') {
+      const p = known(fit.capacity.param, 'fits.capacity');
+      if (p.min < 0.5) throw new Error(`${spec.id}: capacity param ${p.key} may round to 0`);
+    }
+    for (const range of Object.values(fit.dims ?? {})) {
       if ('param' in range) known(range.param, 'fits.dims');
+    }
   }
 }
 

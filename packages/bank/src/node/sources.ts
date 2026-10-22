@@ -11,8 +11,8 @@ import { normalizeLicense } from './license.ts';
 import type { ProbeFile, ProbeResult } from './meshTool.ts';
 import type { BankPaths } from './paths.ts';
 
-/** Must equal TOOL_VERSION in scripts/bank/py/mesh_tool.py; checked against every probe/build result. */
-export const MESH_TOOL_VERSION = 4;
+/** Must equal TOOL_VERSION in scripts/bank/py/mesh_tool.py; probe and build results are checked against it. */
+export const MESH_TOOL_VERSION = 5;
 
 export type SourceKind = 'stl' | '3mf' | 'step';
 
@@ -183,21 +183,32 @@ function resolveOrigin(
       ? 'makerworld'
       : 'unknown';
   const observed = meta.License ?? '';
+  const license = normalizeLicense({
+    observed,
+    attribution: [
+      title ?? rel,
+      author ? `by ${author}` : 'author not recorded',
+      observed ? observed : 'licence not recorded',
+    ].join(', '),
+    ...(link ? { url: link } : {}),
+  });
+  // A remix carries its author's licence, but the work it remixes may be more restricted (the 3MF lists
+  // upstream links, not their terms): keep such files out of the public repo until verified.
+  const remix = meta.Origin === 'remix';
   return {
     origin: 'source-file',
     site,
     ...(title ? { title } : {}),
     ...(author ? { author } : {}),
     ...(link ? { url: link } : {}),
-    license: normalizeLicense({
-      observed,
-      attribution: [
-        title ?? rel,
-        author ? `by ${author}` : 'author not recorded',
-        observed ? observed : 'licence not recorded',
-      ].join(', '),
-      ...(link ? { url: link } : {}),
-    }),
+    license:
+      remix && license.redistributable
+        ? {
+            ...license,
+            observed: `${license.observed} (remix; upstream licence not verified)`,
+            redistributable: false,
+          }
+        : license,
   };
 }
 

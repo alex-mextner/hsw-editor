@@ -1,0 +1,1989 @@
+{
+  "attribution": "Original parametric designs of the hsw-editor project (packages/bank/generators/families.scad); not derived from third-party models. MIT, same as the repository.",
+  "families": [
+    {
+      "id": "screwdriver-rail",
+      "part": "screwdriver_rail",
+      "category": "holders/screwdrivers",
+      "toolClasses": ["screwdriver"],
+      "nameTemplate": {
+        "ru": "Планка для отвёрток: {slots} шт., Ø{holeDiameter}",
+        "en": "Screwdriver rail: {slots} slots, Ø{holeDiameter}"
+      },
+      "variantTemplate": {
+        "ru": "{slots} × Ø{holeDiameter}",
+        "en": "{slots} × Ø{holeDiameter}"
+      },
+      "description": {
+        "ru": "Полка с круглыми отверстиями под стержни отвёрток; ручка опирается на полку. Шаг слотов — диаметр ручки + 4 мм.",
+        "en": "Shelf with round holes for screwdriver shafts; the handle rests on top. Slot pitch is the handle collar + 4 mm."
+      },
+      "tags": {
+        "ru": [
+          "отвертка",
+          "отвёртка",
+          "отвертки",
+          "отвёртки",
+          "планка для отверток",
+          "держатель отверток",
+          "подставка для отверток",
+          "органайзер для отверток",
+          "крестовая отвертка",
+          "шлицевая отвертка"
+        ],
+        "en": [
+          "screwdriver",
+          "screwdrivers",
+          "screwdriver rail",
+          "screwdriver holder",
+          "screwdriver rack",
+          "driver holder",
+          "phillips",
+          "flathead"
+        ]
+      },
+      "params": [
+        {
+          "key": "slots",
+          "label": {
+            "ru": "Слотов",
+            "en": "Slots"
+          },
+          "unit": "count",
+          "min": 1,
+          "max": 8,
+          "default": 4,
+          "step": 1
+        },
+        {
+          "key": "holeDiameter",
+          "label": {
+            "ru": "Диаметр отверстия",
+            "en": "Hole diameter"
+          },
+          "unit": "mm",
+          "min": 3,
+          "max": 14,
+          "default": 6,
+          "step": 0.5
+        },
+        {
+          "key": "handleDiameter",
+          "label": {
+            "ru": "Диаметр ручки",
+            "en": "Handle diameter"
+          },
+          "unit": "mm",
+          "min": 20,
+          "max": 24,
+          "default": 22,
+          "step": 1
+        }
+      ],
+      "grid": {
+        "slots": [2, 3, 4, 5, 6, 8],
+        "holeDiameter": [4, 5, 6, 8, 10]
+      },
+      "fits": [
+        {
+          "toolClass": "screwdriver",
+          "capacity": {
+            "param": "slots"
+          },
+          "dims": {
+            "shaftDiameter": {
+              "param": "holeDiameter",
+              "minDelta": -3,
+              "maxDelta": -0.4
+            }
+          }
+        }
+      ],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": false
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin"
+    },
+    {
+      "id": "tape-roll-holder",
+      "part": "tape_roll_holder",
+      "category": "holders/tape",
+      "toolClasses": ["tape-roll"],
+      "nameTemplate": {
+        "ru": "Держатель рулона скотча: втулка Ø{coreDiameter}, ширина {rollWidth} мм",
+        "en": "Tape roll holder: {coreDiameter} mm core, {rollWidth} mm wide"
+      },
+      "variantTemplate": {
+        "ru": "Ø{coreDiameter}, {rollWidth} мм",
+        "en": "{coreDiameter} mm core, {rollWidth} mm"
+      },
+      "description": {
+        "ru": "Полая ось с бортиком на конце под рулон скотча или изоленты. Втулка 76 мм сидит на оси Ø60.",
+        "en": "Hollow hub with an end lip for a tape roll. A 76 mm core rides on a 60 mm hub."
+      },
+      "tags": {
+        "ru": [
+          "скотч",
+          "изолента",
+          "лента",
+          "малярная лента",
+          "рулон",
+          "рулон скотча",
+          "держатель скотча",
+          "держатель изоленты",
+          "диспенсер скотча",
+          "катушка скотча"
+        ],
+        "en": [
+          "tape",
+          "tape roll",
+          "tape holder",
+          "masking tape",
+          "duct tape",
+          "electrical tape",
+          "tape dispenser",
+          "roll holder"
+        ]
+      },
+      "params": [
+        {
+          "key": "coreDiameter",
+          "label": {
+            "ru": "Диаметр втулки рулона",
+            "en": "Roll core diameter"
+          },
+          "unit": "mm",
+          "min": 20,
+          "max": 80,
+          "default": 40,
+          "step": 1
+        },
+        {
+          "key": "rollWidth",
+          "label": {
+            "ru": "Ширина рулона",
+            "en": "Roll width"
+          },
+          "unit": "mm",
+          "min": 10,
+          "max": 60,
+          "default": 25,
+          "step": 1
+        }
+      ],
+      "grid": {
+        "coreDiameter": [25, 40, 76],
+        "rollWidth": [12, 19, 25, 38, 50]
+      },
+      "fits": [
+        {
+          "toolClass": "tape-roll",
+          "capacity": 1,
+          "dims": {
+            "coreDiameter": {
+              "param": "coreDiameter",
+              "minDelta": -1,
+              "maxDelta": 2
+            },
+            "width": {
+              "param": "rollWidth",
+              "minDelta": -8,
+              "maxDelta": 2
+            }
+          }
+        }
+      ],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": false,
+        "notes": {
+          "ru": "Ось печатается стоя, без опор.",
+          "en": "The hub prints upright, no supports."
+        }
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin"
+    },
+    {
+      "id": "pliers-rack",
+      "part": "pliers_rack",
+      "category": "holders/pliers",
+      "toolClasses": ["pliers", "snips"],
+      "nameTemplate": {
+        "ru": "Стойка для плоскогубцев: {slots} шт., губки {jawThickness} мм",
+        "en": "Pliers rack: {slots} slots, {jawThickness} mm jaws"
+      },
+      "variantTemplate": {
+        "ru": "{slots} шт., губки {jawThickness} мм",
+        "en": "{slots} slots, {jawThickness} mm jaws"
+      },
+      "description": {
+        "ru": "Плоскогубцы вешаются закрытыми губками в прорезь, рукоятки раскрываются спереди и сзади и лежат на полке.",
+        "en": "Pliers hang by the closed jaws in a slot; the handles splay front and back and rest on the shelf."
+      },
+      "tags": {
+        "ru": [
+          "плоскогубцы",
+          "пассатижи",
+          "кусачки",
+          "бокорезы",
+          "клещи",
+          "длинногубцы",
+          "утконосы",
+          "стойка для плоскогубцев",
+          "держатель плоскогубцев",
+          "подставка для плоскогубцев"
+        ],
+        "en": [
+          "pliers",
+          "plier rack",
+          "pliers holder",
+          "pliers rack",
+          "side cutters",
+          "wire cutters",
+          "snips",
+          "nippers"
+        ]
+      },
+      "params": [
+        {
+          "key": "slots",
+          "label": {
+            "ru": "Слотов",
+            "en": "Slots"
+          },
+          "unit": "count",
+          "min": 1,
+          "max": 6,
+          "default": 4,
+          "step": 1
+        },
+        {
+          "key": "jawThickness",
+          "label": {
+            "ru": "Толщина закрытых губок",
+            "en": "Closed jaw thickness"
+          },
+          "unit": "mm",
+          "min": 8,
+          "max": 26,
+          "default": 14,
+          "step": 1
+        },
+        {
+          "key": "jawWidth",
+          "label": {
+            "ru": "Ширина губок",
+            "en": "Jaw width"
+          },
+          "unit": "mm",
+          "min": 20,
+          "max": 50,
+          "default": 32,
+          "step": 1
+        }
+      ],
+      "grid": {
+        "slots": [1, 2, 3, 4, 5],
+        "jawThickness": [10, 14, 18, 24]
+      },
+      "fits": [
+        {
+          "toolClass": "pliers",
+          "capacity": {
+            "param": "slots"
+          },
+          "dims": {
+            "jawThickness": {
+              "param": "jawThickness",
+              "minDelta": -4,
+              "maxDelta": 0
+            }
+          }
+        },
+        {
+          "toolClass": "snips",
+          "capacity": {
+            "param": "slots"
+          },
+          "dims": {
+            "jawThickness": {
+              "param": "jawThickness",
+              "minDelta": -4,
+              "maxDelta": 0
+            }
+          }
+        }
+      ],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": false
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin"
+    },
+    {
+      "id": "wrench-rack",
+      "part": "wrench_rack",
+      "category": "holders/wrenches",
+      "toolClasses": ["wrench"],
+      "nameTemplate": {
+        "ru": "Стойка для гаечных ключей: {slots} шт., головка до {maxWrenchWidth} мм",
+        "en": "Wrench rack: {slots} slots, heads up to {maxWrenchWidth} mm"
+      },
+      "variantTemplate": {
+        "ru": "{slots} шт., головка {maxWrenchWidth} мм",
+        "en": "{slots} slots, {maxWrenchWidth} mm head"
+      },
+      "description": {
+        "ru": "Рожковые ключи висят вплотную к стене, рукоятка в прорези, головка опирается на полку. Шаг = ширина головки + 6 мм.",
+        "en": "Open-end wrenches hang flat to the wall, handle in the slot, head resting on the shelf. Pitch = head width + 6 mm."
+      },
+      "tags": {
+        "ru": [
+          "ключ",
+          "ключи",
+          "гаечный ключ",
+          "гаечные ключи",
+          "рожковый ключ",
+          "рожковые ключи",
+          "разводной ключ",
+          "стойка для ключей",
+          "держатель ключей",
+          "подставка для ключей"
+        ],
+        "en": [
+          "wrench",
+          "wrenches",
+          "spanner",
+          "spanners",
+          "open end wrench",
+          "wrench rack",
+          "wrench holder",
+          "adjustable wrench"
+        ]
+      },
+      "params": [
+        {
+          "key": "slots",
+          "label": {
+            "ru": "Слотов",
+            "en": "Slots"
+          },
+          "unit": "count",
+          "min": 1,
+          "max": 8,
+          "default": 4,
+          "step": 1
+        },
+        {
+          "key": "maxWrenchWidth",
+          "label": {
+            "ru": "Макс. ширина головки",
+            "en": "Max head width"
+          },
+          "unit": "mm",
+          "min": 15,
+          "max": 40,
+          "default": 30,
+          "step": 1
+        }
+      ],
+      "grid": {
+        "slots": [2, 3, 4, 5, 6, 8],
+        "maxWrenchWidth": [20, 30, 40]
+      },
+      "fits": [
+        {
+          "toolClass": "wrench",
+          "capacity": {
+            "param": "slots"
+          },
+          "dims": {
+            "headWidth": {
+              "param": "maxWrenchWidth",
+              "minDelta": -8,
+              "maxDelta": 0
+            }
+          }
+        }
+      ],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": false
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin",
+      "exclude": [
+        {
+          "slots": 6,
+          "maxWrenchWidth": 40
+        },
+        {
+          "slots": 8,
+          "maxWrenchWidth": 30
+        },
+        {
+          "slots": 8,
+          "maxWrenchWidth": 40
+        }
+      ]
+    },
+    {
+      "id": "hex-key-holder",
+      "part": "hex_key_holder",
+      "category": "holders/hex-keys",
+      "toolClasses": ["hex-key"],
+      "nameTemplate": {
+        "ru": "Держатель шестигранников: {keys} шт., от {startSize} мм",
+        "en": "Hex key holder: {keys} keys from {startSize} mm"
+      },
+      "variantTemplate": {
+        "ru": "{keys} шт. от {startSize} мм, шаг {spacing}",
+        "en": "{keys} keys from {startSize} mm, pitch {spacing}"
+      },
+      "description": {
+        "ru": "Ряд отверстий под шестигранные ключи по стандартному ряду ISO 2936 (1,5 … 19 мм), диаметр отверстия по описанной окружности + 0,8 мм.",
+        "en": "A row of holes for hex keys along the ISO 2936 series (1.5 … 19 mm); hole = across-corners size + 0.8 mm."
+      },
+      "tags": {
+        "ru": [
+          "шестигранник",
+          "шестигранники",
+          "имбусовый ключ",
+          "имбус",
+          "г-образный ключ",
+          "шестигранные ключи",
+          "держатель шестигранников",
+          "набор шестигранников"
+        ],
+        "en": [
+          "hex key",
+          "hex keys",
+          "allen key",
+          "allen keys",
+          "allen wrench",
+          "hex wrench",
+          "hex key holder",
+          "key organizer"
+        ]
+      },
+      "params": [
+        {
+          "key": "keys",
+          "label": {
+            "ru": "Ключей",
+            "en": "Keys"
+          },
+          "unit": "count",
+          "min": 3,
+          "max": 13,
+          "default": 9,
+          "step": 1
+        },
+        {
+          "key": "startSize",
+          "label": {
+            "ru": "Первый размер",
+            "en": "First size"
+          },
+          "unit": "mm",
+          "min": 1.5,
+          "max": 10,
+          "default": 1.5,
+          "step": 0.5
+        },
+        {
+          "key": "spacing",
+          "label": {
+            "ru": "Мин. шаг отверстий",
+            "en": "Min hole pitch"
+          },
+          "unit": "mm",
+          "min": 5,
+          "max": 14,
+          "default": 7,
+          "step": 0.5
+        }
+      ],
+      "grid": {
+        "keys": [5, 7, 9, 13],
+        "startSize": [1.5, 3],
+        "spacing": [7, 10]
+      },
+      "exclude": [
+        {
+          "keys": 13,
+          "startSize": 3
+        }
+      ],
+      "fits": [
+        {
+          "toolClass": "hex-key",
+          "capacity": {
+            "param": "keys"
+          }
+        }
+      ],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": true,
+        "notes": {
+          "ru": "Опоры нужны под отверстиями крупных ключей (от 10 мм).",
+          "en": "Supports needed under the holes of the large keys (10 mm and up)."
+        }
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin"
+    },
+    {
+      "id": "j-hook",
+      "part": "j_hook",
+      "category": "hooks/hooks",
+      "toolClasses": ["cable", "saw"],
+      "nameTemplate": {
+        "ru": "Крючок J: вылет {reach} мм, Ø{barDiameter}",
+        "en": "J hook: {reach} mm reach, Ø{barDiameter} mm"
+      },
+      "variantTemplate": {
+        "ru": "вылет {reach}, Ø{barDiameter}",
+        "en": "reach {reach}, Ø{barDiameter}"
+      },
+      "description": {
+        "ru": "Круглый штырь с загнутым вверх концом: кабели, шланги, ножовки.",
+        "en": "Round bar with an up-turned tip for cables, hoses and saws."
+      },
+      "tags": {
+        "ru": [
+          "крючок",
+          "крюк",
+          "крючки",
+          "вешалка",
+          "штырь",
+          "крючок для кабеля",
+          "крючок для шланга",
+          "держатель ножовки"
+        ],
+        "en": ["hook", "hooks", "j hook", "peg", "hanger", "cable hook", "hose hook", "saw hook"]
+      },
+      "params": [
+        {
+          "key": "reach",
+          "label": {
+            "ru": "Вылет",
+            "en": "Reach"
+          },
+          "unit": "mm",
+          "min": 20,
+          "max": 150,
+          "default": 60,
+          "step": 5
+        },
+        {
+          "key": "barDiameter",
+          "label": {
+            "ru": "Диаметр штыря",
+            "en": "Bar diameter"
+          },
+          "unit": "mm",
+          "min": 5,
+          "max": 14,
+          "default": 8,
+          "step": 0.5
+        },
+        {
+          "key": "tipRise",
+          "label": {
+            "ru": "Высота загиба",
+            "en": "Tip rise"
+          },
+          "unit": "mm",
+          "min": 10,
+          "max": 60,
+          "default": 25,
+          "step": 1
+        }
+      ],
+      "grid": {
+        "reach": [20, 40, 60, 80, 100, 150],
+        "barDiameter": [6, 8, 10, 12]
+      },
+      "exclude": [
+        {
+          "reach": 150,
+          "barDiameter": 6
+        }
+      ],
+      "fits": [
+        {
+          "toolClass": "cable",
+          "capacity": 1
+        },
+        {
+          "toolClass": "saw",
+          "capacity": 1
+        }
+      ],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": true,
+        "notes": {
+          "ru": "Опора нужна под загнутым концом.",
+          "en": "Support needed under the up-turned tip."
+        }
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin"
+    },
+    {
+      "id": "shelf-ledge",
+      "part": "shelf_ledge",
+      "category": "shelves",
+      "toolClasses": [],
+      "nameTemplate": {
+        "ru": "Полка с бортиком: {widthCells} яч. в ширину, глубина {depth} мм",
+        "en": "Shelf with lip: {widthCells} cells wide, {depth} mm deep"
+      },
+      "variantTemplate": {
+        "ru": "{widthCells} яч., глубина {depth}",
+        "en": "{widthCells} cells, {depth} deep"
+      },
+      "description": {
+        "ru": "Полка шириной в целое число ячеек (ширина = n × 40,88 мм) с передним бортиком и рёбрами под полкой.",
+        "en": "Shelf as wide as a whole number of cells (width = n × 40.88 mm) with a front lip and ribs under the shelf."
+      },
+      "tags": {
+        "ru": ["полка", "полочка", "уголок", "подставка", "выступ", "полка с бортиком"],
+        "en": ["shelf", "ledge", "bracket", "tray shelf", "stand", "shelf with lip"]
+      },
+      "params": [
+        {
+          "key": "widthCells",
+          "label": {
+            "ru": "Ширина, ячеек",
+            "en": "Width, cells"
+          },
+          "unit": "count",
+          "min": 2,
+          "max": 6,
+          "default": 3,
+          "step": 1
+        },
+        {
+          "key": "depth",
+          "label": {
+            "ru": "Глубина",
+            "en": "Depth"
+          },
+          "unit": "mm",
+          "min": 30,
+          "max": 120,
+          "default": 60,
+          "step": 5
+        }
+      ],
+      "grid": {
+        "widthCells": [2, 3, 4, 5, 6],
+        "depth": [40, 60, 80, 100]
+      },
+      "fits": [],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": true,
+        "notes": {
+          "ru": "Опоры нужны под передней стенкой/бортиком.",
+          "en": "Supports needed under the front wall/lip."
+        }
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin"
+    },
+    {
+      "id": "bin-open",
+      "part": "bin_open",
+      "category": "bins/boxes",
+      "toolClasses": ["screws"],
+      "nameTemplate": {
+        "ru": "Открытый контейнер: {width}×{depth}×{height} мм",
+        "en": "Open bin: {width}×{depth}×{height} mm"
+      },
+      "variantTemplate": {
+        "ru": "{width}×{depth}×{height}",
+        "en": "{width}×{depth}×{height}"
+      },
+      "description": {
+        "ru": "Лоток с задней стенкой-пластиной и вырезом спереди (при высоте от 50 мм) для крепежа и мелочей.",
+        "en": "Open tray with a back plate and a front scoop (from 50 mm tall) for fasteners and small parts."
+      },
+      "tags": {
+        "ru": [
+          "контейнер",
+          "коробка",
+          "ящик",
+          "лоток",
+          "органайзер",
+          "бокс",
+          "ёмкость",
+          "емкость",
+          "контейнер для мелочей",
+          "ящик для крепежа",
+          "саморезы",
+          "крепеж"
+        ],
+        "en": [
+          "bin",
+          "box",
+          "container",
+          "tray",
+          "organizer",
+          "storage bin",
+          "parts bin",
+          "small parts",
+          "screws"
+        ]
+      },
+      "params": [
+        {
+          "key": "width",
+          "label": {
+            "ru": "Ширина",
+            "en": "Width"
+          },
+          "unit": "mm",
+          "min": 30,
+          "max": 140,
+          "default": 80,
+          "step": 5
+        },
+        {
+          "key": "depth",
+          "label": {
+            "ru": "Глубина",
+            "en": "Depth"
+          },
+          "unit": "mm",
+          "min": 30,
+          "max": 120,
+          "default": 60,
+          "step": 5
+        },
+        {
+          "key": "height",
+          "label": {
+            "ru": "Высота",
+            "en": "Height"
+          },
+          "unit": "mm",
+          "min": 20,
+          "max": 120,
+          "default": 50,
+          "step": 5
+        }
+      ],
+      "grid": {
+        "width": [40, 60, 80, 100, 120],
+        "depth": [40, 60],
+        "height": [30, 50, 80]
+      },
+      "fits": [
+        {
+          "toolClass": "screws"
+        }
+      ],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": true,
+        "notes": {
+          "ru": "Опоры нужны под передней стенкой/бортиком.",
+          "en": "Supports needed under the front wall/lip."
+        }
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin"
+    },
+    {
+      "id": "cup-round",
+      "part": "cup_round",
+      "category": "bins/cups",
+      "toolClasses": ["pen", "brush", "file"],
+      "nameTemplate": {
+        "ru": "Стакан круглый: Ø{innerDiameter}, высота {cupHeight} мм",
+        "en": "Round cup: Ø{innerDiameter} mm, {cupHeight} mm tall"
+      },
+      "variantTemplate": {
+        "ru": "Ø{innerDiameter} × {cupHeight}",
+        "en": "Ø{innerDiameter} × {cupHeight}"
+      },
+      "description": {
+        "ru": "Круглый стакан на стене для ручек, кистей и напильников.",
+        "en": "Round wall cup for pens, brushes and files."
+      },
+      "tags": {
+        "ru": [
+          "стакан",
+          "стаканчик",
+          "карандашница",
+          "подставка для ручек",
+          "держатель для кистей",
+          "органайзер для ручек",
+          "стакан для кистей",
+          "ёмкость"
+        ],
+        "en": [
+          "cup",
+          "pen cup",
+          "pen holder",
+          "brush holder",
+          "tumbler",
+          "pencil cup",
+          "cylinder holder"
+        ]
+      },
+      "params": [
+        {
+          "key": "innerDiameter",
+          "label": {
+            "ru": "Внутренний диаметр",
+            "en": "Inner diameter"
+          },
+          "unit": "mm",
+          "min": 15,
+          "max": 100,
+          "default": 40,
+          "step": 1
+        },
+        {
+          "key": "cupHeight",
+          "label": {
+            "ru": "Высота",
+            "en": "Height"
+          },
+          "unit": "mm",
+          "min": 30,
+          "max": 150,
+          "default": 80,
+          "step": 5
+        }
+      ],
+      "grid": {
+        "innerDiameter": [20, 30, 40, 50, 60, 80],
+        "cupHeight": [40, 80, 120]
+      },
+      "fits": [
+        {
+          "toolClass": "pen",
+          "dims": {
+            "diameter": {
+              "param": "innerDiameter",
+              "minDelta": -100,
+              "maxDelta": -1.5
+            }
+          }
+        },
+        {
+          "toolClass": "brush",
+          "dims": {
+            "diameter": {
+              "param": "innerDiameter",
+              "minDelta": -100,
+              "maxDelta": -1.5
+            }
+          }
+        },
+        {
+          "toolClass": "file",
+          "dims": {
+            "width": {
+              "param": "innerDiameter",
+              "minDelta": -100,
+              "maxDelta": -1.5
+            }
+          }
+        }
+      ],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": true,
+        "notes": {
+          "ru": "Опоры нужны под сводом стакана.",
+          "en": "Supports needed under the cup vault."
+        }
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin"
+    },
+    {
+      "id": "drill-cradle",
+      "part": "drill_cradle",
+      "category": "holders/drills",
+      "toolClasses": ["drill"],
+      "nameTemplate": {
+        "ru": "Подставка под дрель или шуруповёрт: корпус {bodyWidth} мм",
+        "en": "Drill cradle: {bodyWidth} mm body"
+      },
+      "variantTemplate": {
+        "ru": "корпус {bodyWidth} мм",
+        "en": "{bodyWidth} mm body"
+      },
+      "description": {
+        "ru": "Две опорные лапы с передними упорами: шейка дрели проходит между лапами, корпус лежит сверху.",
+        "en": "Two bearing arms with front stops: the drill neck passes between the arms, the body rests on top."
+      },
+      "tags": {
+        "ru": [
+          "дрель",
+          "шуруповерт",
+          "шуруповёрт",
+          "перфоратор",
+          "подставка для дрели",
+          "держатель шуруповерта",
+          "дрель-шуруповерт",
+          "держатель дрели"
+        ],
+        "en": [
+          "drill",
+          "cordless drill",
+          "driver",
+          "impact driver",
+          "drill holder",
+          "drill cradle",
+          "drill stand"
+        ]
+      },
+      "params": [
+        {
+          "key": "bodyWidth",
+          "label": {
+            "ru": "Ширина корпуса",
+            "en": "Body width"
+          },
+          "unit": "mm",
+          "min": 25,
+          "max": 80,
+          "default": 38,
+          "step": 1
+        },
+        {
+          "key": "armLength",
+          "label": {
+            "ru": "Длина лап",
+            "en": "Arm length"
+          },
+          "unit": "mm",
+          "min": 60,
+          "max": 130,
+          "default": 100,
+          "step": 5
+        }
+      ],
+      "grid": {
+        "bodyWidth": [32, 38, 45, 55, 70]
+      },
+      "fits": [
+        {
+          "toolClass": "drill",
+          "capacity": 1,
+          "dims": {
+            "neckWidth": {
+              "param": "bodyWidth",
+              "minDelta": -6,
+              "maxDelta": 1
+            }
+          }
+        }
+      ],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": true,
+        "notes": {
+          "ru": "Опоры нужны под передними упорами.",
+          "en": "Supports needed under the front stops."
+        }
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin"
+    },
+    {
+      "id": "hammer-fork",
+      "part": "hammer_fork",
+      "category": "holders/hammers",
+      "toolClasses": ["hammer"],
+      "nameTemplate": {
+        "ru": "Вилка для молотка: рукоятка {handleWidth} мм",
+        "en": "Hammer fork: {handleWidth} mm handle"
+      },
+      "variantTemplate": {
+        "ru": "рукоятка {handleWidth} мм",
+        "en": "{handleWidth} mm handle"
+      },
+      "description": {
+        "ru": "Две узкие лапы с круглым вырезом: рукоятка проходит между лапами, боёк лежит сверху, штифты на концах не дают соскользнуть.",
+        "en": "Two narrow tines with a round throat: the handle drops between them, the head rests on top, tip pegs stop it sliding off."
+      },
+      "tags": {
+        "ru": [
+          "молоток",
+          "киянка",
+          "кувалда",
+          "вилка для молотка",
+          "держатель молотка",
+          "подставка для молотка"
+        ],
+        "en": ["hammer", "mallet", "sledge", "hammer fork", "hammer holder", "hammer rack"]
+      },
+      "params": [
+        {
+          "key": "handleWidth",
+          "label": {
+            "ru": "Ширина рукоятки",
+            "en": "Handle width"
+          },
+          "unit": "mm",
+          "min": 15,
+          "max": 50,
+          "default": 30,
+          "step": 1
+        },
+        {
+          "key": "forkLength",
+          "label": {
+            "ru": "Длина вилки",
+            "en": "Fork length"
+          },
+          "unit": "mm",
+          "min": 40,
+          "max": 120,
+          "default": 70,
+          "step": 5
+        }
+      ],
+      "grid": {
+        "handleWidth": [20, 25, 30, 35, 40]
+      },
+      "fits": [
+        {
+          "toolClass": "hammer",
+          "capacity": 1,
+          "dims": {
+            "handleWidth": {
+              "param": "handleWidth",
+              "minDelta": -3,
+              "maxDelta": 1
+            }
+          }
+        }
+      ],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": true,
+        "notes": {
+          "ru": "Опоры нужны под штифтами на концах.",
+          "en": "Supports needed under the tip pegs."
+        }
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin"
+    },
+    {
+      "id": "spool-holder",
+      "part": "spool_holder",
+      "category": "accessories/cables",
+      "toolClasses": ["spool", "cable"],
+      "nameTemplate": {
+        "ru": "Держатель катушки: отверстие Ø{boreDiameter}, ширина {spoolWidth} мм",
+        "en": "Spool holder: Ø{boreDiameter} mm bore, {spoolWidth} mm wide"
+      },
+      "variantTemplate": {
+        "ru": "Ø{boreDiameter}, ширина {spoolWidth}",
+        "en": "Ø{boreDiameter}, {spoolWidth} wide"
+      },
+      "description": {
+        "ru": "Ось с конусным упором и ограничителем на конце; катушка надевается спереди.",
+        "en": "Axle with a tapered shoulder and an end lip; the spool slides on from the front."
+      },
+      "tags": {
+        "ru": [
+          "катушка",
+          "бобина",
+          "моток",
+          "катушка с проволокой",
+          "держатель катушки",
+          "катушка с нитками",
+          "катушка кабеля"
+        ],
+        "en": [
+          "spool",
+          "reel",
+          "spool holder",
+          "filament spool",
+          "wire spool",
+          "thread spool",
+          "cable reel"
+        ]
+      },
+      "params": [
+        {
+          "key": "boreDiameter",
+          "label": {
+            "ru": "Диаметр отверстия катушки",
+            "en": "Spool bore diameter"
+          },
+          "unit": "mm",
+          "min": 6,
+          "max": 60,
+          "default": 25,
+          "step": 1
+        },
+        {
+          "key": "spoolWidth",
+          "label": {
+            "ru": "Ширина катушки",
+            "en": "Spool width"
+          },
+          "unit": "mm",
+          "min": 20,
+          "max": 90,
+          "default": 50,
+          "step": 1
+        }
+      ],
+      "grid": {
+        "boreDiameter": [8, 16, 25, 32, 50],
+        "spoolWidth": [30, 50, 70]
+      },
+      "fits": [
+        {
+          "toolClass": "spool",
+          "capacity": 1,
+          "dims": {
+            "boreDiameter": {
+              "param": "boreDiameter",
+              "minDelta": -1,
+              "maxDelta": 2
+            },
+            "width": {
+              "param": "spoolWidth",
+              "minDelta": -20,
+              "maxDelta": 4
+            }
+          }
+        }
+      ],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": false,
+        "notes": {
+          "ru": "Ось печатается стоя, без опор.",
+          "en": "The axle prints upright, no supports."
+        }
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin"
+    },
+    {
+      "id": "spray-can-holder",
+      "part": "spray_can_holder",
+      "category": "holders/other",
+      "toolClasses": ["spray-can"],
+      "nameTemplate": {
+        "ru": "Держатель баллончика: Ø{canDiameter} мм",
+        "en": "Spray can holder: Ø{canDiameter} mm"
+      },
+      "variantTemplate": {
+        "ru": "Ø{canDiameter} мм",
+        "en": "Ø{canDiameter} mm"
+      },
+      "description": {
+        "ru": "Горизонтальное кольцо с передним проёмом уже баллона; баллон вставляется сверху.",
+        "en": "Horizontal ring with a front opening narrower than the can; the can drops in from above."
+      },
+      "tags": {
+        "ru": [
+          "баллончик",
+          "аэрозоль",
+          "смазка",
+          "баллон",
+          "краска в баллончике",
+          "держатель баллончика",
+          "кольцо для баллона"
+        ],
+        "en": [
+          "spray can",
+          "aerosol",
+          "lubricant",
+          "can holder",
+          "spray paint",
+          "spray can holder",
+          "ring holder"
+        ]
+      },
+      "params": [
+        {
+          "key": "canDiameter",
+          "label": {
+            "ru": "Диаметр баллона",
+            "en": "Can diameter"
+          },
+          "unit": "mm",
+          "min": 30,
+          "max": 90,
+          "default": 65,
+          "step": 1
+        },
+        {
+          "key": "ringHeight",
+          "label": {
+            "ru": "Высота кольца",
+            "en": "Ring height"
+          },
+          "unit": "mm",
+          "min": 8,
+          "max": 30,
+          "default": 12,
+          "step": 1
+        }
+      ],
+      "grid": {
+        "canDiameter": [40, 50, 60, 65, 70, 80]
+      },
+      "fits": [
+        {
+          "toolClass": "spray-can",
+          "capacity": 1,
+          "dims": {
+            "diameter": {
+              "param": "canDiameter",
+              "minDelta": -3,
+              "maxDelta": 1
+            }
+          }
+        }
+      ],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": true,
+        "notes": {
+          "ru": "Опоры нужны под кольцом.",
+          "en": "Supports needed under the ring."
+        }
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin"
+    },
+    {
+      "id": "scissors-slot",
+      "part": "scissors_slot",
+      "category": "holders/cutting",
+      "toolClasses": ["scissors", "knife"],
+      "nameTemplate": {
+        "ru": "Стойка для ножниц и ножей: {slots} шт., лезвие до {bladeThickness} мм",
+        "en": "Scissors and knife rack: {slots} slots, blades up to {bladeThickness} mm"
+      },
+      "variantTemplate": {
+        "ru": "{slots} шт., лезвие {bladeThickness} мм",
+        "en": "{slots} slots, {bladeThickness} mm blades"
+      },
+      "description": {
+        "ru": "Прорези, открытые вперёд: ножницы и ножи висят на сомкнутых лезвиях.",
+        "en": "Slots open to the front: scissors and knives hang by the closed blades."
+      },
+      "tags": {
+        "ru": [
+          "ножницы",
+          "нож",
+          "ножи",
+          "канцелярский нож",
+          "стамеска",
+          "стойка для ножниц",
+          "держатель ножниц",
+          "держатель ножей"
+        ],
+        "en": [
+          "scissors",
+          "shears",
+          "knife",
+          "knives",
+          "utility knife",
+          "scissors rack",
+          "knife holder",
+          "blade rack"
+        ]
+      },
+      "params": [
+        {
+          "key": "slots",
+          "label": {
+            "ru": "Слотов",
+            "en": "Slots"
+          },
+          "unit": "count",
+          "min": 1,
+          "max": 6,
+          "default": 4,
+          "step": 1
+        },
+        {
+          "key": "bladeThickness",
+          "label": {
+            "ru": "Толщина лезвий",
+            "en": "Blade thickness"
+          },
+          "unit": "mm",
+          "min": 2,
+          "max": 16,
+          "default": 8,
+          "step": 1
+        },
+        {
+          "key": "slotLength",
+          "label": {
+            "ru": "Глубина прорези",
+            "en": "Slot depth"
+          },
+          "unit": "mm",
+          "min": 25,
+          "max": 70,
+          "default": 38,
+          "step": 1
+        }
+      ],
+      "grid": {
+        "slots": [1, 2, 3, 4],
+        "bladeThickness": [4, 8, 12]
+      },
+      "fits": [
+        {
+          "toolClass": "scissors",
+          "capacity": {
+            "param": "slots"
+          },
+          "dims": {
+            "bladeThickness": {
+              "param": "bladeThickness",
+              "minDelta": -3,
+              "maxDelta": 1
+            }
+          }
+        },
+        {
+          "toolClass": "knife",
+          "capacity": {
+            "param": "slots"
+          },
+          "dims": {
+            "bladeThickness": {
+              "param": "bladeThickness",
+              "minDelta": -3,
+              "maxDelta": 1
+            }
+          }
+        }
+      ],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": false
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin"
+    },
+    {
+      "id": "file-rack",
+      "part": "file_rack",
+      "category": "holders/other",
+      "toolClasses": ["file", "saw"],
+      "nameTemplate": {
+        "ru": "Стойка для напильников: {slots} шт., ширина {slotWidth} мм",
+        "en": "File rack: {slots} pockets, {slotWidth} mm wide"
+      },
+      "variantTemplate": {
+        "ru": "{slots} шт., {slotWidth} мм",
+        "en": "{slots} pockets, {slotWidth} mm"
+      },
+      "description": {
+        "ru": "Толстая планка с глубокими карманами: напильники, надфили и полотна стоят на ребре у стены.",
+        "en": "Thick bar with deep pockets: files, needle files and blades stand on edge against the wall."
+      },
+      "tags": {
+        "ru": [
+          "напильник",
+          "напильники",
+          "надфиль",
+          "рашпиль",
+          "ножовка",
+          "пила",
+          "стойка для напильников",
+          "держатель напильников"
+        ],
+        "en": ["file", "files", "rasp", "needle file", "saw", "file rack", "file holder"]
+      },
+      "params": [
+        {
+          "key": "slots",
+          "label": {
+            "ru": "Карманов",
+            "en": "Pockets"
+          },
+          "unit": "count",
+          "min": 1,
+          "max": 10,
+          "default": 4,
+          "step": 1
+        },
+        {
+          "key": "slotWidth",
+          "label": {
+            "ru": "Ширина кармана",
+            "en": "Pocket width"
+          },
+          "unit": "mm",
+          "min": 4,
+          "max": 14,
+          "default": 10,
+          "step": 1
+        },
+        {
+          "key": "slotThickness",
+          "label": {
+            "ru": "Толщина кармана",
+            "en": "Pocket thickness"
+          },
+          "unit": "mm",
+          "min": 2,
+          "max": 10,
+          "default": 5,
+          "step": 0.5
+        }
+      ],
+      "grid": {
+        "slots": [3, 5, 8, 10],
+        "slotWidth": [6, 10, 14]
+      },
+      "fits": [
+        {
+          "toolClass": "file",
+          "capacity": {
+            "param": "slots"
+          },
+          "dims": {
+            "width": {
+              "param": "slotWidth",
+              "minDelta": -4,
+              "maxDelta": 0
+            }
+          }
+        },
+        {
+          "toolClass": "saw",
+          "capacity": {
+            "param": "slots"
+          }
+        }
+      ],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": false
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin",
+      "exclude": [
+        {
+          "slots": 10,
+          "slotWidth": 14
+        }
+      ]
+    },
+    {
+      "id": "bit-block",
+      "part": "bit_block",
+      "category": "holders/small-parts",
+      "toolClasses": ["bit-set"],
+      "nameTemplate": {
+        "ru": "Блок для бит: {bitsPerRow} × {rows} шт.",
+        "en": "Bit block: {bitsPerRow} × {rows} bits"
+      },
+      "variantTemplate": {
+        "ru": "{bitsPerRow} × {rows}",
+        "en": "{bitsPerRow} × {rows}"
+      },
+      "description": {
+        "ru": "Шестигранные карманы под биты 1/4\" (E6,3), шаг 12 мм, ряды вдоль глубины полки.",
+        "en": "Hex pockets for 1/4\" (E6.3) bits at 12 mm pitch, rows along the shelf depth."
+      },
+      "tags": {
+        "ru": [
+          "биты",
+          "бита",
+          "набор бит",
+          "насадки",
+          "держатель бит",
+          "блок для бит",
+          "органайзер для бит"
+        ],
+        "en": ["bits", "bit", "bit set", "driver bits", "bit holder", "bit block", "bit organizer"]
+      },
+      "params": [
+        {
+          "key": "bitsPerRow",
+          "label": {
+            "ru": "Бит в ряду",
+            "en": "Bits per row"
+          },
+          "unit": "count",
+          "min": 4,
+          "max": 18,
+          "default": 10,
+          "step": 1
+        },
+        {
+          "key": "rows",
+          "label": {
+            "ru": "Рядов",
+            "en": "Rows"
+          },
+          "unit": "count",
+          "min": 1,
+          "max": 4,
+          "default": 2,
+          "step": 1
+        }
+      ],
+      "grid": {
+        "bitsPerRow": [6, 10, 14, 18],
+        "rows": [1, 2, 3]
+      },
+      "fits": [
+        {
+          "toolClass": "bit-set"
+        }
+      ],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": false
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin"
+    },
+    {
+      "id": "clamp-bar",
+      "part": "clamp_bar",
+      "category": "holders/clamps",
+      "toolClasses": ["clamp"],
+      "nameTemplate": {
+        "ru": "Штанга для струбцин: стержень Ø{rodDiameter}, {rodLength} мм",
+        "en": "Clamp bar: Ø{rodDiameter} mm rod, {rodLength} mm long"
+      },
+      "variantTemplate": {
+        "ru": "Ø{rodDiameter}, {rodLength} мм",
+        "en": "Ø{rodDiameter}, {rodLength} mm"
+      },
+      "description": {
+        "ru": "Круглый стержень между двумя кронштейнами: на него навешиваются струбцины.",
+        "en": "Round rod between two end brackets for hanging clamps."
+      },
+      "tags": {
+        "ru": [
+          "струбцина",
+          "струбцины",
+          "зажим",
+          "прищепка",
+          "штанга для струбцин",
+          "держатель струбцин",
+          "вешалка для струбцин"
+        ],
+        "en": [
+          "clamp",
+          "clamps",
+          "bar clamp",
+          "f-clamp",
+          "quick clamp",
+          "clamp rack",
+          "clamp holder"
+        ]
+      },
+      "params": [
+        {
+          "key": "rodDiameter",
+          "label": {
+            "ru": "Диаметр стержня",
+            "en": "Rod diameter"
+          },
+          "unit": "mm",
+          "min": 6,
+          "max": 25,
+          "default": 10,
+          "step": 1
+        },
+        {
+          "key": "rodLength",
+          "label": {
+            "ru": "Длина стержня",
+            "en": "Rod length"
+          },
+          "unit": "mm",
+          "min": 80,
+          "max": 230,
+          "default": 160,
+          "step": 10
+        }
+      ],
+      "grid": {
+        "rodDiameter": [8, 12, 16, 20],
+        "rodLength": [100, 160, 220]
+      },
+      "fits": [
+        {
+          "toolClass": "clamp"
+        }
+      ],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": true,
+        "notes": {
+          "ru": "Опоры нужны под стержнем между кронштейнами.",
+          "en": "Supports needed under the rod between the brackets."
+        }
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin"
+    },
+    {
+      "id": "cable-hanger",
+      "part": "cable_hanger",
+      "category": "accessories/cables",
+      "toolClasses": ["cable"],
+      "nameTemplate": {
+        "ru": "Вешалка для кабеля: лента {strapWidth} мм, вылет {hangerReach} мм",
+        "en": "Cable hanger: {strapWidth} mm strap, {hangerReach} mm reach"
+      },
+      "variantTemplate": {
+        "ru": "лента {strapWidth}, вылет {hangerReach}",
+        "en": "strap {strapWidth}, reach {hangerReach}"
+      },
+      "description": {
+        "ru": "Плоский крюк с загнутым вверх краем для бухт кабеля, шланга и верёвки.",
+        "en": "Flat strap hook with an up-turned edge for coils of cable, hose and rope."
+      },
+      "tags": {
+        "ru": [
+          "кабель",
+          "провод",
+          "шнур",
+          "шланг",
+          "бухта",
+          "вешалка для кабеля",
+          "крючок для кабеля",
+          "держатель провода"
+        ],
+        "en": [
+          "cable",
+          "wire",
+          "cord",
+          "hose",
+          "coil",
+          "cable hanger",
+          "cable hook",
+          "cable holder"
+        ]
+      },
+      "params": [
+        {
+          "key": "strapWidth",
+          "label": {
+            "ru": "Ширина ленты",
+            "en": "Strap width"
+          },
+          "unit": "mm",
+          "min": 15,
+          "max": 60,
+          "default": 35,
+          "step": 1
+        },
+        {
+          "key": "hangerReach",
+          "label": {
+            "ru": "Вылет",
+            "en": "Reach"
+          },
+          "unit": "mm",
+          "min": 30,
+          "max": 140,
+          "default": 70,
+          "step": 5
+        }
+      ],
+      "grid": {
+        "hangerReach": [40, 70, 100, 130],
+        "strapWidth": [20, 35, 50]
+      },
+      "fits": [
+        {
+          "toolClass": "cable",
+          "capacity": 1
+        }
+      ],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": true,
+        "notes": {
+          "ru": "Опора нужна под загнутым краем.",
+          "en": "Support needed under the up-turned edge."
+        }
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin"
+    },
+    {
+      "id": "caliper-cradle",
+      "part": "caliper_cradle",
+      "category": "holders/measuring",
+      "toolClasses": ["caliper"],
+      "nameTemplate": {
+        "ru": "Подставка под штангенциркули: {slots} шт., штанга {beamWidth} мм",
+        "en": "Caliper cradle: {slots} slots, {beamWidth} mm beam"
+      },
+      "variantTemplate": {
+        "ru": "{slots} шт., штанга {beamWidth} мм",
+        "en": "{slots} slots, {beamWidth} mm beam"
+      },
+      "description": {
+        "ru": "Прорези с воронкой под штанги штангенциркулей; ползунок лежит на полке. Шаг прорезей = ширина штанги + 32 мм.",
+        "en": "Funnel-mouth slots for caliper beams; the slider rests on the shelf. Slot pitch = beam width + 32 mm."
+      },
+      "tags": {
+        "ru": [
+          "штангенциркуль",
+          "штангенциркули",
+          "штангель",
+          "суппорт",
+          "подставка для штангенциркуля",
+          "держатель штангенциркуля"
+        ],
+        "en": [
+          "caliper",
+          "calipers",
+          "vernier",
+          "caliper holder",
+          "caliper cradle",
+          "caliper stand"
+        ]
+      },
+      "params": [
+        {
+          "key": "slots",
+          "label": {
+            "ru": "Слотов",
+            "en": "Slots"
+          },
+          "unit": "count",
+          "min": 1,
+          "max": 4,
+          "default": 4,
+          "step": 1
+        },
+        {
+          "key": "beamWidth",
+          "label": {
+            "ru": "Ширина штанги",
+            "en": "Beam width"
+          },
+          "unit": "mm",
+          "min": 10,
+          "max": 24,
+          "default": 20,
+          "step": 1
+        },
+        {
+          "key": "beamThickness",
+          "label": {
+            "ru": "Толщина штанги",
+            "en": "Beam thickness"
+          },
+          "unit": "mm",
+          "min": 2,
+          "max": 8,
+          "default": 4,
+          "step": 0.5
+        }
+      ],
+      "grid": {
+        "slots": [1, 2, 3],
+        "beamWidth": [16, 20, 24]
+      },
+      "fits": [
+        {
+          "toolClass": "caliper",
+          "capacity": {
+            "param": "slots"
+          },
+          "dims": {
+            "beamWidth": {
+              "param": "beamWidth",
+              "minDelta": -2,
+              "maxDelta": 0.5
+            }
+          }
+        }
+      ],
+      "printNotes": {
+        "materials": ["PETG", "PLA"],
+        "orientation": {
+          "ru": "Тыльной стороной вниз",
+          "en": "Wall face down"
+        },
+        "supports": false
+      },
+      "generator": "families.scad",
+      "version": 1,
+      "mounting": {
+        "kind": "m3-screw"
+      },
+      "anchor": "origin"
+    }
+  ]
+}
