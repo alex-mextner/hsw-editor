@@ -512,10 +512,12 @@ describe('attachItem', () => {
     expect(tool?.slot).toBeUndefined();
   });
 
-  test('only tools hang, only on holders, and never when locked', () => {
+  test('only tools hang, a non-holder parent is flagged (not refused), and never when locked', () => {
     const wall = fixture();
     expect(() => applyOp(wall, { type: 'attachItem', id: 'h1', parentId: 'h2' })).toThrow(OpError);
-    expect(() => applyOp(wall, { type: 'attachItem', id: 't1', parentId: 't1' })).toThrow(/holder/);
+    const toTool = applyOp(wall, { type: 'attachItem', id: 't1', parentId: 't1' });
+    expect(toTool.warnings.map((w) => w.code)).toContain('parent_not_holder');
+    expect(content(applyOp(toTool.wall, toTool.inverse).wall)).toEqual(content(wall));
     const locked = applyOp(wall, { type: 'lock', id: 't1', locked: true }).wall;
     expect(() => applyOp(locked, { type: 'attachItem', id: 't1', parentId: 'h2' })).toThrow(
       /locked/,

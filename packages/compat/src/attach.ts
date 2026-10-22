@@ -436,7 +436,11 @@ export interface HangAudit {
 export function auditHangs(ctx: AttachContext): HangAudit[] {
   const out: HangAudit[] = [];
   for (const holder of holderIndex(ctx)) {
-    for (const [position, toolItem] of holder.occupants.entries()) {
+    // Judge capacity in slot order (unslotted last, then wall order), so the surplus tool is the one flagged.
+    const ranked = [...holder.occupants].sort(
+      (a, b) => (a.slot ?? Infinity) - (b.slot ?? Infinity),
+    );
+    for (const [position, toolItem] of ranked.entries()) {
       const tool = ctx.toolInterface(toolItem);
       if (tool === undefined) continue;
       const compat = compatibility(tool, holder.spec, { occupied: position });

@@ -353,13 +353,9 @@ function attachItem(wall: Wall, op: Narrow<'attachItem'>): LeafResult {
   if (item.kind !== 'tool') {
     throw new OpError('invalid_op', `${op.id}: only tools hang on holders (kind is ${item.kind})`);
   }
-  // A parent that no longer exists is allowed (like `addItem`): removing a holder leaves its tools pointing at
-  // it with a `missing_parent` warning, and undoing a later re-attach has to be able to restore that state.
-  const parent =
-    op.parentId === null ? undefined : wall.items.find((candidate) => candidate.id === op.parentId);
-  if (parent !== undefined && parent.kind !== 'holder') {
-    throw new OpError('invalid_op', `${op.id}: ${op.parentId} is not a holder`);
-  }
+  // The parent is not validated (like `addItem`): removing a holder leaves its tools pointing at it, and an id can
+  // be reused by a non-holder, so undoing a later re-attach must be able to restore any stored parent. A missing
+  // or non-holder parent shows up as `missing_parent` / `parent_not_holder` warnings.
   const inverse: LeafOp = {
     type: 'attachItem',
     id: op.id,

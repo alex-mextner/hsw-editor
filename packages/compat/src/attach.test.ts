@@ -530,5 +530,11 @@ describe('review regressions', () => {
     for (const id of ['drv1', 'drv2', 'drv3']) wall = dropOn(wall, id, 'rail');
     wall = apply1(wall, { type: 'attachItem', id: 'drv4', parentId: 'rail', slot: 3 });
     expect(auditHangs(contextFor(wall)).map((a) => a.toolId)).toEqual(['drv4']);
+    // The surplus tool coming first in wall order must not change who is flagged.
+    const reordered: Wall = {
+      ...wall,
+      items: [...wall.items].sort((a, b) => (a.id === 'drv4' ? -1 : b.id === 'drv4' ? 1 : 0)),
+    };
+    expect(auditHangs(contextFor(reordered)).map((a) => a.toolId)).toEqual(['drv4']);
   });
 });

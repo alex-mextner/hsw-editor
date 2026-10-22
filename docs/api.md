@@ -85,8 +85,8 @@ Op types (`packages/core/src/schema.ts`; JSON schema via `opJsonSchema()`): `add
 
 `attachItem { id, parentId: Id | null, slot?: int | null }` hangs a tool on a holder (sets `parentId` and the 0-based
 mount `slot`) or, with `parentId: null`, detaches it (a `slot` given with `null` is kept: it restores a stored
-slot-without-parent item on undo). Only tools hang, and only on holders. A holder id that does not exist is
-accepted and reported as `missing_parent` — a deliberate trade-off: removing a holder leaves its tools pointing at
+slot-without-parent item on undo). Only tools hang. The parent is not validated: an id that does not exist is
+accepted and reported as `missing_parent`, a non-holder as `parent_not_holder` — a deliberate trade-off: removing a holder leaves its tools pointing at
 it, and undoing a later re-attach must be able to restore exactly that state. It does not move the tool: pose
 changes are separate `moveItem`/`rotateItem` ops (the `@hsw-editor/compat` planners batch them so one undo reverts
 the whole hang, and carry hung tools when their holder moves, rotates or is removed).
