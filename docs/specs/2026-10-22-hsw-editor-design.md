@@ -49,6 +49,7 @@ Also required by the user:
 apps/web      Vite + React 19 + R3F + shadcn/base-ui + state-lib; PWA (app shell, SW, offline cache)
 apps/server   Bun daemon: REST + SSE/WS, wall store on disk, job runner, omp RPC bridge, asset serving
 packages/core wall schema (versioned JSON), ops (patch commands), geometry units, validation
+packages/overlay pure photo-overlay geometry: calibration, rectification, wall<->photo mapping, snapping
 packages/bank HSW element bank: index + GLB/parametric defs + thumbnails + search
 services/vision  Python sidecar (uv): detect, segment, calibrate, fit, retrieve, image->3D (optional)
 cli/hsw_editor.py  agenttools_service wrapper: run/start/stop/restart/status/enable/disable/open/doctor/wall ...
@@ -81,6 +82,99 @@ sessions; plus a tool bridge so omp can edit the open wall.
 ### Offline / PWA
 vite-plugin-pwa (Workbox): precache app shell, runtime-cache bank GLBs/thumbnails/models, IndexedDB mirror of the open
 wall with op queue replayed when the daemon is back; no network calls at runtime except optional draw backends.
+
+## WYSIWYG photo overlay (ticket #30)
+
+User requirement (normative): wall creation is WYSIWYG. The user drops a photo of the REAL wall with a dimensional
+reference in the frame (e.g. a 100 cm tape measure) and the HSW is overlaid directly on the photo. Elements are dragged on
+the photo or sized by typing dimensions; sizes are always snapped to what is actually possible (valid HSW grid cells,
+bank variant ladders, printable limits) and the UI shows what changed and why.
+
+The geometry is pure TypeScript in `packages/overlay` (no web/DOM dependency, invariant-tested); the UI is a 'Photo' mode
+of the editor shell and only calls it.
+
+**Status.** Implemented: `packages/overlay` (calibration, rectification, camera recovery, mapping, snapping, wizard state
+machine, EXIF helpers) and `cellAtOffset`/`rotateCellOffset` in `packages/core`. Planned (ticket #30, later PRs): the server
+photo normaliser (HEIC), the 'Photo' mode in `apps/web`, PNG export, the vision 'find tools' button. Below, "Flow" describes
+the target behaviour; sections "Math", "Snapping rules" and "Edge cases" describe what the package does today.
+
+### Flow
+1. **Add the photo**: drop, paste or choose a file. HEIC/HEIF is converted to JPEG by the server (`POST /api/walls/:id/photos`),
+   EXIF orientation is applied once at ingest, so every pixel coordinate below is in the *oriented* image
+   (x right, y down, origin top-left). The photo is stored with the wall (`photos/<id>.jpg`) and added by an `addPhoto` op.
+2. **Calibrate** (wizard, one `setCalibration` op at the end, so undo/redo is one step):
+   - *Two-point* (default): click the two ends of the reference and type its real length (default 1000 mm). Optional
+     axis hint (horizontal / vertical) also fixes the camera roll. Exact for a fronto-parallel photo; for a tilted one it is
+     the scale *along the reference at that place* (see edge cases).
+   - *Four corners*: click the lower-left, lower-right, upper-right, upper-left corners of a rectangle of known size (the
+     board, the wall) and type width x height. Gives the full homography, so camera tilt is rectified.
+   - *Grid cells*: no manual wizard; the vision service's detected honeycomb cell centres (`calibrateFromCorrespondences`,
+     method `grid`) give a least-squares homography with a reprojection report. This is what a board that already hangs
+     gives for free.
+3. **Overlay**: the photo is the backdrop of the wall view; the HSW grid and the items are drawn through the calibration.
+   Opacity slider, before/after slider, PNG export of the composite.
+4. **Edit on the photo**: drag items (live snap ghost, mm ruler guides, collision/bounds warnings), type dimensions in the
+   inspector (requested -> snapped + reason). Each commit is the existing `moveItem`/`setParam` op.
+5. **Find tools** (optional): when the vision service is up, a button proposes ghost holders for detected tools; absent
+   service = button disabled, nothing else changes.
+
+### Math
+Wall plane: x right, y up, origin at the board's lower-left corner, mm. Photo: px, y down.
+
+- A calibration is a homography `H` (3x3, row-major, photo px -> wall mm), stored in `Calibration.homography` together with
+  `mmPerPx`, `reprojErrorPx` and the correspondences that produced it (`points`).
+- *Two-point*: `s = L_real / |b - a|` (mm per px), `H = T(board centre) * R(roll) * diag(s, -s) * T(-photo centre)`; the board
+  starts centred under the photo and can be shifted/rolled (`transformWallFrame`) by dragging, which only edits `H`.
+- *Corners / cells*: normalised DLT. Both point sets are translated to the centroid and scaled to mean distance sqrt(2)
+  (Hartley), the 8 unknowns of `H` (`h33 = 1`) solve the least-squares normal equations, `H` is denormalised. 4 points
+  are exact; more points average out click noise. Reported: per-point residual in px (in the photo) and mm (on the wall),
+  rms and max. The corners must be clicked starting at the lower-left, clockwise on screen; any other start or a
+  mirrored order is rejected (`CornerOrderError`) instead of fitting a wall turned by 90 degrees.
+- *Local scale* at a photo point is `sqrt|det J|` of `H` there (mm/px); along a direction it is `|J d|`. `scaleSpread`
+  samples a 5x5 grid and reports `max/min - 1`.
+- *Click error*: with clicks `e` px off at both ends of a reference of `L` px, the scale is off by at most
+  `L / (L - 2e) - 1` (typical `sqrt(2) e / L`); the wizard shows this and mm per metre for 1 px and 3 px.
+- *Camera* (for the camera-matched 3D view): for `H_wall->px = K [r1 r2 t]` with square pixels and the principal point at
+  the image centre, `1/f^2` is the least-squares solution of `g1.g2 = 0` and `|g1| = |g2|`, `g_i = K^-1 h_i`; `R`
+  is Gram-Schmidt orthonormalised, `r3 = r1 x r2`. A tilt-free wall leaves `f` undetermined: the estimate is only used when
+  its conditioning is >= 0.02 (median focal error 2-3% on 0.7 px noise), otherwise the EXIF/26 mm-equivalent focal length is
+  assumed. The plane mapping never depends on `f`, so dragging stays exact either way.
+
+Dragging is done in photo space and mapped with `H^-1`/`H` only (the wall plane is the one surface the photo measures),
+which keeps it precise; the camera-matched 3D canvas is used for display of depth (items standing off the wall).
+
+### Snapping rules (everything is pure and idempotent)
+- **Placement**: the pointer's wall position (minus the grab offset) goes to the nearest honeycomb cell centre (pitch
+  20.4382 x 23.6 mm, `packages/core/src/grid.ts`) such that the item's whole footprint (bank `footprint.cells`,
+  `{dCol, dRow2}` offsets) lies on the board. Reasons: `exact`, `nearest-cell`, `kept-in-board`, `free-cell`. Collisions
+  with other footprints are warnings (`collision` + ids); `avoidCollisions` moves to the nearest free anchor instead.
+  The footprint and extent turn with the item's `rotZ` (`rotateCellOffset`). Rotation snaps to multiples of 60 degrees. Ruler guides: distances (mm) to the 4 board edges and to the nearest neighbour
+  in each direction.
+- **Sizes** (`snapSize` -> `{requested, snapped, changed, feasible, reason}`), per dimension, from one of:
+  `grid-span` (whole cells), `ladder` (bank family rungs; ties go to the larger rung), `range` (generator `ParamDef`
+  min/max/step); optional `printMaxMm` (A1 bed 256 mm) lowers the result to the largest feasible value. Reasons:
+  `exact`, `rounded-to-step`, `nearest-rung`, `whole-cells`, `min-limit`, `max-limit`, `printable-limit`, `unbuildable`.
+  `nearestVariant` picks the nearest bank variant for several dimensions at once (distance normalised per dimension by its
+  spread over the candidates; `prefer: 'fit'` = smallest variant that is large enough).
+- The UI localises from the reason codes; it always shows requested, snapped and the reason next to the field.
+
+### Edge cases
+- **Tilted photo + two-point**: one scale cannot describe a perspective photo. The IMG_4937 test photo (taken from ~1.2 m,
+  tilted 7/13 degrees) changes scale by >30% between its bottom and top. Two-point is accurate at the reference (tested:
+  within 1% of the known scale at the reference) and degrades away from it. Two clicks cannot reveal the tilt, so the
+  wizard always warns (`single-scale-only-at-reference`) and offers four corners; `scaleSpread` is reported for
+  corner/grid calibrations, where it is measurable.
+- **Short reference / big click error**: the click bound grows as the reference shrinks; below ~10% of the photo width the
+  wizard warns instead of silently accepting.
+- **Bad corner order / mirrored plane / convex check**: `CornerOrderError` instead of a mirrored fit (this includes
+  starting at the wrong corner; the photo must be upright within 45 degrees of roll); collinear or coincident points:
+  `DegenerateError`.
+- **Horizon in the photo**: a homography whose plane horizon crosses the image is rejected (`createPhotoMap`).
+- **Lens distortion** is not modelled; the reprojection report (px) shows when a wide-angle photo needs more points.
+- **Items off the wall plane**: depth is shown only in the camera-matched 3D view; the overlay is exact for the mounting face.
+- **No vision service / offline**: calibration, snapping and export are pure client code; auto-detection is optional.
+- **Large photos**: the browser downsamples to <= 2048 px on the long side for display; clicks are kept in original-image
+  coordinates, so calibration precision does not depend on the display size.
 
 ## Constraints
 Heavy jobs: `flock /tmp/3d-cli-heavy.lock systemd-run --user --scope -p MemoryMax=6G -p CPUQuota=600% nice -n 10`; scratch under

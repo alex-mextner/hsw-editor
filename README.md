@@ -19,6 +19,7 @@ apps/web        Vite + React 19 + R3F + shadcn (base-ui) + Tailwind v4, PWA
 apps/server     Bun daemon: REST/SSE, wall store, asset serving
 packages/core   wall schema, ops, validation
 packages/compat tool-to-holder compatibility, auto-attach, re-hang and the bank tool-filter model (pure)
+packages/overlay photo calibration, rectification, wall<->photo mapping, snapping (pure)
 packages/bank   HSW element bank index
 packages/commands  action registry, hotkeys, command palette engine (docs/hotkeys.md)
 services/vision Python sidecar (uv + FastAPI): detect, segment, calibrate, fit
@@ -92,6 +93,7 @@ release: [docs/cli.md](docs/cli.md). HTTP API: [docs/api.md](docs/api.md). Relea
 - [#22](https://github.com/alex-mextner/hsw-editor/issues/22) (v) Release, packaging and systemd autostart
 - [#23](https://github.com/alex-mextner/hsw-editor/issues/23) (w) Domain hsw-editor.rs and landing page
 - [#24](https://github.com/alex-mextner/hsw-editor/issues/24) (x) i18n ru/en
+- [#30](https://github.com/alex-mextner/hsw-editor/issues/30) (y) WYSIWYG photo overlay: calibrate a photo of the real wall, drag and size holders on it, snapped to what is buildable
 - [#56](https://github.com/alex-mextner/hsw-editor/issues/56) compat: tool-to-mount compatibility, auto-attach and re-hang
 - [#57](https://github.com/alex-mextner/hsw-editor/issues/57) web: bank filter by selected tools (override with reset), fit-score ranking
 - [#58](https://github.com/alex-mextner/hsw-editor/issues/58) bank: custom user elements (import, API, CLI, mine badge)
