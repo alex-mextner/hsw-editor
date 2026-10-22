@@ -229,6 +229,18 @@ export const BankCountsSchema = z.object({
 });
 export type BankCounts = z.infer<typeof BankCountsSchema>;
 
+/**
+ * An element the pipeline knows about but refused to publish because its files are missing or corrupt.
+ * Never listed in `elements`; kept here so clients can say why a wall item cannot be drawn.
+ */
+export const UnavailableElementSchema = z.object({
+  id: slugSchema,
+  name: LocalizedTextSchema,
+  /** Human-readable cause, e.g. `missing glb/0123456789abcdef.glb`. */
+  reason: z.string().min(1),
+});
+export type UnavailableElement = z.infer<typeof UnavailableElementSchema>;
+
 export const BankIndexSchema = z.object({
   version: z.literal(BANK_SCHEMA_VERSION),
   /** Hash over the content of all elements; used as the HTTP ETag of the index. */
@@ -239,6 +251,8 @@ export const BankIndexSchema = z.object({
   categories: z.array(BankCategorySchema),
   toolClasses: z.array(ToolClassSchema),
   elements: z.array(BankElementSchema),
+  /** Elements withheld because their assets failed verification (absent when nothing was withheld). */
+  unavailable: z.array(UnavailableElementSchema).optional(),
 });
 export type BankIndex = z.infer<typeof BankIndexSchema>;
 

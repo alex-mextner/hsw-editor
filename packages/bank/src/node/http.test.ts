@@ -1,33 +1,32 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { makeElement, makeIndex } from '../testing.ts';
+import { writeFixtureBank } from './tmpbank.ts';
 import { createBankHandler } from './http.ts';
 import { bankPaths } from './paths.ts';
 
 let root: string;
 let handler: (request: Request) => Promise<Response | null>;
-const hash = 'c'.repeat(64);
+let hash: string;
+let glb: string;
 
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), 'bank-http-'));
-  await mkdir(join(root, 'glb'), { recursive: true });
-  await Bun.write(join(root, 'glb/0000000000000000.glb'), 'glb-bytes');
-  const index = {
-    ...makeIndex([
-      makeElement({
-        id: 'screwdriver-clip',
+  const [clip] = await writeFixtureBank(root, ['screwdriver-clip'], {
+    specs: {
+      'screwdriver-clip': {
         ru: 'Клипса для отвёртки',
         en: 'Screwdriver clip',
-        category: 'holders/screwdrivers',
         tagsRu: ['отвертка'],
         toolClasses: ['screwdriver'],
-      }),
-    ]),
-    contentHash: hash,
-  };
-  await Bun.write(join(root, 'index.json'), JSON.stringify(index));
+      },
+    },
+  });
+  if (!clip) throw new Error('fixture bank has no element');
+  glb = clip.glb;
+  const index = (await Bun.file(join(root, 'index.json')).json()) as { contentHash: string };
+  hash = index.contentHash;
   handler = createBankHandler({ roots: [root], paths: bankPaths({ HSW_BANK_DIR: root }) });
 });
 
@@ -53,10 +52,11 @@ describe('bank HTTP handler', () => {
   });
 
   test('assets are immutable; malformed or traversing paths are rejected', async () => {
-    const ok = await get('/bank/assets/glb/0000000000000000.glb');
+    const ok = await get(`/bank/assets/${glb}`);
     expect(ok?.status).toBe(200);
     expect(ok?.headers.get('cache-control')).toContain('immutable');
-    expect(await ok?.text()).toBe('glb-bytes');
+    expect(ok?.headers.get('x-bank-index-hash')).toBe(hash);
+    expect((await ok?.arrayBuffer())?.byteLength).toBe(Bun.file(join(root, glb)).size);
     expect((await get('/bank/assets/glb/ffffffffffffffff.glb'))?.status).toBe(404);
     expect((await get('/bank/assets/glb/../index.json'))?.status).toBe(404);
     // the URL parser resolves encoded dot segments to /bank/index.json, which is no bank route at all

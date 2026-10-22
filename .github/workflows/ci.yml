@@ -26,6 +26,10 @@ jobs:
       - run: bun run lint
       - run: bun run typecheck
       - run: bun run test
+      - name: bank integrity (committed seed)
+        run: bun scripts/bank/verify.ts --seed
+      - name: bank JSON schema is current
+        run: bun scripts/bank/schema.ts --check
       - run: bun run build
   vision:
     runs-on: ubuntu-latest

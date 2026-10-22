@@ -24,8 +24,9 @@
     "bank:build-variant": "bun scripts/bank/build-variant.ts",
     "bank:ingest": "bun scripts/bank/ingest.ts",
     "bank:verify": "bun scripts/bank/verify.ts",
+    "bank:adopt": "bun scripts/bank/adopt.ts",
     "bank:schema": "bun scripts/bank/schema.ts",
-    "check": "bun run lint && bun run typecheck && bun scripts/bank/schema.ts --check && bun run test && bun run build"
+    "check": "bun run lint && bun run typecheck && bun scripts/bank/schema.ts --check && bun scripts/bank/verify.ts --seed && bun run test && bun run build"
   },
   "devDependencies": {
     "@types/bun": "1.4.2",

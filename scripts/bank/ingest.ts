@@ -34,6 +34,20 @@ if (flag('--json')) {
       `(${c.fromSources} from sources, ${c.generated} generated, ${c.redistributable} redistributable); ` +
       `failed ${report.failed.length}, skipped ${report.skipped.length}, uncurated ${report.uncurated.length}`,
   );
+  if (report.published) {
+    console.info(
+      `published generation ${report.published.id}${report.published.unchanged ? ' (identical to the current one)' : ''}` +
+        (report.published.pruned.length > 0
+          ? `; pruned ${report.published.pruned.join(', ')}`
+          : ''),
+    );
+  }
+  if (report.removed.length > 0) {
+    console.warn(
+      `WARNING: ${report.removed.length} elements published before are gone: ${report.removed.slice(0, 20).join(', ')}` +
+        `${report.removed.length > 20 ? ', ...' : ''} (walls that use them show a placeholder)`,
+    );
+  }
   if (flag('--report')) console.info(reportMarkdown(report));
 }
 if (flag('--seed')) {

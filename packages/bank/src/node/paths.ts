@@ -1,6 +1,9 @@
 import { homedir } from 'node:os';
 import { join, resolve } from 'node:path';
 
+/** Honeycomb lattice of the bank (mm). */
+export const BANK_GRID = { colPitchMm: 20.4382, rowPitchMm: 23.6 } as const;
+
 export interface BankPaths {
   /** Repository root (contains scripts/bank and packages/bank). */
   repoRoot: string;
@@ -31,6 +34,6 @@ export function bankPaths(env: Record<string, string | undefined> = process.env)
     sourcesDir: env.HSW_SOURCES_DIR ?? join(home, 'dev/garage-band/projects/HSW'),
     seedDir: join(REPO_ROOT, 'packages/bank/seed'),
     generatorsDir: env.HSW_BANK_GENERATORS_DIR ?? join(REPO_ROOT, 'packages/bank/generators'),
-    grid: { colPitchMm: 20.4382, rowPitchMm: 23.6 },
+    grid: BANK_GRID,
   };
 }

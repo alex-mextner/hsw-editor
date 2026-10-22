@@ -1,5 +1,5 @@
 /** On-demand rebuild of a parametric element at other dimensions (dimension widget). */
-import { copyFile, mkdir } from 'node:fs/promises';
+import { copyFile, mkdir, rename } from 'node:fs/promises';
 import { join } from 'node:path';
 import { FamilyFileSchema } from '../families.ts';
 import type { BankElement, VariantResponse } from '../schema.ts';
@@ -133,7 +133,10 @@ async function buildVariantUncached(
     );
     await Bun.write(join(dir, 'variant.glb'), compressed.lod0);
     await mkdir(join(paths.bankDir, 'variant'), { recursive: true });
-    await copyFile(join(dir, 'variant.glb'), bankGlb);
+    // Copy beside the target and rename: a request must never be served a half-written variant.
+    const temporary = `${bankGlb}.tmp-${crypto.randomUUID()}`;
+    await copyFile(join(dir, 'variant.glb'), temporary);
+    await rename(temporary, bankGlb);
     const cells = (built.cells ?? [[0, 0]]).map(([dCol, dRow2]) => ({ dCol, dRow2 }));
     const cols = cells.map((c) => c.dCol);
     const rows2 = cells.map((c) => c.dRow2);
