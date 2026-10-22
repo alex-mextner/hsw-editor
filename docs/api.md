@@ -76,11 +76,17 @@ what was applied to the wall at `rev`; for `undo`/`redo`, `ref` is the rev being
 - More than one op is wrapped into a single `batch` op: one rev, one history entry, one undo step.
 - Response `200 { rev, changed, op, inverse, wall, warnings }`. `changed:false` = every op was a no-op (nothing
   written, `rev` unchanged). `warnings` are geometry/reference problems (`cell_collision`, `out_of_board`,
-  `cell_out_of_board`, `rotation_off_symmetry`, `missing_parent`, `missing_photo`, `missing_model`); they never block.
+  `cell_out_of_board`, `rotation_off_symmetry`, `missing_parent`, `parent_not_holder`, `slot_collision`,
+  `missing_photo`, `missing_model`); they never block.
 
 Op types (`packages/core/src/schema.ts`; JSON schema via `opJsonSchema()`): `addItem`, `removeItem`, `moveItem`,
-`rotateItem`, `setParams`, `setVariant`, `lock`, `addPhoto`, `removePhoto`, `setCalibration`, `setBoard`, `rename`,
-`addModelRef`, `updateModelRef`, `removeModelRef`, `batch`. Locked items refuse every op except `lock`.
+`rotateItem`, `setParams`, `setVariant`, `lock`, `attachItem`, `addPhoto`, `removePhoto`, `setCalibration`, `setBoard`,
+`rename`, `addModelRef`, `updateModelRef`, `removeModelRef`, `batch`. Locked items refuse every op except `lock`.
+
+`attachItem { id, parentId: Id | null, slot?: int | null }` hangs a tool on a holder (sets `parentId` and the 0-based
+mount `slot`) or, with `parentId: null`, detaches it. Only tools hang, only on existing holders. It does not move the
+tool: pose changes are separate `moveItem`/`rotateItem` ops (the `@hsw-editor/compat` planners batch them so one undo
+reverts the whole hang).
 
 `POST /api/walls/:id/undo` and `/redo` — body `{ baseRev?, actor? }` -> same response as ops. Undo/redo is a single
 linear stack across all actors: it applies the stored inverse of the newest not-yet-undone op.

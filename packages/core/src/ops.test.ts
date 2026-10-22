@@ -89,6 +89,8 @@ const SAMPLE_OPS: readonly Op[] = [
   { type: 'setVariant', id: 'h1', variantId: 'short', bankId: 'hsw-clip' },
   { type: 'setVariant', id: 't1', variantId: 'x', bankId: 'tool-hammer' },
   { type: 'lock', id: 'h1', locked: true },
+  { type: 'attachItem', id: 't1', parentId: 'h2', slot: 1 },
+  { type: 'attachItem', id: 't1', parentId: null },
   {
     type: 'addPhoto',
     photo: {
@@ -481,5 +483,72 @@ describe('parsing and migration', () => {
       JSON.stringify({ ...wall, items: [...wall.items, ...wall.items] }),
     );
     expect(() => parseWall(duplicated)).toThrow(/duplicate item/);
+  });
+});
+
+describe('attachItem', () => {
+  test('sets and clears parentId and slot; the wall stays free of warnings', () => {
+    const attached = applyOp(fixture(), { type: 'attachItem', id: 't1', parentId: 'h2', slot: 2 });
+    expect(attached.wall.items.find((item) => item.id === 't1')).toMatchObject({
+      parentId: 'h2',
+      slot: 2,
+    });
+    expect(attached.warnings.filter((w) => w.code !== 'out_of_board')).toEqual([]);
+    const detached = applyOp(attached.wall, { type: 'attachItem', id: 't1', parentId: null });
+    const tool = detached.wall.items.find((item) => item.id === 't1');
+    expect(tool?.parentId).toBeUndefined();
+    expect(tool?.slot).toBeUndefined();
+  });
+
+  test('only tools hang, only on holders, only on existing ones, and never when locked', () => {
+    const wall = fixture();
+    expect(() => applyOp(wall, { type: 'attachItem', id: 'h1', parentId: 'h2' })).toThrow(OpError);
+    expect(() => applyOp(wall, { type: 'attachItem', id: 't1', parentId: 't1' })).toThrow(/holder/);
+    expect(() => applyOp(wall, { type: 'attachItem', id: 't1', parentId: 'nope' })).toThrow(
+      /does not exist/,
+    );
+    const locked = applyOp(wall, { type: 'lock', id: 't1', locked: true }).wall;
+    expect(() => applyOp(locked, { type: 'attachItem', id: 't1', parentId: 'h2' })).toThrow(
+      /locked/,
+    );
+  });
+
+  test('re-attaching to the same holder and slot is a no-op', () => {
+    const once = applyOp(fixture(), { type: 'attachItem', id: 't1', parentId: 'h2', slot: 0 });
+    const again = applyOp(once.wall, { type: 'attachItem', id: 't1', parentId: 'h2', slot: 0 });
+    expect(again.changed).toBe(false);
+  });
+
+  test('two tools in one slot are flagged', () => {
+    const base = fixture();
+    const withSecond = applyOp(base, {
+      type: 'addItem',
+      item: WallItemSchema.parse({
+        id: 't2',
+        kind: 'tool',
+        bankId: 'tool-x',
+        parentId: 'h1',
+        slot: 0,
+      }),
+    }).wall;
+    const result = applyOp(withSecond, { type: 'attachItem', id: 't1', parentId: 'h1', slot: 0 });
+    expect(result.warnings.map((w) => w.code)).toContain('slot_collision');
+  });
+
+  test('a non-holder parent is flagged when the stored wall says so', () => {
+    const wall = fixture();
+    const bent: Wall = {
+      ...wall,
+      items: wall.items.map((item) => (item.id === 't1' ? { ...item, parentId: 'h1' } : item)),
+    };
+    const asTool: Wall = {
+      ...bent,
+      items: bent.items.map((item) =>
+        item.id === 'h1' ? { ...item, kind: 'tool' as const } : item,
+      ),
+    };
+    expect(applyOp(asTool, { type: 'rename', name: 'x' }).warnings.map((w) => w.code)).toContain(
+      'parent_not_holder',
+    );
   });
 });

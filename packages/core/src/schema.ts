@@ -85,6 +85,8 @@ export const WallItemSchema = z
     photoId: IdSchema.optional(),
     /** Holder a tool sits in. */
     parentId: IdSchema.optional(),
+    /** Which of the holder's mount slots (0-based, holder-local numbering from `@hsw-editor/compat`) the tool occupies. */
+    slot: z.number().int().min(0).optional(),
     label: text(200).optional(),
     cell: GridCellSchema.optional(),
     pose: PoseSchema.default(() => PoseSchema.parse({})),
@@ -249,6 +251,14 @@ const LeafOpSchemas = [
     bankId: text(120).nullable().optional(),
   }),
   z.strictObject({ type: z.literal('lock'), ...TargetItem, locked: z.boolean() }),
+  z.strictObject({
+    type: z.literal('attachItem'),
+    ...TargetItem,
+    /** Holder the tool hangs on; `null` detaches it (and drops `slot`). */
+    parentId: IdSchema.nullable(),
+    /** Mount slot on that holder; `null` or omitted leaves the tool unslotted. */
+    slot: z.number().int().min(0).nullable().optional(),
+  }),
   z.strictObject({
     type: z.literal('addPhoto'),
     photo: PhotoSchema,

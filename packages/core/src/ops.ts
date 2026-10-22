@@ -61,6 +61,8 @@ export const WARNING_CODES = [
   'missing_parent',
   'missing_photo',
   'missing_model',
+  'parent_not_holder',
+  'slot_collision',
 ] as const;
 export type WarningCode = (typeof WARNING_CODES)[number];
 
@@ -136,6 +138,8 @@ function applyLeaf(wall: Wall, op: LeafOp): LeafResult {
       return setVariant(wall, op);
     case 'lock':
       return lock(wall, op);
+    case 'attachItem':
+      return attachItem(wall, op);
     case 'addPhoto':
       return addPhoto(wall, op);
     case 'removePhoto':
@@ -343,6 +347,33 @@ function lock(wall: Wall, op: Narrow<'lock'>): LeafResult {
   return { wall: withItem(wall, index, { ...item, locked: op.locked }), inverse, changed: true };
 }
 
+function attachItem(wall: Wall, op: Narrow<'attachItem'>): LeafResult {
+  const { item, index } = editableItem(wall, op.id);
+  if (item.kind !== 'tool') {
+    throw new OpError('invalid_op', `${op.id}: only tools hang on holders (kind is ${item.kind})`);
+  }
+  if (op.parentId !== null) {
+    const parent = wall.items[itemIndex(wall, op.parentId)];
+    if (parent === undefined || parent.kind !== 'holder') {
+      throw new OpError('invalid_op', `${op.id}: ${op.parentId} is not a holder`);
+    }
+  }
+  const inverse: LeafOp = {
+    type: 'attachItem',
+    id: op.id,
+    parentId: item.parentId ?? null,
+    slot: item.slot ?? null,
+  };
+  const { parentId: _parent, slot: _slot, ...rest } = item;
+  const slot = op.slot ?? undefined;
+  const next: WallItem =
+    op.parentId === null
+      ? rest
+      : { ...rest, parentId: op.parentId, ...(slot === undefined ? {} : { slot }) };
+  if (sameJson(next, item)) return noop(wall, inverse);
+  return { wall: withItem(wall, index, next), inverse, changed: true };
+}
+
 // ---- photos ----------------------------------------------------------------------------------------
 
 function photoIndex(wall: Wall, id: string): number {
@@ -493,6 +524,8 @@ export function checkWall(wall: Wall): WallWarning[] {
   const photoIds = new Set(wall.photos.map((photo) => photo.id));
   const modelIds = new Set(wall.models.map((model) => model.id));
   const byCell = new Map<string, string[]>();
+  const kindById = new Map(wall.items.map((item) => [item.id, item.kind]));
+  const bySlot = new Map<string, string[]>();
   for (const item of wall.items) {
     if (item.cell !== undefined) {
       if (!cellInBoard(wall.board, item.cell)) {
@@ -532,12 +565,25 @@ export function checkWall(wall: Wall): WallWarning[] {
         itemIds: [item.id],
       });
     }
-    if (item.parentId !== undefined && !itemIds.has(item.parentId)) {
-      warnings.push({
-        code: 'missing_parent',
-        message: `item ${item.id} refers to missing holder ${item.parentId}`,
-        itemIds: [item.id],
-      });
+    if (item.parentId !== undefined) {
+      const parentKind = kindById.get(item.parentId);
+      if (parentKind === undefined) {
+        warnings.push({
+          code: 'missing_parent',
+          message: `item ${item.id} refers to missing holder ${item.parentId}`,
+          itemIds: [item.id],
+        });
+      } else if (parentKind !== 'holder') {
+        warnings.push({
+          code: 'parent_not_holder',
+          message: `item ${item.id} hangs on ${item.parentId}, which is a ${parentKind}, not a holder`,
+          itemIds: [item.id, item.parentId],
+        });
+      }
+      if (item.slot !== undefined) {
+        const key = `${item.parentId}#${item.slot}`;
+        bySlot.set(key, [...(bySlot.get(key) ?? []), item.id]);
+      }
     }
     const photoRefs = [item.photoId, item.source.photoId];
     for (const photoId of photoRefs) {
@@ -562,6 +608,15 @@ export function checkWall(wall: Wall): WallWarning[] {
       warnings.push({
         code: 'cell_collision',
         message: `cell ${cell} is occupied by ${ids.join(', ')}`,
+        itemIds: ids,
+      });
+    }
+  }
+  for (const [slot, ids] of bySlot) {
+    if (ids.length > 1) {
+      warnings.push({
+        code: 'slot_collision',
+        message: `mount slot ${slot} holds ${ids.join(', ')}`,
         itemIds: ids,
       });
     }
