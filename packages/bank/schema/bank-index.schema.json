@@ -717,6 +717,39 @@
         ],
         "additionalProperties": false
       }
+    },
+    "unavailable": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+          },
+          "name": {
+            "type": "object",
+            "properties": {
+              "ru": {
+                "type": "string",
+                "minLength": 1
+              },
+              "en": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": ["ru", "en"],
+            "additionalProperties": false
+          },
+          "reason": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": ["id", "name", "reason"],
+        "additionalProperties": false
+      }
     }
   },
   "required": ["version", "contentHash", "grid", "counts", "categories", "toolClasses", "elements"],

@@ -4,6 +4,7 @@
  */
 import { join } from 'node:path';
 import { BankIndexSchema } from '../../packages/bank/src/schema.ts';
+import { builtBankRoot } from '../../packages/bank/src/node/generations.ts';
 import { bankPaths } from '../../packages/bank/src/node/paths.ts';
 import { buildVariant, VariantError } from '../../packages/bank/src/node/variant.ts';
 
@@ -23,9 +24,7 @@ for (const assignment of assignments) {
 }
 
 const paths = bankPaths();
-const root = (await Bun.file(join(paths.bankDir, 'index.json')).exists())
-  ? paths.bankDir
-  : paths.seedDir;
+const root = (await builtBankRoot(paths)) ?? paths.seedDir;
 const index = BankIndexSchema.parse(await Bun.file(join(root, 'index.json')).json());
 const element = index.elements.find((e) => e.id === id);
 if (!element) {

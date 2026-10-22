@@ -1,5 +1,5 @@
 /** On-demand rebuild of a parametric element at other dimensions (dimension widget). */
-import { copyFile, mkdir, readdir, rm, stat } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { FamilyFileSchema } from '../families.ts';
 import type { BankElement, VariantResponse } from '../schema.ts';
@@ -185,7 +185,11 @@ async function buildVariantUncached(
   );
   await Bun.write(join(dir, 'variant.glb'), compressed.lod0);
   await mkdir(join(paths.bankDir, 'variant'), { recursive: true });
-  await copyFile(join(dir, 'variant.glb'), variantGlbPath(paths, paramHash));
+  // Copy beside the target and rename: a request must never be served a half-written variant.
+  const target = variantGlbPath(paths, paramHash);
+  const temporary = `${target}.tmp-${crypto.randomUUID()}`;
+  await copyFile(join(dir, 'variant.glb'), temporary);
+  await rename(temporary, target);
   const build: VariantBuild = { glb: `variant/${paramHash}.glb`, ...geometryOf(built, mountKind) };
   await Bun.write(join(dir, 'done.json'), JSON.stringify(build));
   return respond(build, paramHash, job.values, false);

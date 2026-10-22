@@ -2,14 +2,14 @@
  * The committed seed: the redistributable subset of the built bank (project originals, generated
  * families, CC-BY sources) so that a fresh clone has a working bank without the HSW source tree.
  */
-import { copyFile, mkdir, rename, rm } from 'node:fs/promises';
+import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
-import { BankIndexSchema, type BankElement, type BankIndex } from '../schema.ts';
-import { categoryVocabulary } from '../categories.ts';
-import { toolClassVocabulary } from '../toolClasses.ts';
-import { buildSearchIndex, serializeSearchIndex } from '../search.ts';
-import { validateBankIndex } from '../validate.ts';
+import { BankIndexSchema, type BankElement } from '../schema.ts';
+import { builtBankRoot, BankVerificationError } from './generations.ts';
 import type { BankPaths } from './paths.ts';
+import { composeIndex } from './compose.ts';
+import { copyInto, replaceDirectory, writeIndexFiles } from './publish.ts';
+import { verifyBank } from './verify.ts';
 
 export const SEED_BUDGET_BYTES = 5 * 1024 * 1024;
 /** Leave headroom for index.json, the search index and attribution. */
@@ -19,10 +19,6 @@ export interface SeedResult {
   elements: number;
   bytes: number;
   excluded: number;
-}
-
-function sha256(text: string): string {
-  return new Bun.CryptoHasher('sha256').update(text).digest('hex');
 }
 
 export function attributionMarkdown(elements: readonly BankElement[]): string {
@@ -103,73 +99,46 @@ export function pickSeedElements(redistributable: readonly BankElement[]): BankE
   return picked.sort((a, b) => a.category.localeCompare(b.category) || a.id.localeCompare(b.id));
 }
 
-/** Rebuilds `packages/bank/seed` from the built bank dir. Fails when it exceeds the size budget. */
+/**
+ * Rebuilds `packages/bank/seed` from the built bank. The new seed is assembled and verified next to the
+ * old one and swapped in only when complete, so a failed export (budget, missing file) leaves the
+ * committed seed untouched. Fails when it exceeds the size budget.
+ */
 export async function exportSeed(paths: BankPaths): Promise<SeedResult> {
-  const built = BankIndexSchema.parse(await Bun.file(join(paths.bankDir, 'index.json')).json());
+  const builtRoot = await builtBankRoot(paths);
+  if (!builtRoot) throw new Error(`no built bank in ${paths.bankDir}: run \`bun run bank:ingest\``);
+  const built = BankIndexSchema.parse(await Bun.file(join(builtRoot, 'index.json')).json());
   const keep = pickSeedElements(built.elements.filter((e) => e.license.redistributable));
-  const generated = keep.filter((e) => e.generated).length;
-  const base = {
-    version: built.version,
+  const index = composeIndex({
     grid: built.grid,
-    counts: {
-      total: keep.length,
-      generated,
-      fromSources: keep.length - generated,
-      redistributable: keep.length,
-    },
     categories: built.categories,
     toolClasses: built.toolClasses,
     elements: keep,
-  };
-  const index: BankIndex = { ...base, contentHash: sha256(JSON.stringify(base)) };
-  const validation = validateBankIndex(index);
-  if (!validation.ok) throw new Error(`seed index invalid:\n${validation.errors.join('\n')}`);
+  });
 
-  // Build next to the seed and swap in only when within budget: a failed export never touches the committed seed.
-  const staging = `${paths.seedDir}.tmp-${process.pid}-${crypto.randomUUID()}`;
+  const staging = `${paths.seedDir}.next-${process.pid}`;
+  await rm(staging, { recursive: true, force: true });
   try {
-    await mkdir(join(staging, 'glb'), { recursive: true });
-    await mkdir(join(staging, 'thumb'), { recursive: true });
     const assets = new Set<string>();
     for (const e of keep) {
       for (const a of [e.assets.lod0, e.assets.lod1, e.assets.thumbnail]) assets.add(a.path);
     }
     let bytes = 0;
     for (const path of assets) {
-      await copyFile(join(paths.bankDir, path), join(staging, path));
+      await copyInto(staging, path, join(builtRoot, path));
       bytes += Bun.file(join(staging, path)).size;
     }
-    const files = {
-      'index.json': JSON.stringify(index),
-      'search-index.json': serializeSearchIndex(
-        buildSearchIndex(keep, {
-          categories: categoryVocabulary(index.categories),
-          toolClasses: toolClassVocabulary(index.toolClasses),
-        }),
-        index.contentHash,
-      ),
-      'ATTRIBUTION.md': attributionMarkdown(keep),
-    };
-    for (const [name, text] of Object.entries(files)) {
-      await Bun.write(join(staging, name), text);
-      bytes += Buffer.byteLength(text, 'utf8');
-    }
+    await writeIndexFiles(staging, index);
+    await Bun.write(join(staging, 'ATTRIBUTION.md'), attributionMarkdown(keep));
+    bytes +=
+      Bun.file(join(staging, 'index.json')).size +
+      Bun.file(join(staging, 'search-index.json')).size;
     if (bytes > SEED_BUDGET_BYTES) {
       throw new Error(`seed is ${bytes} bytes, over the ${SEED_BUDGET_BYTES} byte budget`);
     }
-    // never a moment without a seed: park the old one, move the new one in, drop the old one
-    const previous = `${staging}.previous`;
-    const hadSeed = await rename(paths.seedDir, previous).then(
-      () => true,
-      () => false,
-    );
-    try {
-      await rename(staging, paths.seedDir);
-    } catch (error) {
-      if (hadSeed) await rename(previous, paths.seedDir);
-      throw error;
-    }
-    await rm(previous, { recursive: true, force: true });
+    const verified = await verifyBank(staging);
+    if (verified.issues.length > 0) throw new BankVerificationError(verified.problems);
+    await replaceDirectory(staging, paths.seedDir);
     return { elements: keep.length, bytes, excluded: built.elements.length - keep.length };
   } finally {
     await rm(staging, { recursive: true, force: true });
