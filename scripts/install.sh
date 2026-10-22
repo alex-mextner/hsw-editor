@@ -32,12 +32,9 @@ if [ -z "$agent_tools_lib" ]; then
 fi
 
 cd "$root"
-if [ -x node_modules/.bin/tsc ] && [ -e node_modules/@hsw-editor/core ]; then
-  echo "install: dependencies present, skipping bun install"
-else
-  echo "install: bun install --frozen-lockfile"
-  bun install --frozen-lockfile
-fi
+# always run: it is a no-op when nothing changed, works offline with a warm cache, and picks up a pulled lockfile
+echo "install: bun install --frozen-lockfile"
+bun install --frozen-lockfile
 
 if [ "$build" = 1 ]; then
   if [ "$rebuild" = 1 ] || [ ! -f apps/web/dist/index.html ]; then

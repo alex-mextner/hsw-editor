@@ -5,7 +5,7 @@
  * daemon's `/api/health` read the root one at runtime) -> rotate CHANGELOG.md -> bundle the server as a
  * compile check -> commit `chore: release vX.Y.Z` -> annotated tag `vX.Y.Z`. Nothing is pushed.
  *
- * Re-runnable: when the version is already bumped (a commit hook interrupted the last run) pass that
+ * Re-runnable: when the version is already bumped (a commit hook or the tag step interrupted the last run) pass that
  * version explicitly; the bump and the changelog rotation are skipped and the run continues with the
  * build, the commit and the tag.
  */
@@ -65,6 +65,12 @@ if (pending !== '' && !alreadyBumped) {
 }
 
 console.info(`release: ${current} -> ${version}${dryRun ? ' (dry run)' : ''}`);
+const changelogPath = join(root, 'CHANGELOG.md');
+const today = new Date().toISOString().slice(0, 10);
+// Rotating up front fails an empty or duplicate section before any gate runs or any file is touched.
+const rotatedChangelog = alreadyBumped
+  ? undefined
+  : rotateChangelog(readFileSync(changelogPath, 'utf8'), version, today);
 if (!skipChecks) {
   step(['bun', 'run', 'lint'], 'lint');
   step(['bun', 'run', 'typecheck'], 'typecheck');
@@ -76,7 +82,7 @@ step(
   'bundling the server (apps/server/dist; a compile check, the daemon runs from source)',
 );
 
-if (!alreadyBumped && !dryRun) {
+if (rotatedChangelog !== undefined && !dryRun) {
   for (const file of manifests()) {
     const path = join(root, file);
     writeFileSync(
@@ -84,11 +90,13 @@ if (!alreadyBumped && !dryRun) {
       readFileSync(path, 'utf8').replace(/("version":\s*")[^"]+(")/, `$1${version}$2`),
     );
   }
-  const changelog = join(root, 'CHANGELOG.md');
-  const date = new Date().toISOString().slice(0, 10);
-  writeFileSync(changelog, rotateChangelog(readFileSync(changelog, 'utf8'), version, date));
+  writeFileSync(changelogPath, rotatedChangelog);
+  // the lockfile records every workspace version; a stale one breaks `bun install --frozen-lockfile`
+  step(['bun', 'install'], 'refreshing bun.lock');
 }
-step(['git', 'add', 'CHANGELOG.md', ...manifests()], 'staging the version files');
-step(['git', 'commit', '-m', `chore: release ${tag} (#22)`], 'committing');
+step(['git', 'add', 'CHANGELOG.md', 'bun.lock', ...manifests()], 'staging the version files');
+// a re-run after a failed tag step finds the release commit already made: only tag
+const releaseCommitted = capture(['git', 'log', '-1', '--format=%s']) === `chore: release ${tag}`;
+if (!releaseCommitted) step(['git', 'commit', '-m', `chore: release ${tag}`], 'committing');
 step(['git', 'tag', '-a', tag, '-m', `hsw-editor ${version}`], `tagging ${tag}`);
 console.info('release: done. Publish with: git push origin main --follow-tags');
