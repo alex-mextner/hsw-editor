@@ -312,6 +312,10 @@ if LIBS_OK:
 
     register_verb("tools", tools_verb.run, tools_verb.configure)
 
+import vision_verb  # noqa: E402 - sibling module (cli/ is the script directory); stdlib only
+
+register_verb("vision", vision_verb.handle, vision_verb.configure)
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()

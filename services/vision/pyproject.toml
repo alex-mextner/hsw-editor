@@ -21,7 +21,7 @@ hsw-vision = "hsw_vision.cli:main"
 dev = ["httpx>=0.27", "pytest>=8"]
 
 [tool.uv.sources]
-threed-vision = { git = "https://github.com/alex-mextner/3d-cli", subdirectory = "packages/threed-vision", rev = "0eddb522ee752362208efb74d1792a4365001264" }
+threed-vision = { git = "https://github.com/alex-mextner/3d-cli", subdirectory = "packages/threed-vision", rev = "58e956246d74057496c5e184d923a75a99b78291" }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

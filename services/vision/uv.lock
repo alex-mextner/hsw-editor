@@ -112,7 +112,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "numpy", specifier = ">=1.24" },
-    { name = "threed-vision", git = "https://github.com/alex-mextner/3d-cli?subdirectory=packages%2Fthreed-vision&rev=0eddb522ee752362208efb74d1792a4365001264" },
+    { name = "threed-vision", git = "https://github.com/alex-mextner/3d-cli?subdirectory=packages%2Fthreed-vision&rev=58e956246d74057496c5e184d923a75a99b78291" },
     { name = "uvicorn", specifier = ">=0.30" },
 ]
 
@@ -875,7 +875,7 @@ wheels = [
 [[package]]
 name = "threed-vision"
 version = "0.1.0"
-source = { git = "https://github.com/alex-mextner/3d-cli?subdirectory=packages%2Fthreed-vision&rev=0eddb522ee752362208efb74d1792a4365001264#0eddb522ee752362208efb74d1792a4365001264" }
+source = { git = "https://github.com/alex-mextner/3d-cli?subdirectory=packages%2Fthreed-vision&rev=58e956246d74057496c5e184d923a75a99b78291#58e956246d74057496c5e184d923a75a99b78291" }
 dependencies = [
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.4", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },

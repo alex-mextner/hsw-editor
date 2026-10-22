@@ -89,6 +89,22 @@ hsw-editor bank edit my-driver-holder --add-tag organizer
 hsw-editor bank rm my-driver-holder --force
 ```
 
+## vision
+
+`hsw-editor vision VERB ...` (`cli/vision_verb.py`, details in [vision.md](vision.md)); the heavy verbs run under the repo's flock + systemd-run wrapper.
+
+| Command | Effect |
+| --- | --- |
+| `vision setup [--cpu] [--force] [--dry-run]` | create/refresh the vision venv (`~/.cache/hsw-editor/vision-venv`): light locked deps + the heavy torch/ORT stack; idempotent |
+| `vision status [--json]` | installed? running? endpoint, resident engines, models on disk; exit 3 when not installed / not running |
+| `vision fetch-models [NAME...]` | the only command that downloads model weights |
+| `vision doctor` | models, free VRAM, onnxruntime CUDA state, heavy imports |
+| `vision photo-to-wall IMAGE --out DIR` | photo -> wall proposal without the daemon (`proposal.json`, `result.json`, `timings.json`, `overlay.jpg`) |
+| `vision photo-to-objects IMAGE --out DIR` | photo -> per-object masks, crops, classes, fitted models, colours, embeddings (`objects.json`) |
+| `vision embed IMAGE... --out DIR [--object]` | CLIP embeddings (`embeddings.npy`, `embeddings.json`) |
+
+Exit codes of the photo verbs: 0 ok, 2 bad input or no scale (`--two-point X1,Y1,X2,Y2 --distance MM` or `--mm-per-px`), 127 missing model or dependency (names the fix).
+
 ## doctor
 
 `hsw-editor doctor [--json]` prints `ok`, `warn` or `FAIL` per check, with a `fix:` line for everything that is not ok. Only
@@ -105,7 +121,7 @@ hsw-editor bank rm my-driver-holder --force
 | bank (served) | FAIL if the daemon rejected a generation or serves nothing | only when the port answers as hsw-editor (`/api/bank/health`); no row otherwise |
 | port | FAIL if another process holds it | an hsw-editor already serving is ok |
 | data dir | FAIL if not writable, warn if world-writable | `HSW_EDITOR_HOME` |
-| state-lib, uv, omp, GPU, vision sidecar, draw backends, systemd --user | warn | vision: `HSW_VISION_URL` (default `http://127.0.0.1:8795`); draw: `omp`, ChatGPT browser profile, manual upload |
+| state-lib, uv, omp, GPU, vision sidecar, draw backends, systemd --user | warn | vision: `HSW_VISION_URL`, else the sidecar's state file, else `http://127.0.0.1:8795`; "installed, not running" is the normal idle state (the daemon starts the sidecar on the first vision job; fix for "not installed": `hsw-editor vision setup`); draw: `omp`, ChatGPT browser profile, manual upload |
 
 Other modules add checks by appending to `hswlib.doctor.EXTRA_CHECKS`, and verbs with `register_verb` in `cli/hsw_editor.py`.
 
