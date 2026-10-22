@@ -52,7 +52,7 @@ export function polarRing(radius: (theta: number) => number, count: number): V2[
   return out;
 }
 
-/** Polar radius of a regular n-gon with inradius `inr` (flat on +x when phase = 0). */
+/** Polar radius of a regular n-gon with inradius `inr` (a vertex sits on +x when phase = 0; the flat midpoint is at phase + half a wedge). */
 export function polygonPolar(sides: number, inr: number, phase = 0): (theta: number) => number {
   const wedge = (Math.PI * 2) / sides;
   return (theta) => {

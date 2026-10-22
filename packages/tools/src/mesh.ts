@@ -5,18 +5,7 @@
  * Contract of every primitive in `build/`: the returned mesh is one closed, consistently oriented
  * (outward, counter-clockwise) shell whose seams share vertices. `analyzeMesh` checks exactly that.
  */
-import {
-  type Affine,
-  type Bounds,
-  type V3,
-  applyAffine,
-  cross,
-  determinant,
-  norm,
-  sub,
-  dot,
-  DEG,
-} from './math.ts';
+import { type Affine, type Bounds, type V3, applyAffine, determinant, DEG } from './math.ts';
 
 export interface Mesh {
   /** Flat xyz in mm. */
@@ -86,12 +75,23 @@ export function flipWinding(indices: readonly number[]): number[] {
 
 /** Signed volume (mm^3); positive for outward-oriented closed shells. */
 export function signedVolume(mesh: Mesh): number {
+  const p = mesh.positions;
   let v = 0;
   for (let i = 0; i < mesh.indices.length; i += 3) {
-    const a = vertexAt(mesh, mesh.indices[i] ?? 0);
-    const b = vertexAt(mesh, mesh.indices[i + 1] ?? 0);
-    const c = vertexAt(mesh, mesh.indices[i + 2] ?? 0);
-    v += dot(a, cross(b, c)) / 6;
+    const a = (mesh.indices[i] ?? 0) * 3;
+    const b = (mesh.indices[i + 1] ?? 0) * 3;
+    const c = (mesh.indices[i + 2] ?? 0) * 3;
+    const bx = p[b] ?? 0;
+    const by = p[b + 1] ?? 0;
+    const bz = p[b + 2] ?? 0;
+    const cx = p[c] ?? 0;
+    const cy = p[c + 1] ?? 0;
+    const cz = p[c + 2] ?? 0;
+    v +=
+      ((p[a] ?? 0) * (by * cz - bz * cy) +
+        (p[a + 1] ?? 0) * (bz * cx - bx * cz) +
+        (p[a + 2] ?? 0) * (bx * cy - by * cx)) /
+      6;
   }
   return v;
 }
@@ -198,31 +198,58 @@ export interface ShadedMesh {
  * Per-corner smooth normals: corner normals are the area-weighted mean of the face normals of the
  * adjacent faces within `creaseDeg` of the face itself; vertices are split where the surface is creased.
  */
+const shadeCache = new WeakMap<Mesh, Map<number, ShadedMesh>>();
+
 export function shade(mesh: Mesh, creaseDeg = 50): ShadedMesh {
+  const cached = shadeCache.get(mesh)?.get(creaseDeg);
+  if (cached) return cached;
+  const result = computeShade(mesh, creaseDeg);
+  const perMesh = shadeCache.get(mesh) ?? new Map<number, ShadedMesh>();
+  perMesh.set(creaseDeg, result);
+  shadeCache.set(mesh, perMesh);
+  return result;
+}
+
+function computeShade(mesh: Mesh, creaseDeg: number): ShadedMesh {
   const tri = mesh.indices.length / 3;
+  const pos = mesh.positions;
+  const idx = mesh.indices;
   const faceN = new Float64Array(tri * 3);
   for (let t = 0; t < tri; t++) {
-    const a = vertexAt(mesh, mesh.indices[t * 3] ?? 0);
-    const b = vertexAt(mesh, mesh.indices[t * 3 + 1] ?? 0);
-    const c = vertexAt(mesh, mesh.indices[t * 3 + 2] ?? 0);
-    const n = cross(sub(b, a), sub(c, a)); // length = 2 * area
-    faceN[t * 3] = n[0];
-    faceN[t * 3 + 1] = n[1];
-    faceN[t * 3 + 2] = n[2];
+    const a = (idx[t * 3] ?? 0) * 3;
+    const b = (idx[t * 3 + 1] ?? 0) * 3;
+    const c = (idx[t * 3 + 2] ?? 0) * 3;
+    const ux = (pos[b] ?? 0) - (pos[a] ?? 0);
+    const uy = (pos[b + 1] ?? 0) - (pos[a + 1] ?? 0);
+    const uz = (pos[b + 2] ?? 0) - (pos[a + 2] ?? 0);
+    const vx = (pos[c] ?? 0) - (pos[a] ?? 0);
+    const vy = (pos[c + 1] ?? 0) - (pos[a + 1] ?? 0);
+    const vz = (pos[c + 2] ?? 0) - (pos[a + 2] ?? 0);
+    // length = 2 * area
+    faceN[t * 3] = uy * vz - uz * vy;
+    faceN[t * 3 + 1] = uz * vx - ux * vz;
+    faceN[t * 3 + 2] = ux * vy - uy * vx;
   }
   const vertexFaces: number[][] = Array.from({ length: vertexCount(mesh) }, () => []);
   for (let t = 0; t < tri; t++) {
-    for (let k = 0; k < 3; k++) vertexFaces[mesh.indices[t * 3 + k] ?? 0]?.push(t);
+    for (let k = 0; k < 3; k++) vertexFaces[idx[t * 3 + k] ?? 0]?.push(t);
   }
   const cosCrease = Math.cos(creaseDeg * DEG);
   const positions: number[] = [];
   const normals: number[] = [];
   const indices: number[] = [];
-  const cache = new Map<string, number>();
+  // per source vertex: the split vertices created so far (distinct smoothed normals)
+  const splits: { nx: number; ny: number; nz: number; index: number }[][] = Array.from(
+    { length: vertexCount(mesh) },
+    () => [],
+  );
   for (let t = 0; t < tri; t++) {
-    const fn = norm([faceN[t * 3] ?? 0, faceN[t * 3 + 1] ?? 0, faceN[t * 3 + 2] ?? 0]);
+    const fl = Math.hypot(faceN[t * 3] ?? 0, faceN[t * 3 + 1] ?? 0, faceN[t * 3 + 2] ?? 0) || 1;
+    const fx = (faceN[t * 3] ?? 0) / fl;
+    const fy = (faceN[t * 3 + 1] ?? 0) / fl;
+    const fz = (faceN[t * 3 + 2] ?? 0) / fl;
     for (let k = 0; k < 3; k++) {
-      const vi = mesh.indices[t * 3 + k] ?? 0;
+      const vi = idx[t * 3 + k] ?? 0;
       let nx = 0;
       let ny = 0;
       let nz = 0;
@@ -232,26 +259,31 @@ export function shade(mesh: Mesh, creaseDeg = 50): ShadedMesh {
         const gz = faceN[f * 3 + 2] ?? 0;
         const gl = Math.hypot(gx, gy, gz);
         if (gl < 1e-12) continue;
-        if ((gx * fn[0] + gy * fn[1] + gz * fn[2]) / gl >= cosCrease) {
+        if ((gx * fx + gy * fy + gz * fz) / gl >= cosCrease) {
           nx += gx;
           ny += gy;
           nz += gz;
         }
       }
-      const n = norm(Math.hypot(nx, ny, nz) < 1e-12 ? fn : [nx, ny, nz]);
-      const key = `${vi}:${n[0].toFixed(3)},${n[1].toFixed(3)},${n[2].toFixed(3)}`;
-      let idx = cache.get(key);
-      if (idx === undefined) {
-        idx = positions.length / 3;
-        cache.set(key, idx);
-        positions.push(
-          mesh.positions[vi * 3] ?? 0,
-          mesh.positions[vi * 3 + 1] ?? 0,
-          mesh.positions[vi * 3 + 2] ?? 0,
-        );
-        normals.push(n[0], n[1], n[2]);
+      let nl = Math.hypot(nx, ny, nz);
+      if (nl < 1e-12) {
+        nx = fx;
+        ny = fy;
+        nz = fz;
+        nl = 1;
       }
-      indices.push(idx);
+      nx /= nl;
+      ny /= nl;
+      nz /= nl;
+      const list = splits[vi] as { nx: number; ny: number; nz: number; index: number }[];
+      let found = list.find((s) => s.nx * nx + s.ny * ny + s.nz * nz > 0.99995);
+      if (!found) {
+        found = { nx, ny, nz, index: positions.length / 3 };
+        list.push(found);
+        positions.push(pos[vi * 3] ?? 0, pos[vi * 3 + 1] ?? 0, pos[vi * 3 + 2] ?? 0);
+        normals.push(nx, ny, nz);
+      }
+      indices.push(found.index);
     }
   }
   return {

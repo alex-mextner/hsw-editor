@@ -4,13 +4,15 @@
  * bolster or ferrule, shaft, tip. Sizes cross-checked with HSW refit/design.json (shaft 3..6.5 mm,
  * tip width 3.5..7.5 mm, handle 62..98 mm, shaft 75..130 mm).
  */
-import { lerp, smoothstep, type V2 } from '../math.ts';
+import { compose, lerp, rotationZ, smoothstep, translation, type V2 } from '../math.ts';
+import { type Mesh, transformMesh } from '../mesh.ts';
 import { type Station, lathe, loft } from '../build/primitives.ts';
 import {
   polarRing,
   polygonPolar,
   crossPolar,
   profileStations,
+  sampleProfile,
   smoothProfile,
 } from '../build/profile.ts';
 import {
@@ -155,10 +157,9 @@ function buildHandle(
 
   if (style === 'classic') {
     const flutes = 12;
-    const stations = profileStations(control, 0, Lh, (f, t) => {
-      const r = R * f;
-      return flutedRing(r, flutes, 0.045 * R * fade(t, 0.05, 0.9), N);
-    });
+    const stations = profileStations(control, 0, Lh, (f, t) =>
+      flutedRing(R * f, flutes, 0.045 * R * fade(t, 0.05, 0.9), N),
+    );
     parts.push({
       name: 'handle',
       role: 'handle',
@@ -175,11 +176,16 @@ function buildHandle(
     const a = 0.1;
     const b = 0.9;
     const gripCtl = control.filter(([t]) => t >= a && t <= b);
-    const edge = (t: number): V2 => [t, sampleAt(control, t)];
+    const edge = (t: number): V2 => [t, sampleProfile(control, t)];
     const gc: V2[] = [edge(a), ...gripCtl.filter(([t]) => t > a && t < b), edge(b)];
-    const grip = profileStations(gc, lerp(0, Lh, a), lerp(0, Lh, b), (f, t) =>
+    const grip = profileStations(gc, 0, Lh, (f, t) =>
       scaleRing(
-        flutedRing(R * f, 6, 0.035 * R * smoothstep(0, 0.2, t) * (1 - smoothstep(0.8, 1, t)), N),
+        flutedRing(
+          R * f,
+          6,
+          0.035 * R * smoothstep(a, a + 0.12, t) * (1 - smoothstep(b - 0.12, b, t)),
+          N,
+        ),
         1,
         0.9,
       ),
@@ -190,9 +196,9 @@ function buildHandle(
     const a = 0.08;
     const b = 0.9;
     const gc: V2[] = [
-      [a, sampleAt(control, a)],
+      [a, sampleProfile(control, a)],
       ...control.filter(([t]) => t > a && t < b),
-      [b, sampleAt(control, b)],
+      [b, sampleProfile(control, b)],
     ];
     const soft = profileStations(gc, 0, Lh, (f, t) => {
       const amp = 0.075 * R * f * smoothstep(a, a + 0.14, t) * (1 - smoothstep(b - 0.14, b, t));
@@ -237,12 +243,14 @@ function buildHandle(
     parts.push({
       name: 'cap',
       role: 'cap',
-      material: softMat.kind === 'rubber' ? plastic(colors.grip, 0.3, 'swivel cap') : softMat,
+      material: plastic(colors.grip, 0.3, 'swivel cap'),
       mesh: loft(cap),
       crease: 60,
     });
   } else {
-    // T-grip: a bar across the top, a short stem below
+    // T-grip: a bar across the top, a short stem below; the stem starts inside the bar
+    const barY = R * 0.5 + 0.04 * Lh;
+    const stemStart = barY;
     const stem = profileStations(
       [
         [0, 0.55],
@@ -250,7 +258,7 @@ function buildHandle(
         [0.6, 0.5],
         [1, 0.46],
       ],
-      0.18 * Lh,
+      stemStart,
       Lh,
       (f) => circleRing(R * f * 0.62, N),
     );
@@ -276,26 +284,13 @@ function buildHandle(
       name: 'grip',
       role: 'grip',
       material: softMat,
-      mesh: placeBar(bar, barR + 0.04 * Lh),
+      mesh: placeBar(bar, barY),
       crease: 55,
     });
     return { parts, neckRadius: R * 0.62 * 0.46 };
   }
   return { parts, neckRadius };
 }
-
-function sampleAt(control: readonly V2[], t: number): number {
-  for (let i = 0; i < control.length - 1; i++) {
-    const a = control[i] as V2;
-    const b = control[i + 1] as V2;
-    if (t >= a[0] && t <= b[0])
-      return lerp(a[1], b[1], b[0] === a[0] ? 0 : (t - a[0]) / (b[0] - a[0]));
-  }
-  return (control[control.length - 1] as V2)[1];
-}
-
-import { type Mesh, transformMesh } from '../mesh.ts';
-import { compose, rotationZ, translation } from '../math.ts';
 
 /** Lay a Y-axis lathe along X with its centre at y = yc. */
 function placeBar(mesh: Mesh, yc: number): Mesh {

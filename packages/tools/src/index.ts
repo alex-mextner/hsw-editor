@@ -17,5 +17,4 @@ export {
   type RenderOptions,
   type RenderResult,
 } from './render/raster.ts';
-export { contactSheet, renderTile, type SheetRow } from './render/sheet.ts';
-export { encodePng } from './render/png.ts';
+

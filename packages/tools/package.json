@@ -4,11 +4,11 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./render": "./src/render/index.ts"
   },
   "dependencies": {
-    "earcut": "^3.0.2",
-    "zod": "^4.3.6"
+    "earcut": "^3.0.2"
   },
   "devDependencies": {
     "@types/earcut": "^3.0.0"

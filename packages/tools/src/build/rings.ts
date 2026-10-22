@@ -94,9 +94,9 @@ export function crossRing(reach: number, thick: number, count = 12): V2[] {
     const a = k * 90 * DEG;
     const ca = Math.cos(a);
     const sa = Math.sin(a);
-    // wing pointing along (ca, sa): left edge, tip-left, tip-right, right edge back to the core
     const rot = (x: number, y: number): V2 => [x * ca - y * sa, x * sa + y * ca];
-    base.push(rot(thick, thick), rot(reach, thick), rot(reach, -thick));
+    // counter-clockwise: wing tip right corner, tip left corner, inner corner towards the next wing
+    base.push(rot(reach, -thick), rot(reach, thick), rot(thick, thick));
   }
   if (count === base.length) return base;
   // resample evenly along the perimeter to a different count

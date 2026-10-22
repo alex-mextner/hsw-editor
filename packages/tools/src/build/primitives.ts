@@ -308,8 +308,8 @@ export function tube(
       const base = i * sides;
       for (let s = 0; s < sides; s++) {
         const j = (s + 1) % sides;
-        if (flip) indices.push(c, base + j, base + s);
-        else indices.push(c, base + s, base + j);
+        if (flip) indices.push(c, base + s, base + j);
+        else indices.push(c, base + j, base + s);
       }
     };
     cap(0, false);

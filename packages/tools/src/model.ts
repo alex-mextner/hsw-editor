@@ -145,6 +145,22 @@ function take(
   acc.r = Math.max(acc.r, Math.hypot(x, z));
 }
 
+export interface SectionExtents {
+  minX: number;
+  maxX: number;
+  minZ: number;
+  maxZ: number;
+  /** Farthest point from the Y axis. */
+  r: number;
+}
+
+/** Extents of the material cut by the plane at height `y` over all parts (empty: minX > maxX). */
+export function sectionExtentsAt(parts: readonly Part[], y: number): SectionExtents {
+  const acc = { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity, r: 0 };
+  for (const p of parts) sliceExtents(p.mesh, y, acc);
+  return acc;
+}
+
 /** Cross-section samples of all parts along +Y between y0 and y1. */
 export function sectionProfile(
   parts: readonly Part[],

@@ -6,15 +6,8 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import {
-  type Lod,
-  type ViewName,
-  VIEWS,
-  contactSheet,
-  generate,
-  listToolClasses,
-  presetValues,
-} from '../src/index.ts';
+import { type Lod, generate, listToolClasses, presetValues } from '../src/index.ts';
+import { type ViewName, VIEWS, contactSheet } from '../src/render/index.ts';
 
 const args = process.argv.slice(2);
 const flag = (name: string, fallback: string): string => {
@@ -22,11 +15,11 @@ const flag = (name: string, fallback: string): string => {
   return i >= 0 ? (args[i + 1] ?? fallback) : fallback;
 };
 const out = flag('out', join(homedir(), '.cache/hsw-editor/proofs/tools'));
-const lod = Number(flag('lod', '0')) as Lod;
+const lod: Lod = flag('lod', '0') === '1' ? 1 : 0;
 const tile = Number(flag('tile', '260'));
 const views = flag('views', 'front,side,iso')
   .split(',')
-  .filter((v): v is ViewName => v in VIEWS);
+  .filter((v): v is ViewName => Object.hasOwn(VIEWS, v));
 const names = args.filter((a, i) => !a.startsWith('--') && !(args[i - 1] ?? '').startsWith('--'));
 mkdirSync(out, { recursive: true });
 

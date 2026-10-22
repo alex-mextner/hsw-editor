@@ -7,7 +7,7 @@
 import { type V3, clamp, cross, dot, norm, smoothstep } from '../math.ts';
 import { hexToRgb } from '../materials.ts';
 import type { ToolModel } from '../model.ts';
-import { shade } from '../mesh.ts';
+import { type ShadedMesh, shade } from '../mesh.ts';
 
 export interface ViewSpec {
   /** Camera direction from the object towards the eye, tool frame. */
@@ -56,21 +56,6 @@ export interface RenderResult {
   pixelsPerMm: number;
 }
 
-interface Tri {
-  ax: number;
-  ay: number;
-  az: number;
-  bx: number;
-  by: number;
-  bz: number;
-  cx: number;
-  cy: number;
-  cz: number;
-  /** Per-corner view-space normals, 9 floats. */
-  n: Float32Array;
-  part: number;
-}
-
 function camera(view: ViewSpec): { right: V3; up: V3; back: V3 } {
   const back = norm(view.eye);
   let right = cross(view.up, back);
@@ -85,6 +70,8 @@ interface Shader {
   metallic: number;
   roughness: number;
   alpha: number;
+  /** Blinn-Phong exponent derived from the roughness (constant per material). */
+  shininess: number;
 }
 
 const srgb2lin = (c: number): number => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
@@ -101,25 +88,27 @@ function environment(x: number, y: number, z: number): number {
   return floor + top + strip + strip2 + front;
 }
 
-const LIGHTS: readonly { dir: V3; power: number }[] = [
+const LIGHT_DEFS: readonly { dir: V3; power: number }[] = [
   { dir: norm([-0.45, 0.75, 0.62]), power: 0.95 },
   { dir: norm([0.8, 0.15, 0.55]), power: 0.38 },
   { dir: norm([0.1, -0.6, 0.3]), power: 0.18 },
 ];
+/** The camera is orthographic along +Z, so the half vectors are constants. */
+const LIGHTS = LIGHT_DEFS.map((l) => ({ ...l, half: norm([l.dir[0], l.dir[1], l.dir[2] + 1]) }));
 
 function shadePixel(sh: Shader, nx: number, ny: number, nz: number): [number, number, number] {
-  const n = norm([nx, ny, nz]);
+  const nl = Math.hypot(nx, ny, nz) || 1;
+  const n: V3 = [nx / nl, ny / nl, nz / nl];
   // view vector is +Z in view space (orthographic camera)
   const ndv = Math.max(0, n[2]);
   const hemi = 0.32 + 0.2 * n[1];
   let diff = hemi;
   let spec = 0;
-  const shininess = 2 / Math.max(0.02, sh.roughness ** 4) - 2;
+  const shininess = sh.shininess;
   for (const l of LIGHTS) {
     const ndl = Math.max(0, dot(n, l.dir));
     diff += l.power * ndl;
-    const h = norm([l.dir[0], l.dir[1], l.dir[2] + 1]);
-    spec += l.power * Math.max(0, dot(n, h)) ** Math.min(shininess, 400);
+    spec += l.power * Math.max(0, dot(n, l.half)) ** Math.min(shininess, 400);
   }
   const r2: V3 = [2 * ndv * n[0], 2 * ndv * n[1], 2 * ndv * n[2] - 1];
   const env = environment(r2[0], r2[1], r2[2]);
@@ -154,52 +143,56 @@ export function render(model: ToolModel, options: RenderOptions): RenderResult {
       (model.bounds.min[2] + model.bounds.max[2]) / 2,
     ] as V3);
 
-  const proj = (p: V3): [number, number, number] => {
-    const d: V3 = [p[0] - centre[0], p[1] - centre[1], p[2] - centre[2]];
-    return [dot(d, cam.right), dot(d, cam.up), dot(d, cam.back)];
-  };
-
-  // projected triangle soup
-  const tris: Tri[] = [];
+  // projected triangle soup in flat typed arrays: 9 floats of position and 9 of normal per triangle
   const shaders: Shader[] = [];
+  const meshes = model.parts.map((part) => shade(part.mesh, part.crease ?? 50));
+  const triCount = meshes.reduce((a, m) => a + m.indices.length / 3, 0);
+  const P = new Float64Array(triCount * 9);
+  const N = new Float32Array(triCount * 9);
+  const partOf = new Int32Array(triCount);
   let minX = Infinity;
   let maxX = -Infinity;
   let minY = Infinity;
   let maxY = -Infinity;
-  const raw: { v: number[]; n: number[]; part: number }[] = [];
+  let ti = 0;
+  const [rx, ry, rz] = cam.right;
+  const [ux, uy, uz] = cam.up;
+  const [bx0, by0, bz0] = cam.back;
   model.parts.forEach((part, pi) => {
     const m = part.material;
+    const roughness = m.roughness;
     shaders.push({
       color: hexToRgb(m.color).map((c) => srgb2lin(c / 255)) as [number, number, number],
       metallic: m.metallic,
-      roughness: m.roughness,
+      roughness,
       alpha: m.alpha,
+      shininess: 2 / Math.max(0.02, roughness ** 4) - 2,
     });
-    const s = shade(part.mesh, part.crease ?? 50);
+    const s = meshes[pi] as ShadedMesh;
     for (let t = 0; t < s.indices.length; t += 3) {
-      const v: number[] = [];
-      const nn: number[] = [];
       for (let k = 0; k < 3; k++) {
-        const i = s.indices[t + k] as number;
-        const p = proj([
-          s.positions[i * 3] ?? 0,
-          s.positions[i * 3 + 1] ?? 0,
-          s.positions[i * 3 + 2] ?? 0,
-        ]);
-        const nrm: V3 = [
-          s.normals[i * 3] ?? 0,
-          s.normals[i * 3 + 1] ?? 0,
-          s.normals[i * 3 + 2] ?? 0,
-        ];
-        const vn: V3 = [dot(nrm, cam.right), dot(nrm, cam.up), dot(nrm, cam.back)];
-        v.push(p[0], p[1], p[2]);
-        nn.push(vn[0], vn[1], vn[2]);
-        minX = Math.min(minX, p[0]);
-        maxX = Math.max(maxX, p[0]);
-        minY = Math.min(minY, p[1]);
-        maxY = Math.max(maxY, p[1]);
+        const i = (s.indices[t + k] as number) * 3;
+        const px = (s.positions[i] as number) - centre[0];
+        const py = (s.positions[i + 1] as number) - centre[1];
+        const pz = (s.positions[i + 2] as number) - centre[2];
+        const vx = px * rx + py * ry + pz * rz;
+        const vy = px * ux + py * uy + pz * uz;
+        const o = ti * 9 + k * 3;
+        P[o] = vx;
+        P[o + 1] = vy;
+        P[o + 2] = px * bx0 + py * by0 + pz * bz0;
+        const nx = s.normals[i] as number;
+        const ny = s.normals[i + 1] as number;
+        const nz = s.normals[i + 2] as number;
+        N[o] = nx * rx + ny * ry + nz * rz;
+        N[o + 1] = nx * ux + ny * uy + nz * uz;
+        N[o + 2] = nx * bx0 + ny * by0 + nz * bz0;
+        if (vx < minX) minX = vx;
+        if (vx > maxX) maxX = vx;
+        if (vy < minY) minY = vy;
+        if (vy > maxY) maxY = vy;
       }
-      raw.push({ v, n: nn, part: pi });
+      partOf[ti++] = pi;
     }
   });
 
@@ -212,54 +205,56 @@ export function render(model: ToolModel, options: RenderOptions): RenderResult {
   // an explicit centre is the middle of the image; otherwise the middle of the projected bounds
   const cx = options.center ? W / 2 : W / 2 - ((minX + maxX) / 2) * scale;
   const cy = options.center ? H / 2 : H / 2 + ((minY + maxY) / 2) * scale;
-  for (const r of raw) {
-    const v = r.v;
-    tris.push({
-      ax: (v[0] as number) * scale + cx,
-      ay: cy - (v[1] as number) * scale,
-      az: v[2] as number,
-      bx: (v[3] as number) * scale + cx,
-      by: cy - (v[4] as number) * scale,
-      bz: v[5] as number,
-      cx: (v[6] as number) * scale + cx,
-      cy: cy - (v[7] as number) * scale,
-      cz: v[8] as number,
-      n: Float32Array.from(r.n),
-      part: r.part,
-    });
+  // to screen space in place
+  for (let t = 0; t < triCount; t++) {
+    for (let k = 0; k < 3; k++) {
+      const o = t * 9 + k * 3;
+      P[o] = (P[o] as number) * scale + cx;
+      P[o + 1] = cy - (P[o + 1] as number) * scale;
+    }
   }
 
   const depth = new Float32Array(W * H).fill(-Infinity);
   const tri = new Int32Array(W * H).fill(-1);
   const bu = new Float32Array(W * H);
   const bv = new Float32Array(W * H);
-  tris.forEach((t, ti) => {
-    const area = (t.bx - t.ax) * (t.cy - t.ay) - (t.cx - t.ax) * (t.by - t.ay);
-    if (Math.abs(area) < 1e-9) return;
-    const x0 = Math.max(0, Math.floor(Math.min(t.ax, t.bx, t.cx)));
-    const x1 = Math.min(W - 1, Math.ceil(Math.max(t.ax, t.bx, t.cx)));
-    const y0 = Math.max(0, Math.floor(Math.min(t.ay, t.by, t.cy)));
-    const y1 = Math.min(H - 1, Math.ceil(Math.max(t.ay, t.by, t.cy)));
+  for (let t = 0; t < triCount; t++) {
+    const o = t * 9;
+    const ax = P[o] as number;
+    const ay = P[o + 1] as number;
+    const az = P[o + 2] as number;
+    const bx = P[o + 3] as number;
+    const by = P[o + 4] as number;
+    const bz = P[o + 5] as number;
+    const qx = P[o + 6] as number;
+    const qy = P[o + 7] as number;
+    const qz = P[o + 8] as number;
+    const area = (bx - ax) * (qy - ay) - (qx - ax) * (by - ay);
+    if (Math.abs(area) < 1e-9) continue;
+    const x0 = Math.max(0, Math.floor(Math.min(ax, bx, qx)));
+    const x1 = Math.min(W - 1, Math.ceil(Math.max(ax, bx, qx)));
+    const y0 = Math.max(0, Math.floor(Math.min(ay, by, qy)));
+    const y1 = Math.min(H - 1, Math.ceil(Math.max(ay, by, qy)));
     const inv = 1 / area;
     for (let y = y0; y <= y1; y++) {
       const py = y + 0.5;
       for (let x = x0; x <= x1; x++) {
         const px = x + 0.5;
-        const w1 = ((px - t.ax) * (t.cy - t.ay) - (t.cx - t.ax) * (py - t.ay)) * inv;
-        const w2 = ((t.bx - t.ax) * (py - t.ay) - (px - t.ax) * (t.by - t.ay)) * inv;
+        const w1 = ((px - ax) * (qy - ay) - (qx - ax) * (py - ay)) * inv;
+        const w2 = ((bx - ax) * (py - ay) - (px - ax) * (by - ay)) * inv;
         const w0 = 1 - w1 - w2;
         if (w0 < -1e-6 || w1 < -1e-6 || w2 < -1e-6) continue;
-        const z = w0 * t.az + w1 * t.bz + w2 * t.cz;
+        const z = w0 * az + w1 * bz + w2 * qz;
         const idx = y * W + x;
         if (z > (depth[idx] as number)) {
           depth[idx] = z;
-          tri[idx] = ti;
+          tri[idx] = t;
           bu[idx] = w1;
           bv[idx] = w2;
         }
       }
     }
-  });
+  }
 
   const bg = options.background === null ? null : hexToRgb(options.background ?? '#eceff3');
   const outW = options.width;
@@ -270,16 +265,16 @@ export function render(model: ToolModel, options: RenderOptions): RenderResult {
   // shade each supersample once
   const sampleColor = new Float32Array(W * H * 3);
   for (let i = 0; i < W * H; i++) {
-    const ti = tri[i] as number;
-    if (ti < 0) continue;
-    const t = tris[ti] as Tri;
+    const t = tri[i] as number;
+    if (t < 0) continue;
     const w1 = bu[i] as number;
     const w2 = bv[i] as number;
     const w0 = 1 - w1 - w2;
-    const nx = w0 * (t.n[0] as number) + w1 * (t.n[3] as number) + w2 * (t.n[6] as number);
-    const ny = w0 * (t.n[1] as number) + w1 * (t.n[4] as number) + w2 * (t.n[7] as number);
-    const nz = w0 * (t.n[2] as number) + w1 * (t.n[5] as number) + w2 * (t.n[8] as number);
-    const sh = shaders[t.part] as Shader;
+    const o = t * 9;
+    const nx = w0 * (N[o] as number) + w1 * (N[o + 3] as number) + w2 * (N[o + 6] as number);
+    const ny = w0 * (N[o + 1] as number) + w1 * (N[o + 4] as number) + w2 * (N[o + 7] as number);
+    const nz = w0 * (N[o + 2] as number) + w1 * (N[o + 5] as number) + w2 * (N[o + 8] as number);
+    const sh = shaders[partOf[t] as number] as Shader;
     const c = shadePixel(sh, nx, ny, nz);
     sampleColor[i * 3] = c[0];
     sampleColor[i * 3 + 1] = c[1];
@@ -312,9 +307,10 @@ export function render(model: ToolModel, options: RenderOptions): RenderResult {
         const fr = lin2srgb(clamp(r / cov, 0, 1));
         const fg = lin2srgb(clamp(g / cov, 0, 1));
         const fb = lin2srgb(clamp(b / cov, 0, 1));
-        rgba[o] = fr * a + back[0] * (1 - a);
-        rgba[o + 1] = fg * a + back[1] * (1 - a);
-        rgba[o + 2] = fb * a + back[2] * (1 - a);
+        // straight (non-premultiplied) colour when the background is transparent
+        rgba[o] = bg ? fr * a + back[0] * (1 - a) : fr;
+        rgba[o + 1] = bg ? fg * a + back[1] * (1 - a) : fg;
+        rgba[o + 2] = bg ? fb * a + back[2] * (1 - a) : fb;
         rgba[o + 3] = bg ? 255 : Math.round(a * 255);
       } else {
         rgba[o] = back[0];
