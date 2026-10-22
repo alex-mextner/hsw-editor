@@ -157,7 +157,7 @@ export const drillBitCase = defineToolClass({
 
     const grooves = radii.map((r, i) => ({ c: xRow(i), r }));
     const tray = planeXZ(
-      grooveBlock(cs.x0, cs.x1, cs.zFloor - 0.3, zt, grooves, cs.y0, cs.y1, ctx.seg(10, 5)),
+      grooveBlock(cs.x0, cs.x1, cs.zFloor - 0.3, zt, grooves, cs.y0, cs.y1, ctx.seg(16, 12)),
     );
 
     // index plate with graded holes at the butt end
@@ -199,7 +199,7 @@ export const drillBitCase = defineToolClass({
         pointAngle: 118,
         shank: 'straight',
         N: ctx.seg(36, 18),
-        perRev: ctx.seg(10, 5),
+        perRev: ctx.seg(16, 12),
         coneSteps: ctx.seg(8, 4),
       });
       const place1 = (mesh: Mesh): Mesh =>

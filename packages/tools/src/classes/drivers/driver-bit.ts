@@ -168,11 +168,13 @@ export function bitStations(spec: BitSpec): Station[] {
     const u = k / K;
     out.push({ y: yTip0 + tipLen * u, ring: tipRing(spec.tip, spec.tipSize, u, N) });
   }
-  // ground end face: last millimetre chamfered
-  const last = out[out.length - 1] as Station;
-  const prev = out[out.length - 2] as Station;
-  out[out.length - 1] = { y: last.y, ring: last.ring.map(([x, z]) => [x * 0.9, z * 0.9]) };
-  out[out.length - 2] = { y: lerp(prev.y, last.y, 0.9), ring: prev.ring };
+  // ground end face: a short chamfer ahead of the last station, sampled on the same taper
+  const last = out.pop() as Station;
+  const c = Math.min(0.4, (0.5 * tipLen) / K);
+  out.push(
+    { y: last.y - c, ring: tipRing(spec.tip, spec.tipSize, 1 - c / tipLen, N) },
+    { y: last.y, ring: last.ring.map(([x, z]) => [x * 0.9, z * 0.9]) },
+  );
   return out;
 }
 

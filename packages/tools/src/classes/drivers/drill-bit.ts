@@ -284,7 +284,7 @@ export const drillBit = defineToolClass({
       pointAngle: p.pointAngle,
       shank: p.shank,
       N: ctx.seg(72, 36),
-      perRev: ctx.seg(30, 8),
+      perRev: ctx.seg(30, 12),
       coneSteps: ctx.seg(22, 8),
     });
     const mats = drillFinishMaterials(p.finish);
