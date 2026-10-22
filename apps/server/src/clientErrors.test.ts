@@ -168,6 +168,12 @@ describe('POST /api/client-errors', () => {
     expect(raw).toContain('"https://cdn/a.glb#2":200');
   });
 
+  test('a generated detail key suffix never overwrites a real key', async () => {
+    resetLog();
+    await report({ detail: { '?a=1': 1, '?b=2': 2, '#2': 3 } });
+    expect(readFileSync(logFile, 'utf8')).toContain('"detail":{"":1,"#2":2,"#2#2":3}');
+  });
+
   test('a message that is only a query string is stored as a placeholder and read back', async () => {
     resetLog();
     expect((await report({ message: '?token=SECRET' })).status).toBe(204);

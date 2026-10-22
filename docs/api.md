@@ -170,7 +170,7 @@ diagnosed after the fact. Module `apps/server/src/clientErrors.ts`, behind the s
 - Free text is truncated to `message` 2000, `url` 500, `page` 500, `stack` 4000, `userAgent` 300, `bankId` 200 characters; `detail`
   keys to 100 and string values to 500. `?query` and `#fragment` runs (they can carry tokens) are removed from every one of those
   fields, including URLs quoted inside `message` and `stack`, before anything is written. The scrub is blunt: text glued to a
-  query (such as `:line:col` after it) goes too. `detail` keys that collide afterwards get a `#2`, `#3`, ... suffix.
+  query (such as `:line:col` after it) goes too. `detail` keys that collide afterwards get a `#2`, `#3`, ... suffix (so a stored key may exceed 100 characters by that suffix).
 - `ts` must be an ISO 8601 datetime (`2026-10-22T10:00:00.000Z`, offsets allowed).
 - Stored as JSONL in `<home>/logs/client-errors.jsonl` by a single serialized writer; at 5 MiB the file is renamed to
   `client-errors.jsonl.1` (one generation kept). `GET` reads the current file, then `.1` if it needs more, and skips torn lines

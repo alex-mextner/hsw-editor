@@ -75,9 +75,13 @@ function sanitize(entry: ClientErrorEntry): ClientErrorEntry {
     const seen = new Map<string, number>();
     for (const [rawKey, value] of Object.entries(entry.detail)) {
       const base = limitText(rawKey, DETAIL_KEY_CAP);
-      const count = (seen.get(base) ?? 0) + 1;
-      seen.set(base, count);
-      const key = count === 1 ? base : `${base}#${count}`;
+      let index = seen.get(base) ?? 0;
+      let key: string;
+      do {
+        index += 1;
+        key = index === 1 ? base : `${base}#${index}`;
+      } while (detail.has(key)); // also skips names a real key already took, e.g. a literal `#2`
+      seen.set(base, index);
       detail.set(key, typeof value === 'string' ? limitText(value, DETAIL_VALUE_CAP) : value);
     }
     clean.detail = Object.fromEntries(detail);
