@@ -1,30 +1,35 @@
-import { createEmptyWall } from '@hsw-editor/core';
-import { useStore } from '@/state/react.ts';
-import { currentWallId } from '@/state/current-wall.ts';
-import { Button } from '@/components/ui/button.tsx';
-import { WallCanvas } from '@/scene/WallCanvas.tsx';
-
-const wall = createEmptyWall('draft', 'Draft wall');
+import { useEffect } from 'react';
+import { CommandPalette } from '@/commands/CommandPalette.tsx';
+import { registerEditorCommands } from '@/commands/editorCommands.ts';
+import { useShortcuts } from '@/commands/useShortcuts.ts';
+import { TooltipProvider } from '@/components/ui/tooltip.tsx';
+import { Toaster } from '@/features/notices/Toaster.tsx';
+import { LeftPanel } from '@/features/palette/LeftPanel.tsx';
+import { Inspector } from '@/features/inspector/Inspector.tsx';
+import { Timeline } from '@/features/timeline/Timeline.tsx';
+import { TopBar } from '@/features/topbar/TopBar.tsx';
+import { ViewportArea } from '@/features/viewport/ViewportArea.tsx';
+import { NewWallDialog } from '@/features/wizard/NewWallDialog.tsx';
+import { OmpDock } from '@/shell/OmpDock.tsx';
+import { Shell } from '@/shell/Shell.tsx';
 
 export function App() {
-  const wallId = useStore(currentWallId);
+  useShortcuts();
+  useEffect(() => registerEditorCommands(), []);
   return (
-    <div className="flex h-full flex-col">
-      <header className="flex items-center gap-3 border-b border-neutral-800 px-4 py-2 text-sm">
-        <strong>HSW Editor</strong>
-        <span className="text-neutral-400">wall: {wallId ?? 'none'}</span>
-        <Button
-          variant="outline"
-          size="sm"
-          className="ml-auto"
-          onClick={() => currentWallId.set(wall.id)}
-        >
-          Open draft wall
-        </Button>
-      </header>
-      <main className="min-h-0 flex-1">
-        <WallCanvas widthMm={wall.widthMm} heightMm={wall.heightMm} />
-      </main>
-    </div>
+    <TooltipProvider delay={300}>
+      <Shell
+        topBar={<TopBar />}
+        left={<LeftPanel />}
+        right={<Inspector />}
+        bottom={<Timeline />}
+        ompDock={<OmpDock />}
+      >
+        <ViewportArea />
+      </Shell>
+      <CommandPalette />
+      <NewWallDialog />
+      <Toaster />
+    </TooltipProvider>
   );
 }
