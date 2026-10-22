@@ -1,6 +1,10 @@
 /**
  * Runs tsc for every workspace. The state-lib backend module is type-checked only when
  * `bun run setup:state-lib` has produced vendor/state-lib (it is private and absent in CI).
+ *
+ * apps/web runs in build mode (`tsc -b`): the vendored omp renderer (apps/web/src/features/omp/vendor)
+ * is its own composite project with the flags upstream compiles under, and the strict web projects
+ * consume its emitted declarations (see tsconfig.omp-vendor.json).
  */
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -15,7 +19,8 @@ if (existsSync(resolve(root, 'vendor/state-lib/dist/index.d.ts'))) {
 
 let failed = false;
 for (const project of projects) {
-  const proc = Bun.spawn([resolve(root, 'node_modules/.bin/tsc'), '--noEmit', '-p', project], {
+  const args = project.startsWith('apps/web') ? ['-b', project] : ['--noEmit', '-p', project];
+  const proc = Bun.spawn([resolve(root, 'node_modules/.bin/tsc'), ...args], {
     cwd: root,
     stdout: 'inherit',
     stderr: 'inherit',

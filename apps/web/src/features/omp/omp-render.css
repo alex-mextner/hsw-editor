@@ -1,0 +1,146 @@
+/*
+ * Bridge between the vendored omp renderer (vendor/omp-render, selectors scoped under
+ * `.omp-scope` by scripts/vendor-omp-render.ts) and the app's dark shadcn tokens
+ * (src/styles.css). Import this one file where the omp panel mounts and render the
+ * transcript inside `<div className="omp-scope">`. Nothing here touches elements
+ * outside `.omp-scope`. Hand-written; the vendored tree is generated.
+ *
+ * KaTeX needs no stylesheet: the vendored markdown renders math as native MathML.
+ */
+@import './vendor/omp-render/styles/tokens.css';
+
+/*
+ * Doubled class: upstream's light-theme blocks (`.omp-scope:not([data-theme])` inside
+ * `prefers-color-scheme: light`) have the specificity of a single class + pseudo-class;
+ * this block must win over them so the panel stays dark like the rest of the app.
+ */
+.omp-scope.omp-scope {
+  color-scheme: dark;
+
+  /* surfaces: derived from the app's --background / --foreground */
+  --bg: var(--background);
+  --panel: var(--background);
+  --bg-raised: color-mix(in oklab, var(--background), var(--foreground) 5%);
+  --bg-inset: color-mix(in oklab, var(--background) 80%, black);
+  --bg-overlay: var(--muted);
+  --hover: color-mix(in oklab, transparent, var(--foreground) 4%);
+  --selected: color-mix(in oklab, transparent, var(--foreground) 8%);
+
+  /* text */
+  --fg: var(--foreground);
+  --fg-muted: var(--muted-foreground);
+  --fg-faint: color-mix(in oklab, var(--muted-foreground) 62%, var(--background));
+  --fg-inverse: var(--primary-foreground);
+
+  /* accent: the app is monochrome, so links/spinners follow --primary */
+  --accent-a: var(--primary);
+  --accent-b: var(--primary);
+  --accent: var(--primary);
+  --accent-fg: var(--primary-foreground);
+  --accent-muted: color-mix(in oklab, transparent, var(--foreground) 12%);
+  --accent-gradient: linear-gradient(100deg, var(--primary), var(--primary));
+  --err: var(--destructive);
+
+  /* status + depth tokens the light block would flip: pin the dark values from tokens.css */
+  --ok: #3ecf8e;
+  --live: #3ecf8e;
+  --warn: #f5a524;
+  --glass: rgba(14, 14, 16, 0.78);
+  --ambient-a: rgba(90, 216, 230, 0.07);
+  --ambient-b: rgba(237, 74, 191, 0.06);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-overlay: 0 24px 64px rgba(0, 0, 0, 0.7), 0 1px 0 rgba(255, 255, 255, 0.06) inset;
+  --rail-mobile-shadow: -12px 0 32px rgba(0, 0, 0, 0.6);
+  --backdrop: rgba(0, 0, 0, 0.55);
+
+  /*
+   * --border and --ring are also app tokens, so they cannot reference themselves
+   * (a cyclic var()); these literals mirror src/styles.css `--border` / `--ring`.
+   */
+  --border: oklch(1 0 0 / 10%);
+  --border-strong: oklch(1 0 0 / 18%);
+  --edge-top: oklch(1 0 0 / 12%);
+  --edge-bottom: oklch(1 0 0 / 5%);
+  --ring: oklch(0.556 0 0);
+  --ring-soft: oklch(0.556 0 0 / 25%);
+
+  --font-ui: system-ui, sans-serif;
+}
+
+/* What upstream's unvendored base.css gave <body>; Tailwind preflight covers the resets. */
+.omp-scope {
+  font: 400 13.5px / 1.5 var(--font-ui);
+  color: var(--fg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.omp-scope a {
+  color: var(--accent);
+}
+
+.omp-scope code,
+.omp-scope pre,
+.omp-scope kbd {
+  font-family: var(--font-mono);
+}
+
+.omp-scope :focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.omp-scope ::selection {
+  background: var(--accent-muted);
+}
+
+.omp-scope * {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+
+/*
+ * Tailwind preflight strips list markers; upstream relied on browser defaults. Links are
+ * underlined because --accent is the monochrome --primary here (specificity beats the
+ * vendored `.tr-md a` rule regardless of stylesheet order).
+ */
+.omp-scope .tr-md ul {
+  list-style: disc;
+}
+
+.omp-scope .tr-md ol {
+  list-style: decimal;
+}
+
+.omp-scope .tr-md ul ul {
+  list-style: circle;
+}
+
+.omp-scope .tr-md a:any-link {
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+}
+
+/* Upstream's `rise` keyframes (base.css), renamed by the vendor script. */
+@keyframes omp-rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .omp-scope *,
+  .omp-scope *::before,
+  .omp-scope *::after {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    transition-duration: 1ms !important;
+  }
+}

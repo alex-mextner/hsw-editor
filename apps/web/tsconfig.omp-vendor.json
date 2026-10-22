@@ -1,0 +1,17 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "composite": true,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "noEmit": false,
+    "rootDir": "./src/features/omp",
+    "outDir": "./node_modules/.cache/omp-vendor-types",
+    "tsBuildInfoFile": "./node_modules/.cache/omp-vendor-types/tsbuildinfo",
+    "noUncheckedIndexedAccess": false,
+    "exactOptionalPropertyTypes": false,
+    "noImplicitThis": false
+  },
+  "include": ["src/features/omp/vendor/omp-render", "src/features/omp/render-types.ts"],
+  "exclude": []
+}
