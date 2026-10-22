@@ -52,6 +52,9 @@ hsw-editor wall undo garage
 | bun | FAIL (warn on a version other than `.bun-version`) | |
 | web build | FAIL | `apps/web/dist/index.html` (`HSW_EDITOR_WEB_DIST` overrides) |
 | offline assets | warn | `sw.js` + `manifest.webmanifest` in the build: without them the app does not work offline |
+| bank integrity | FAIL if the built bank is inconsistent, warn if absent (seed served) or the tooling is missing | runs `bun run bank:verify`: exit `0` consistent, `1` problems, `3` nothing built |
+| bank seed | FAIL if the committed seed is corrupt | `bank:verify --seed`; fix `git checkout packages/bank/seed` |
+| bank (served) | FAIL if the daemon rejected a generation or serves nothing | only when the port answers as hsw-editor (`/api/bank/health`); no row otherwise |
 | port | FAIL if another process holds it | an hsw-editor already serving is ok |
 | data dir | FAIL if not writable, warn if world-writable | `HSW_EDITOR_HOME` |
 | state-lib, uv, omp, GPU, vision sidecar, draw backends, systemd --user | warn | vision: `HSW_VISION_URL` (default `http://127.0.0.1:8795`); draw: `omp`, ChatGPT browser profile, manual upload |

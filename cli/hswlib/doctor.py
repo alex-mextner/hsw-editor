@@ -97,6 +97,108 @@ def check_web_build(ctx: Context) -> list[Check]:
     return checks
 
 
+BANK_VERIFY = "scripts/bank/verify.ts"
+BANK_FIX_REBUILD = "bun run bank:ingest (rebuild; the previous good generation keeps serving) or bun run bank:adopt <known-good bank dir>"
+
+
+def _bank_verify(ctx: Context, *flags: str) -> tuple[int, dict] | str:
+    """Run the bank verifier; returns (exit code, parsed --json report) or a reason string when it could not run."""
+    bun = _which("bun")
+    if bun is None:
+        return "bun not found"
+    env = dict(os.environ)
+    if "HSW_BANK_DIR" not in env and "HSW_EDITOR_DATA_DIR" not in env:
+        env["HSW_EDITOR_DATA_DIR"] = str(ctx.data_dir)
+    try:
+        done = subprocess.run([bun, BANK_VERIFY, *flags, "--json"], cwd=ctx.repo_root, env=env,
+                              capture_output=True, text=True, timeout=120, check=False)
+    except subprocess.TimeoutExpired:
+        return "verify timed out after 120 s"
+    except OSError as err:
+        return f"cannot run bun: {err}"
+    if done.returncode == 3:
+        return 3, {}
+    try:
+        report = json.loads(done.stdout.strip().splitlines()[-1]) if done.stdout.strip() else None
+    except ValueError:
+        report = None
+    if not isinstance(report, dict) or not isinstance(report.get("roots"), list):
+        return f"unparsable verify output (exit {done.returncode})"
+    return done.returncode, report
+
+
+def _bank_problems(report: dict) -> list[str]:
+    return [f"{r.get('root', '?')}: {p}" for r in report["roots"] for p in r.get("problems", [])]
+
+
+def _bank_integrity(ctx: Context) -> Check:
+    result = _bank_verify(ctx)
+    if isinstance(result, str):
+        return Check("bank integrity", "warn", result, "bun run bank:verify")
+    code, report = result
+    if code == 3:
+        return Check("bank integrity", "warn", "no built bank: the committed seed is served", "bun run bank:ingest")
+    if code == 0:
+        checked = sum(int(r.get("checked", 0)) for r in report["roots"])
+        root = report["roots"][0].get("root", "?") if report["roots"] else "?"
+        return Check("bank integrity", "ok", f"{checked} elements verified in {root}")
+    problems = _bank_problems(report)
+    detail = f"{len(problems)} problem(s): " + "; ".join(problems[:3])
+    return Check("bank integrity", "fail", detail, BANK_FIX_REBUILD)
+
+
+def _bank_seed(ctx: Context) -> Check:
+    result = _bank_verify(ctx, "--seed")
+    if isinstance(result, str):
+        return Check("bank seed", "warn", result, "bun run bank:verify --seed")
+    code, report = result
+    if code == 0:
+        return Check("bank seed", "ok", "committed seed verified")
+    problems = _bank_problems(report) if report else []
+    detail = "; ".join(problems[:3]) or f"verify exited {code}"
+    return Check("bank seed", "fail", f"committed seed is corrupt or missing: {detail}", "git checkout packages/bank/seed")
+
+
+def _get_health(url: str, timeout: float = 2.0) -> tuple[int, dict | None] | None:
+    """Like _get_json but keeps the JSON body of an HTTP error status (503 carries the health report)."""
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return resp.status, json.load(resp)
+    except urllib.error.HTTPError as err:
+        with err:
+            try:
+                return err.code, json.load(err)
+            except ValueError:
+                return err.code, None
+    except (urllib.error.URLError, OSError, ValueError):
+        return None
+
+
+def _bank_served(ctx: Context) -> Check | None:
+    served = _get_json(f"http://{HOST}:{ctx.port}/api/health")
+    if served is None or not str(served.get("name", "")).startswith("hsw-editor"):
+        return None
+    answer = _get_health(f"http://{HOST}:{ctx.port}/api/bank/health")
+    if answer is None or answer[0] == 404 or answer[1] is None:
+        return None
+    health = answer[1]
+    rejected = health.get("rejected") or []
+    if not health.get("ok") or rejected:
+        first = rejected[0] if rejected else {}
+        problems = first.get("problems") or []
+        detail = f"{first.get('root', 'nothing served')}: {problems[0]}" if problems else "bank not servable"
+        return Check("bank (served)", "fail", detail, "hsw-editor restart after bun run bank:ingest")
+    root = str((health.get("served") or {}).get("root", "")).rstrip("/").rsplit("/", 1)[-1] or "?"
+    return Check("bank (served)", "ok", f"serving {health.get('elements', 0)} elements (generation {root}), {health.get('unavailable', 0)} unavailable")
+
+
+def check_bank(ctx: Context) -> list[Check]:
+    if not (ctx.repo_root / BANK_VERIFY).exists():
+        return [Check("bank integrity", "warn", "bank tooling not present in this checkout", "git pull")]
+    rows = [_bank_integrity(ctx), _bank_seed(ctx), _bank_served(ctx)]
+    return [row for row in rows if row is not None]
+
+
 def check_state_lib(ctx: Context) -> list[Check]:
     if (ctx.repo_root / "vendor/state-lib/dist/index.js").exists():
         return [Check("state-lib", "ok", "vendored")]
@@ -193,6 +295,7 @@ BASE_CHECKS: list[CheckFn] = [
     check_agent_tools,
     check_bun,
     check_web_build,
+    check_bank,
     check_state_lib,
     check_port,
     check_data_dir,
