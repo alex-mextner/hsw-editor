@@ -254,6 +254,25 @@ describe('applyOp: random sequences', () => {
   });
 });
 
+describe('setVariant inverse', () => {
+  test('clearing the bank id is undone exactly', () => {
+    const withBank = applyOp(fixture(), {
+      type: 'setVariant',
+      id: 't1',
+      variantId: 'v1',
+      bankId: 'tool-x',
+    }).wall;
+    const cleared = applyOp(withBank, {
+      type: 'setVariant',
+      id: 't1',
+      variantId: null,
+      bankId: null,
+    });
+    expect(cleared.wall.items.find((item) => item.id === 't1')?.bankId).toBeUndefined();
+    expect(content(applyOp(cleared.wall, cleared.inverse).wall)).toEqual(content(withBank));
+  });
+});
+
 describe('rev rules', () => {
   test('an op that changes nothing keeps the same wall object and rev', () => {
     const wall = fixture();

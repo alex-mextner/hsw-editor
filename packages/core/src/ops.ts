@@ -321,7 +321,7 @@ function setVariant(wall: Wall, op: Narrow<'setVariant'>): LeafResult {
     type: 'setVariant',
     id: op.id,
     variantId: item.variantId ?? null,
-    ...(op.bankId === undefined || op.bankId === null ? {} : { bankId: item.bankId ?? null }),
+    ...(op.bankId === undefined ? {} : { bankId: item.bankId ?? null }),
   };
   const { variantId: _variant, ...rest } = item;
   let next: WallItem = op.variantId === null ? rest : { ...rest, variantId: op.variantId };

@@ -191,9 +191,9 @@ export const WallSchema = z.strictObject({
   /** Monotonic revision; +1 per applied (state-changing) op, undo and redo included. */
   rev: z.number().int().min(0),
   board: BoardSchema,
-  items: z.array(WallItemSchema),
-  photos: z.array(PhotoSchema),
-  models: z.array(ModelRefSchema),
+  items: z.array(WallItemSchema).max(20000),
+  photos: z.array(PhotoSchema).max(1000),
+  models: z.array(ModelRefSchema).max(5000),
 });
 
 // ---- Ops -------------------------------------------------------------------------------------------
