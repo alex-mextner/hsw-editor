@@ -58,3 +58,22 @@ test('concurrent in-process acquisition: exactly one winner, and the loser canno
   if (winners[0]?.status === 'fulfilled') await winners[0].value.release();
   expect(await Bun.file(file).exists()).toBe(false);
 });
+
+test('a failed acquisition frees its reservation; a double release never unlinks a later holder', async () => {
+  const file = `${scratch.dir}/owner.lock`;
+  const sleeper = Bun.spawn(['sleep', '30']);
+  try {
+    await Bun.write(file, `${sleeper.pid}:foreign`);
+    await expect(acquireOwnerLock(file, 'test browser')).rejects.toBeInstanceOf(DrawError);
+  } finally {
+    sleeper.kill();
+    await sleeper.exited;
+  }
+  const first = await acquireOwnerLock(file, 'test browser'); // not blocked by the failed attempt
+  await first.release();
+  const second = await acquireOwnerLock(file, 'test browser');
+  await first.release(); // stale double release
+  expect(await Bun.file(file).exists()).toBe(true);
+  await expect(acquireOwnerLock(file, 'test browser')).rejects.toBeInstanceOf(DrawError);
+  await second.release();
+});

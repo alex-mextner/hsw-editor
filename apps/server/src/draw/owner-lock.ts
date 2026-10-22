@@ -28,32 +28,36 @@ export async function acquireOwnerLock(file: string, what: string): Promise<Owne
     });
   }
   heldHere.add(file);
+  let mine: string;
   try {
-    await takeLockFile(file, what);
+    mine = await takeLockFile(file, what);
   } catch (error) {
     heldHere.delete(file);
     throw error;
   }
+  let released = false;
   return {
     release: async () => {
-      await removeIfContent(file, content.get(file) ?? '');
-      content.delete(file);
-      heldHere.delete(file); // only after the file is gone: no window where it exists unreserved
+      if (released) return; // double release must never touch a later holder's lock
+      released = true;
+      try {
+        await removeIfContent(file, mine);
+      } finally {
+        // A removal failure leaves our own-pid file, which the next acquire reclaims as stale.
+        heldHere.delete(file);
+      }
     },
   };
 }
 
-/** What each held lock file contains, so release removes only our own file. */
-const content = new Map<string, string>();
-
-async function takeLockFile(file: string, what: string): Promise<void> {
+/** Writes the lock file and returns its content (`<pid>:<nonce>`), the proof of ownership. */
+async function takeLockFile(file: string, what: string): Promise<string> {
   await mkdir(dirname(file), { recursive: true });
   const mine = `${process.pid}:${crypto.randomUUID()}`;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       await writeFile(file, mine, { flag: 'wx', mode: 0o600 });
-      content.set(file, mine);
-      return;
+      return mine;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       const seen = await readFile(file, 'utf8').catch(() => '');
