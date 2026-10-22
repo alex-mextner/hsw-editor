@@ -192,7 +192,7 @@ def test_a_missing_python_extra_is_a_structured_error_not_zero_items(tmp_path: P
     with client.stream("POST", "/photo-to-wall", json=body(photo, tmp_path, calibrate=TWO_POINT)) as response:
         events = [json.loads(line) for line in response.iter_lines() if line]
     assert events[-1]["event"] == "error"
-    assert events[-1]["error"]["code"] == "missing_dependency" and "--extra ml" in events[-1]["error"]["fix"]
+    assert events[-1]["error"]["code"] == "missing_dependency" and "vision setup" in events[-1]["error"]["fix"]
 
 
 def test_every_fit_failing_is_an_error_not_an_empty_proposal(tmp_path: Path, photo: Path) -> None:
@@ -215,10 +215,10 @@ def test_host_header_case_and_low_confidence_status() -> None:
     assert LowConfidence("x").http_status == 422
 
 
-def test_duplicate_bank_class_names_are_rejected() -> None:
+def test_duplicate_bank_class_ids_are_rejected() -> None:
     from hsw_vision.errors import BadRequest
     from hsw_vision.stages.recognise import classes_from_bank
 
-    index = {"toolClasses": [{"id": "a", "name": {"en": "Snips"}}, {"id": "b", "name": {"en": "snips"}}]}
+    index = {"toolClasses": [{"id": "a", "name": {"en": "Snips"}}, {"id": "a", "name": {"en": "Cutters"}}]}
     with pytest.raises(BadRequest):
         classes_from_bank(index)

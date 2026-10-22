@@ -87,6 +87,16 @@ def _round(value: float, digits: int = 2) -> float:
     return round(float(value), digits)
 
 
+def dimensions_mm(fit: dict[str, Any]) -> dict[str, float | None]:
+    """`{length, width, thickness}` in mm (rounded) of a fit; None where the fit has no such dimension."""
+    dims = fit.get("dims_mm") or {}
+    return {
+        "length": _round(dims["length_mm"]) if dims.get("length_mm") else None,
+        "width": _round(dims["max_width_mm"]) if dims.get("max_width_mm") else None,
+        "thickness": _round(dims["thickness_mm"]) if dims.get("thickness_mm") else None,
+    }
+
+
 def build_proposal(
     *,
     photo_id: str | None,
@@ -147,12 +157,7 @@ def _item(
     # fit) must never make the same id mean a different object.
     item_id = f"v{sid}-{int(obj['instance_id']):03d}"
     model_id = f"m{sid}-{int(obj['instance_id']):03d}"
-    dims = fit.get("dims_mm") or {}
-    dimensions = {
-        "length": _round(dims["length_mm"]) if dims.get("length_mm") else None,
-        "width": _round(dims["max_width_mm"]) if dims.get("max_width_mm") else None,
-        "thickness": _round(dims["thickness_mm"]) if dims.get("thickness_mm") else None,
-    }
+    dimensions = dimensions_mm(fit)
     params = {k: v for k, v in dimensions.items() if v is not None}
     label = _label(tool_class, bank_index, index)
     cx, cy = obj["centre_mm"]

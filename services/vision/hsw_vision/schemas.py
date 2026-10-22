@@ -58,6 +58,9 @@ class RecogniseRequest(ImageRef):
     segment: SegmentParams = Field(default_factory=SegmentParams)
     instances: list[int] | None = None
     bank_index: dict[str, Any] | None = None
+    #: Categories file / comma list (anything `threed_vision.recognise.load_categories` reads, e.g. a JSON list of ToolClass
+    #: objects) instead of the bank index's tool classes.
+    categories: str | None = None
     topk: int = Field(default=5, ge=1, le=20)
 
 
@@ -82,8 +85,9 @@ class MultiviewRequest(Strict):
     flag_below: float = Field(default=0.75, ge=0, le=1)
 
 
-class PhotoToWallRequest(ImageRef):
-    photo_id: str | None = None
+class PhotoRequest(ImageRef):
+    """What `photo_to_wall` and `photo_to_objects` share: calibrate -> segment -> recognise -> fit per object."""
+
     calibrate: CalibrateParams = Field(default_factory=CalibrateParams)
     segment: SegmentParams = Field(default_factory=SegmentParams)
     #: Per instance id (as string) dimension overrides in mm.
@@ -91,9 +95,8 @@ class PhotoToWallRequest(ImageRef):
     #: Only these segmentation instance ids (default: every plausible object).
     instances: list[int] | None = None
     bank_index: dict[str, Any] | None = None
-    board: dict[str, Any] | None = None
-    anchor_mm: tuple[float, float] = (0.0, 0.0)
-    auto_apply_confidence: float | None = Field(default=None, ge=0, le=1)
+    #: Categories file / comma list (`threed_vision.recognise.load_categories`) instead of the bank index's tool classes.
+    categories: str | None = None
     min_confidence: float | None = Field(default=None, ge=0, le=1)
     view_flag_iou: float | None = Field(default=None, ge=0, le=1)
     max_objects: int = Field(default=60, ge=1, le=500)
@@ -104,3 +107,26 @@ class PhotoToWallRequest(ImageRef):
     ai_assist: bool = False
     #: Other photos of the same wall/objects (different viewpoint): used as held-out views of every fit.
     extra_photos: list[Path] = Field(default_factory=list, max_length=6)
+
+
+class PhotoToWallRequest(PhotoRequest):
+    photo_id: str | None = None
+    board: dict[str, Any] | None = None
+    anchor_mm: tuple[float, float] = (0.0, 0.0)
+    auto_apply_confidence: float | None = Field(default=None, ge=0, le=1)
+
+
+class PhotoToObjectsRequest(PhotoRequest):
+    """Photo -> per-object results (mask, crop, class top-k, fitted model, colours) with no wall involved.
+
+    `out_dir`: where masks, crops, cut-outs, models, overlays and `objects.json` are written (paths in the result are
+    relative to it); default `<work_dir>/<image sha16>/objects`."""
+
+    out_dir: Path | None = None
+    topk: int = Field(default=5, ge=1, le=20)
+    #: Margin (fraction of the larger bbox side) added around each object's crop.
+    crop_pad: float = Field(default=0.1, ge=0, le=1)
+    #: Per-part colour sampling (`threed_vision.appearance`); off skips it.
+    colours: bool = True
+    #: Also put each CLIP crop embedding (512 floats) in the object record; they are always written to `embeddings.npy`.
+    inline_embeddings: bool = False

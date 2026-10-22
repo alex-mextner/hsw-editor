@@ -1,6 +1,6 @@
 """Multi-view stage: render the fit into every other available view and compare silhouettes
 (`threed_vision.view_check.check`). Without a second view the library runs its single-photo sanity mode
-(status `unverified`) and the fit's confidence stays capped (see `stages.fit.fit_confidence`).
+(status `unverified`) and the fit's confidence stays capped (see `hsw_vision.confidence`).
 """
 
 from __future__ import annotations
@@ -59,19 +59,6 @@ def register_views(
     ]
     return {**summary, "views": views}
 
-
-
-def view_confidence(check: dict[str, Any]) -> float | None:
-    """Held-out-view confidence: the worst IoU across the checked views, None when nothing was checked."""
-    if not check.get("views"):
-        return None
-    value = check.get("min_iou")
-    return None if value is None else (0.0 if value != value else float(value))
-
-
-def needs_view(check: dict[str, Any], confidence: float, threshold: float) -> bool:
-    """A fit asks for another photo when its confidence is below `threshold` or the library flagged a view."""
-    return confidence < threshold or (bool(check.get("needs_views")) and check.get("status") in ("low", "flagged"))
 
 
 def request_view_event(

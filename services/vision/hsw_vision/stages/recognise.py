@@ -48,16 +48,32 @@ DEFAULT_CLASSES: tuple[tuple[str, str], ...] = (
 )
 
 
-def classes_from_bank(bank_index: dict[str, Any] | None) -> list[tuple[str, str]]:
-    """`(id, prompt)` pairs from a bank index, or the built-in vocabulary."""
+def classes_from_bank(bank_index: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """`[{"id", "prompts"}]` from a bank index's `toolClasses[]` (English name as the prompt), or the built-in vocabulary."""
     if not bank_index or not bank_index.get("toolClasses"):
-        return list(DEFAULT_CLASSES)
-    classes = [(tc["id"], str(tc.get("name", {}).get("en") or tc["id"]).lower()) for tc in bank_index["toolClasses"]]
-    prompts = [prompt for _, prompt in classes]
-    duplicates = sorted({p for p in prompts if prompts.count(p) > 1})
-    if duplicates:  # results are mapped back to ids through the prompt text: it must identify one class
-        raise BadRequest(f"bank toolClasses share the English name(s) {', '.join(duplicates)}; names must be unique")
+        return [{"id": class_id, "prompts": [prompt]} for class_id, prompt in DEFAULT_CLASSES]
+    classes = [
+        {"id": tc["id"], "prompts": [str(tc.get("name", {}).get("en") or tc["id"]).lower()]} for tc in bank_index["toolClasses"]
+    ]
+    ids = [c["id"] for c in classes]
+    duplicates = sorted({i for i in ids if ids.count(i) > 1})
+    if duplicates:
+        raise BadRequest(f"bank toolClasses repeat the id(s) {', '.join(duplicates)}; ids must be unique")
     return classes
+
+
+def classes_from_file(spec: str) -> list[dict[str, Any]]:
+    """External categories (`categories` request field): whatever `threed_vision.recognise.load_categories` reads - a JSON list of
+    ToolClass objects (`id`, `name`/`prompts`/`synonyms`), an index document wrapping `toolClasses`, one label per line
+    (`label: synonym, synonym`), or a comma list. The caller fuses the text scores with its own class prototypes."""
+    from threed_vision.recognise import load_categories
+
+    return [{"id": c.label, "prompts": list(c.prompts)} for c in load_categories(spec)]
+
+
+def resolve_classes(bank_index: dict[str, Any] | None, categories: str | None = None) -> list[dict[str, Any]]:
+    """The class list a request recognises against: an explicit `categories` file beats the bank index beats the default."""
+    return classes_from_file(categories) if categories else classes_from_bank(bank_index)
 
 
 def recognise(
@@ -66,30 +82,28 @@ def recognise(
     masks: dict[int, np.ndarray],
     *,
     manager: ModelManager,
-    bank_index: dict[str, Any] | None = None,
+    classes: list[dict[str, Any]],
     topk: int = 5,
     calibrate: bool = True,
 ) -> dict[str, Any]:
     """`{"objects": {id: {"tool_class", "label", "score", "prob", "topk": [...], "bank_topk": [...]}}}`.
 
-    `prob` is the softmax share of the best class within the top-k (a margin signal in [0, 1], not a calibrated
-    probability); `tool_class` is None for instances the model cannot place.
+    `classes` come from `resolve_classes`. `prob` is the softmax share of the best class within the top-k (a margin
+    signal in [0, 1], not a calibrated probability); `tool_class` is None for instances the model cannot place.
     """
-    classes = classes_from_bank(bank_index)
-    prompts = [prompt for _, prompt in classes]
-    by_prompt = {prompt: class_id for class_id, prompt in classes}
+    text_of = {c["id"]: c["prompts"][0] for c in classes}
     subjects = [{"id": inst["id"], "mask": masks[inst["id"]]} for inst in instances if inst["id"] in masks]
     if not subjects:
-        return {"classes": [c for c, _ in classes], "objects": {}}
+        return {"classes": [c["id"] for c in classes], "objects": {}}
 
     raw = manager.call(
         RECOGNISER,
-        lambda engine: engine.classify(rgb, subjects, prompts, calibrate=calibrate, topk=topk),
+        lambda engine: engine.classify(rgb, subjects, classes, calibrate=calibrate, topk=topk),
     )
     objects: dict[str, dict[str, Any]] = {}
     for entry in raw:
         ranked = [
-            {"tool_class": by_prompt.get(item["label"]), "label": item["label"], "score": float(item["score"])}
+            {"tool_class": item["label"], "label": text_of.get(item["label"], item["label"]), "score": float(item["score"])}
             for item in entry.get("text_topk", [])
         ]
         best = ranked[0] if ranked else None
@@ -102,7 +116,7 @@ def recognise(
             "bank_topk": [dict(b) for b in entry.get("bank_topk", [])],
             "calibrated": bool(entry.get("calibrated", calibrate)),
         }
-    return {"classes": [c for c, _ in classes], "objects": objects}
+    return {"classes": [c["id"] for c in classes], "objects": objects}
 
 
 def _margin_prob(scores: list[float]) -> float:

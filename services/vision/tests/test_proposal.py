@@ -190,7 +190,7 @@ def test_calibration_core_object_travels_with_the_proposal() -> None:
 
 
 def test_fake_fit_helper_matches_the_library_result_keys_the_builder_reads() -> None:
-    from hsw_vision.stages.fit import fit_confidence
+    from hsw_vision.confidence import fit_confidence
 
     cal = {
         "camera": {"K": np.eye(3).tolist(), "R": np.eye(3).tolist(), "t_mm": [0, 0, 100]},

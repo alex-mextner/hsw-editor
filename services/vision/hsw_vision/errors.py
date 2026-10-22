@@ -70,6 +70,13 @@ class LowConfidence(VisionServiceError):
     exit_code = EXIT_LOW_CONFIDENCE
 
 
+class Cancelled(VisionServiceError):
+    """The caller went away (closed stream, cancelled job); the run stops at the next checkpoint."""
+
+    code = "cancelled"
+    http_status = 499
+
+
 class CalibrationNeeded(VisionServiceError):
     """No grid found and no manual scale/reference given: the user must supply a scale."""
 

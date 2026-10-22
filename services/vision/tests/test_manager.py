@@ -186,7 +186,7 @@ def test_import_error_becomes_a_missing_dependency_with_the_extra_to_install() -
     manager = make_manager(Gpu(8000), [], fail={"a": ImportError("No module named 'torch'")})
     with pytest.raises(MissingDependency) as info:
         manager.get("a")
-    assert "--extra ml" in (info.value.fix or "")
+    assert "vision setup" in (info.value.fix or "")
 
 
 def test_unknown_engine_is_an_error() -> None:
@@ -275,3 +275,72 @@ def test_registering_specs_is_idempotent() -> None:
     manager.register(spec)
     manager.register(EngineSpec("a", lambda device: FakeEngine("a", device, 1, []), 1))
     assert manager.specs["a"] is spec
+
+
+def test_oom_during_inference_moves_the_shared_dependencies_to_the_cpu_too() -> None:
+    """Review finding: after a GPU OOM the shared CLIP/OWL stayed on CUDA, so the CPU retry ran against a CUDA CLIP
+    and the card that had just run out of memory was not freed."""
+    log: list[str] = []
+    gpu = Gpu(8000)
+    manager = make_manager(gpu, log, engines={"clip": 500, "seg": 1000}, requires={"seg": ("clip",)})
+    seen: list[tuple[str, str]] = []
+
+    def work(engine) -> str:  # type: ignore[no-untyped-def]
+        seen.append((engine.device, manager.status()["engines"]["clip"]["device"]))
+        if engine.device == "cuda":
+            raise RuntimeError("CUDA out of memory")
+        return "done"
+
+    assert manager.call("seg", work) == "done"
+    assert seen == [("cuda", "cuda"), ("cpu", "cpu")]
+    assert manager.resident_gpu_mb() == 0 and gpu.free_mb == 8000  # nothing left on the card
+
+
+def test_the_cpu_retry_translates_library_errors_like_the_first_attempt() -> None:
+    """Review finding: errors of the CPU retry escaped as raw library exceptions (HTTP 500 instead of 422)."""
+
+    class BadInput(Exception):  # the library's class is matched by name
+        pass
+
+    manager = make_manager(Gpu(8000), [])
+
+    def work(engine) -> None:  # type: ignore[no-untyped-def]
+        if engine.device == "cuda":
+            raise RuntimeError("CUDA out of memory")
+        raise BadInput("mask is empty")
+
+    with pytest.raises(Exception, match="mask is empty") as info:
+        manager.call("a", work)
+    assert type(info.value).__name__ == "BadRequest"
+
+
+def test_an_engine_placed_on_the_cpu_is_not_handed_a_cuda_dependency() -> None:
+    """Review finding: a CPU segmenter was given the resident CUDA CLIP/OWL."""
+    log: list[str] = []
+    manager = make_manager(
+        Gpu(8000), log, budget=1200, engines={"clip": 500, "seg": 1000}, requires={"seg": ("clip",)}
+    )
+    manager.get("clip")  # resident on cuda (500 of the 1200 budget)
+    assert manager.get("seg").device == "cpu"  # 500 + 1000 > 1200 and nothing else can be evicted
+    status = manager.status()["engines"]
+    assert status["clip"]["device"] == "cpu" and status["seg"]["device"] == "cpu"
+    assert log.count("load clip cuda") == 1 and log.count("load clip cpu") == 1
+
+
+def test_a_dependency_in_use_elsewhere_stays_where_it_is() -> None:
+    manager = make_manager(
+        Gpu(8000), [], budget=1200, engines={"clip": 500, "seg": 1000}, requires={"seg": ("clip",)}
+    )
+    manager.get("clip")
+    manager._busy["clip"] = 1  # another call is running on it
+    assert manager.get("seg").device == "cpu"
+    assert manager.status()["engines"]["clip"]["device"] == "cuda"
+
+
+def test_an_engine_is_not_placed_on_cuda_while_a_dependency_sits_on_the_cpu() -> None:
+    """Review finding: a CPU-pinned CLIP was handed to a later CUDA recogniser."""
+    log: list[str] = []
+    manager = make_manager(Gpu(8000), log, engines={"clip": 500, "rec": 100}, requires={"rec": ("clip",)})
+    manager._forced_cpu.add("clip")
+    assert manager.get("rec").device == "cpu"
+    assert manager.status()["engines"]["clip"]["device"] == "cpu"

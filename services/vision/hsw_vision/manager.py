@@ -19,6 +19,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol, TypeVar
 
+from hsw_vision.config import SETUP_HINT
 from hsw_vision.errors import InsufficientVram, MissingDependency, VisionServiceError, translate_library_error
 
 T = TypeVar("T")
@@ -110,10 +111,10 @@ class ModelManager:
                 resident.last_used = now
 
     def call(self, name: str, fn: Callable[[Any], T]) -> T:
-        """Run `fn(engine)`; on a GPU out-of-memory error reload the engine on the CPU and retry once.
+        """Run `fn(engine)`; on a GPU out-of-memory error reload the engine and its dependencies on the CPU and retry once.
 
         While `fn` runs the engine and its dependencies are *busy*: neither the idle reaper nor an LRU eviction
-        may unload them."""
+        may unload them. Library errors (bad input, missing model) are translated on both attempts."""
         with self._lock:
             engine = self._get(name, pinned=frozenset())
             self._mark_busy(name, +1)
@@ -121,25 +122,36 @@ class ModelManager:
             try:
                 return fn(engine)
             except Exception as exc:
-                if is_oom(exc) and self._device_of(name) == "cuda":
-                    with self._lock:
-                        self._log(f"{name}: OOM during inference, falling back to cpu")
-                        self._forced_cpu.add(name)
-                        self._mark_busy(name, -1)
-                        try:
-                            self._unload_with_dependents(name)
-                            engine = self._get(name, pinned=frozenset())
-                        finally:
-                            self._mark_busy(name, +1)
-                    return fn(engine)
-                translated = translate_library_error(exc)
-                if translated is not None:
-                    raise translated from exc
-                raise
+                if not (is_oom(exc) and self._device_of(name) == "cuda"):
+                    raise self._translate(exc) from exc
+                with self._lock:
+                    self._log(f"{name}: OOM during inference, falling back to cpu")
+                    self._mark_busy(name, -1)
+                    try:
+                        self._demote_to_cpu(name)
+                        engine = self._get(name, pinned=frozenset())
+                    finally:
+                        self._mark_busy(name, +1)
+            try:
+                return fn(engine)
+            except Exception as exc:
+                raise self._translate(exc) from exc
         finally:
             with self._lock:
                 self._touch(name)
                 self._mark_busy(name, -1)
+
+    def _demote_to_cpu(self, name: str) -> None:
+        """Unload `name` and the shared engines it requires from the GPU and pin them all to the CPU until the
+        service is idle: a CPU retry must not be handed a CUDA CLIP/OWL, and the GPU that just ran out of memory
+        must be freed, not merely avoided by `name`."""
+        members = self.closure(name)
+        self._forced_cpu.update(members)
+        self._unload_with_dependents(name)
+        for dependency in members[1:]:
+            resident = self._resident.get(dependency)
+            if resident is not None and resident.device == "cuda" and self._busy.get(dependency, 0) == 0:
+                self._unload_with_dependents(dependency)
 
     def _mark_busy(self, name: str, delta: int) -> None:
         for member in self.closure(name):
@@ -164,6 +176,8 @@ class ModelManager:
             self._get(dependency, pinned=keep)
             keep = keep | {dependency}
         device = self._choose_device(spec, keep)
+        if device == "cpu":
+            self._rehome_dependencies_on_cpu(spec, keep)
         engine = self._load(spec, device)
         now = self.clock()
         actual = getattr(engine, "device", device) or device
@@ -176,6 +190,18 @@ class ModelManager:
             uses=1,
         )
         return engine
+
+    def _rehome_dependencies_on_cpu(self, spec: EngineSpec, keep: frozenset[str]) -> None:
+        """An engine that runs on the CPU gets its shared dependencies on the CPU too (never a CUDA CLIP/OWL).
+        A dependency another call is using right now stays where it is."""
+        for dependency in spec.requires:
+            resident = self._resident.get(dependency)
+            if resident is None or resident.device != "cuda" or self._busy.get(dependency, 0) > 0:
+                continue
+            self._log(f"{spec.name} runs on cpu: reloading {dependency} on cpu too")
+            self._forced_cpu.add(dependency)
+            self._unload_with_dependents(dependency)
+            self._get(dependency, pinned=keep)
 
     def _load(self, spec: EngineSpec, device: str) -> Engine:
         engine = spec.factory(device)
@@ -204,7 +230,7 @@ class ModelManager:
         if isinstance(exc, ImportError):
             return MissingDependency(
                 f"missing python dependency: {exc}",
-                fix="install the heavy runtime: uv sync --project services/vision --extra ml",
+                fix=f"install the heavy runtime: {SETUP_HINT}",
             )
         return exc
 
@@ -216,6 +242,8 @@ class ModelManager:
     def _choose_device(self, spec: EngineSpec, pinned: frozenset[str]) -> str:
         if self.device == "cpu" or spec.name in self._forced_cpu:
             return "cpu"
+        if any(self._device_of(dependency) == "cpu" for dependency in spec.requires):
+            return "cpu"  # a CPU-resident CLIP/OWL must not be handed to a CUDA engine
         need = spec.vram_estimate_mb
         while True:
             free = self.free_vram_fn()

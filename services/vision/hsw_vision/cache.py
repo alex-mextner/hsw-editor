@@ -12,11 +12,17 @@ import hashlib
 import json
 import os
 import tempfile
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 SCHEMA_VERSION = 1
+
+#: One lock per result file for the whole process: the service creates a `ResultCache` per request, so a per-instance
+#: table would never see two requests for the same key.
+_KEY_LOCKS: dict[Path, threading.Lock] = {}
+_KEY_LOCKS_GUARD = threading.Lock()
 
 
 def params_hash(params: Any, *, version: str = "") -> str:
@@ -41,6 +47,11 @@ class ResultCache:
         self.version = version
         self.hits = 0
         self.misses = 0
+
+    @staticmethod
+    def _key_lock(path: Path) -> threading.Lock:
+        with _KEY_LOCKS_GUARD:
+            return _KEY_LOCKS.setdefault(path.resolve(), threading.Lock())
 
     def image_dir(self, image_sha: str) -> Path:
         return self.root / image_sha[:16]
@@ -85,13 +96,17 @@ class ResultCache:
         *,
         refresh: bool = False,
     ) -> tuple[dict[str, Any], bool]:
-        """`(result, cached)`. `compute` runs only on a miss (or `refresh`); its result must be JSON-able."""
-        if not refresh:
-            stored = self.get(image_sha, stage, params)
-            if stored is not None:
-                self.hits += 1
-                return stored, True
-        self.misses += 1
-        result = compute()
-        self.put(image_sha, stage, params, result)
-        return result, False
+        """`(result, cached)`. `compute` runs only on a miss (or `refresh`); its result must be JSON-able.
+
+        Concurrent callers of one key (two requests for the same photo) are serialised: the second finds the first's
+        stored result instead of computing it again."""
+        with self._key_lock(self.result_path(image_sha, stage, params)):
+            if not refresh:
+                stored = self.get(image_sha, stage, params)
+                if stored is not None:
+                    self.hits += 1
+                    return stored, True
+            self.misses += 1
+            result = compute()
+            self.put(image_sha, stage, params, result)
+            return result, False

@@ -1,7 +1,7 @@
 """hsw-vision HTTP API (FastAPI). Loopback only: every request's Host header must be loopback.
 
 `GET /health`, `GET /models/status`, `POST /calibrate|/segment|/recognise|/fit|/multiview` (JSON), and
-`POST /photo-to-wall` which streams NDJSON events (`stage`, `progress`, `object`, `request_view`, then one final
+`POST /photo-to-wall` and `POST /photo-to-objects` which stream NDJSON events (`stage`, `progress`, `object`, `request_view`, then one final
 `result` or `error` line). Stage errors are `{"error": {code, message, fix?, details?}}` with the HTTP status of the
 error class (`models_missing` = 424 naming `hsw-editor vision fetch-models`).
 """
@@ -20,20 +20,23 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from hsw_vision import __version__
-from hsw_vision import photo_to_wall as pipeline
+from hsw_vision import objects as objects_pipeline
+from hsw_vision import photo_to_wall as wall_pipeline
 from hsw_vision.config import VisionConfig
+from hsw_vision.confidence import assess, fit_confidence
 from hsw_vision.errors import VisionServiceError, error_json_for
 from hsw_vision.schemas import (
     CalibrateRequest,
     FitRequest,
     MultiviewRequest,
+    PhotoRequest,
+    PhotoToObjectsRequest,
     PhotoToWallRequest,
     RecogniseRequest,
     SegmentRequest,
 )
 from hsw_vision.service import VisionService
 from hsw_vision.stages import fit as stage_fit
-from hsw_vision.stages import multiview as stage_multiview
 
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "[::1]", "::1"}
 
@@ -142,7 +145,7 @@ def create_app(
         img = svc.open(req)
         seg = svc.segment(img, req.segment)
         ids = req.instances if req.instances is not None else [i["id"] for i in seg["instances"]]
-        return svc.recognise(img, seg, ids, req.bank_index, req.topk)
+        return svc.recognise(img, seg, ids, req.bank_index, req.topk, req.categories)
 
     @app.post("/fit")
     def fit(req: FitRequest) -> dict[str, Any]:
@@ -156,7 +159,7 @@ def create_app(
             fixed_dims=req.fixed_dims, template=req.template, planar=req.planar,
             max_tries=req.max_tries, device=req.device, seed=req.seed,
         )  # fmt: skip
-        confidence = stage_fit.fit_confidence(result, svc.config.single_view_confidence_cap)
+        confidence = fit_confidence(result, svc.config.single_view_confidence_cap)
         train = (result.get("confidence") or {}).get("train_min_iou")
         return {
             "instance": req.instance,
@@ -172,22 +175,26 @@ def create_app(
     @app.post("/multiview")
     def multiview(req: MultiviewRequest) -> dict[str, Any]:
         svc = get_service()
-        views = req.views
-        check = svc.check(req.fit, views, req.flag_below)
-        confidence = stage_multiview.view_confidence(check)
-        if confidence is None:
-            confidence = stage_fit.fit_confidence(req.fit, svc.config.single_view_confidence_cap)
+        check = svc.check(req.fit, req.views, req.flag_below)
+        verdict = assess(
+            req.fit, check, single_view_cap=svc.config.single_view_confidence_cap, view_flag_iou=req.flag_below
+        )
         return {
             **check,
-            "confidence": confidence,
+            "confidence": verdict.confidence,
             "threshold": req.flag_below,
-            "request_view": stage_multiview.needs_view(check, confidence, req.flag_below),
+            "request_view": verdict.needs_view,
         }
 
     @app.post("/photo-to-wall")
     def photo_to_wall(req: PhotoToWallRequest) -> StreamingResponse:
         svc = get_service()
-        return StreamingResponse(_ndjson(svc, req), media_type="application/x-ndjson")
+        return StreamingResponse(_ndjson(svc, req, wall_pipeline.run, "photo-to-wall"), media_type="application/x-ndjson")
+
+    @app.post("/photo-to-objects")
+    def photo_to_objects(req: PhotoToObjectsRequest) -> StreamingResponse:
+        svc = get_service()
+        return StreamingResponse(_ndjson(svc, req, objects_pipeline.run, "photo-to-objects"), media_type="application/x-ndjson")
 
     return app
 
@@ -220,21 +227,26 @@ def _png_b64(mask: Any) -> str:
     return base64.b64encode(buffer.getvalue()).decode("ascii")
 
 
-def _ndjson(service: VisionService, req: PhotoToWallRequest) -> Iterator[bytes]:
-    """Run the pipeline in a worker thread; yield its events as they happen. Closing the stream cancels the run."""
+def _ndjson(
+    service: VisionService,
+    req: PhotoRequest,
+    pipeline: Callable[[VisionService, Any, Callable[[dict[str, Any]], None], threading.Event], dict[str, Any]],
+    name: str,
+) -> Iterator[bytes]:
+    """Run a pipeline in a worker thread; yield its events as they happen. Closing the stream cancels the run."""
     events: queue.Queue[dict[str, Any] | None] = queue.Queue()
     cancel = threading.Event()
 
     def work() -> None:
         try:
-            result = pipeline.run(service, req, events.put, cancel)
+            result = pipeline(service, req, events.put, cancel)
             events.put({"event": "result", "result": result})
         except Exception as exc:  # noqa: BLE001 - every failure becomes one structured `error` line
             events.put({"event": "error", **error_json_for(exc)[0]})
         finally:
             events.put(None)
 
-    thread = threading.Thread(target=work, name="photo-to-wall", daemon=True)
+    thread = threading.Thread(target=work, name=name, daemon=True)
     thread.start()
     try:
         while True:

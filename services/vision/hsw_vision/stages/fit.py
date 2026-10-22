@@ -10,9 +10,10 @@ from typing import Any
 
 import numpy as np
 
-from hsw_vision.errors import BadRequest
+from hsw_vision.engines import FIT, FitRunner
+from hsw_vision.errors import BadRequest, InsufficientVram
 from hsw_vision.geometry import Camera, rotation_z_deg, rz
-from hsw_vision.manager import is_oom
+from hsw_vision.manager import ModelManager
 
 DIM_KEYS = ("length_mm", "max_width_mm", "thickness_mm")
 
@@ -43,6 +44,7 @@ def fit_mask(
     mask: np.ndarray,
     camera: Camera,
     *,
+    manager: ModelManager,
     fixed_dims: dict[str, float] | None = None,
     template: str | None = None,
     planar: bool = True,
@@ -53,7 +55,11 @@ def fit_mask(
     max_tries: int = 3,
     seed: int = 0,
 ) -> dict[str, Any]:
-    """Fit one object. `extra_views` are more `{mask, K, R, t}` of the SAME object (joint multi-view fit)."""
+    """Fit one object. `extra_views` are more `{mask, K, R, t}` of the SAME object (joint multi-view fit).
+
+    `device="cpu"` bypasses the GPU entirely. Otherwise the optimiser runs as the manager's `fit` engine, so its CUDA
+    context is accounted against the VRAM budget (LRU eviction, CPU when the card is full) and an out-of-memory error
+    reloads it on the CPU; `device="cuda"` is strict (`insufficient_vram` when the manager could not place it there)."""
     from threed_vision import io as tv_io
 
     ys, xs = np.nonzero(mask)
@@ -66,7 +72,6 @@ def fit_mask(
         "fixed_dims": normalise_fixed_dims(fixed_dims),
         "max_tries": max_tries,
         "seed": seed,
-        "device": device,
     }
     if template:
         kwargs["template"] = template
@@ -75,36 +80,16 @@ def fit_mask(
     if heldout_views:
         kwargs["heldout_views"] = heldout_views
     lib = _lib()
-    try:
-        result = lib.fit_auto(views, **kwargs)
-    except Exception as exc:
-        if not (is_oom(exc) and device != "cpu"):
-            raise
-        result = lib.fit_auto(views, **{**kwargs, "device": "cpu"})
+
+    def run(runner: FitRunner) -> Any:
+        if device == "cuda" and runner.device != "cuda":
+            raise InsufficientVram("device=cuda requested for the fit but the GPU budget has no room", fix="free GPU memory or use device=auto")
+        return lib.fit_auto(views, device=runner.device, **kwargs)
+
+    result = lib.fit_auto(views, device="cpu", **kwargs) if device == "cpu" else manager.call(FIT, run)
     out = tv_io.to_jsonable(result)
     out["centre_px"] = centre_px
     return out
-
-
-def _unit(value: float) -> float:
-    """Clamp to [0, 1]; NaN (0/0 IoU of two empty silhouettes) is 0, never 1."""
-    return 0.0 if value != value else float(max(0.0, min(1.0, value)))
-
-
-def fit_confidence(fit: dict[str, Any], single_view_cap: float) -> float:
-    """Geometry confidence in [0, 1]: held-out IoU when a held-out view exists, else the worst training IoU
-    (capped for a single view, whose silhouette fit says little about the unseen 3-D shape)."""
-    conf = fit.get("confidence") or {}
-    heldout = conf.get("heldout_iou")
-    if heldout is not None:
-        return _unit(heldout)
-    train = conf.get("train_min_iou")
-    if train is None:
-        views = fit.get("views") or []
-        train = min((v.get("iou", 0.0) for v in views), default=0.0)
-    value = _unit(train)
-    n_views = int(conf.get("n_views") or len(fit.get("views") or []) or 1)
-    return min(value, single_view_cap) if n_views <= 1 else value
 
 
 def local_mesh(fit: dict[str, Any]) -> tuple[np.ndarray, np.ndarray, float, np.ndarray]:
@@ -139,3 +124,30 @@ def write_glb(fit: dict[str, Any], path: Path) -> dict[str, float]:
 def dimensions(fit: dict[str, Any]) -> dict[str, float]:
     dims = fit.get("dims_mm") or {}
     return {key: float(dims[key]) for key in DIM_KEYS if dims.get(key) is not None}
+
+
+def render_overlay(rgb: np.ndarray, items: list[tuple[int, np.ndarray, dict[str, Any]]], camera: Camera) -> np.ndarray:
+    """The photo with every fitted model drawn over it: segmentation contour green, the fit rendered through the
+    photo's camera red (the review image of `photo_to_objects`). `items` are `(id, mask, fit)`."""
+    import cv2
+    from threed_vision import render
+
+    height, width = rgb.shape[:2]
+    out = np.ascontiguousarray(rgb).copy()
+    for instance_id, mask, fit in items:
+        verts, faces = render.mesh_from_fit(fit)
+        uv = render.project(verts, camera.K, camera.R, camera.t)
+        ys, xs = np.nonzero(mask)
+        if xs.size == 0 or not np.isfinite(uv).all():
+            continue
+        pad = 8
+        x0 = int(max(min(xs.min(), np.floor(uv[:, 0].min())) - pad, 0))
+        y0 = int(max(min(ys.min(), np.floor(uv[:, 1].min())) - pad, 0))
+        x1 = int(min(max(xs.max(), np.ceil(uv[:, 0].max())) + pad, width))
+        y1 = int(min(max(ys.max(), np.ceil(uv[:, 1].max())) + pad, height))
+        if x1 <= x0 or y1 <= y0:
+            continue
+        model = render.hard_mask(verts, faces, camera.K, camera.R, camera.t, (width, height), roi=(x0, y0, x1, y1))
+        out[y0:y1, x0:x1] = render.overlay(out[y0:y1, x0:x1], model, mask[y0:y1, x0:x1], thickness=2)
+        cv2.putText(out, str(instance_id), (int(xs.mean()), int(ys.mean())), cv2.FONT_HERSHEY_SIMPLEX, 0.9, (255, 255, 0), 2)
+    return out

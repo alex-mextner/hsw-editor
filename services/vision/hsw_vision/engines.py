@@ -13,17 +13,38 @@ OWL = "owl"
 RECOGNISER = "recogniser"
 SEGMENTER_SAM2 = "sam2"
 SEGMENTER_U2NET = "u2net"
+FIT = "fit"
 # Estimates (MB). The library's `Segmenter.vram_estimate_mb` (2000) already includes the CLIP/OWLv2 it shares, which are
 # separate resident engines here, so the SAM2 entry is its OWN share (measured spike peak for AMG + OWLv2 + CLIP: ~1.9 GB).
-VRAM_ESTIMATES = {CLIP: 500, OWL: 700, RECOGNISER: 100, SEGMENTER_SAM2: 1300, SEGMENTER_U2NET: 300}
+#: FIT: the soft-silhouette optimiser peaks at ~40 MB of tensors, the CUDA context it opens adds a few hundred MB.
+VRAM_ESTIMATES = {CLIP: 500, OWL: 700, RECOGNISER: 100, SEGMENTER_SAM2: 1300, SEGMENTER_U2NET: 300, FIT: 350}
+
+
+class FitRunner:
+    """Residency marker for the fit stage, which has no weights: it lets the ModelManager account the optimiser's GPU
+    context against the budget (and evict LRU engines for it), and fall back to the CPU on an out-of-memory error, like
+    every model-backed engine. `device` is where `threed_vision.fit.fit_auto` is told to run."""
+
+    vram_estimate_mb = VRAM_ESTIMATES[FIT]
+
+    def __init__(self, device: str) -> None:
+        self.device = device
+        self.loaded = False
+
+    def load(self) -> None:
+        self.loaded = True
+
+    def unload(self) -> None:
+        self.loaded = False
+
 
 
 def segmenter_name(method: str, fill: str, reject_bg: bool, points_per_side: int) -> str:
     return f"segmenter:{method}:{fill}:{'bg' if reject_bg else 'nobg'}:{points_per_side}"
 
 
-def default_specs(manager_ref: list[ModelManager]) -> dict[str, EngineSpec]:
-    """Specs that share ONE resident CLIP/OWLv2 between the segmenter and the recogniser."""
+def default_specs(manager: ModelManager) -> dict[str, EngineSpec]:
+    """Specs that share ONE resident CLIP/OWLv2 between the segmenter and the recogniser (resolved through `manager`)."""
 
     def clip(device: str) -> Engine:
         from threed_vision import clip as tv_clip
@@ -38,17 +59,18 @@ def default_specs(manager_ref: list[ModelManager]) -> dict[str, EngineSpec]:
     def recogniser(device: str) -> Engine:
         from threed_vision import recognise as tv_recognise
 
-        return tv_recognise.Recogniser(device=device, clip=manager_ref[0].get(CLIP))
+        return tv_recognise.Recogniser(device=device, clip=manager.get(CLIP))
 
     return {
         CLIP: EngineSpec(CLIP, clip, VRAM_ESTIMATES[CLIP]),
         OWL: EngineSpec(OWL, owl, VRAM_ESTIMATES[OWL]),
         RECOGNISER: EngineSpec(RECOGNISER, recogniser, VRAM_ESTIMATES[RECOGNISER], requires=(CLIP,)),
+        FIT: EngineSpec(FIT, FitRunner, VRAM_ESTIMATES[FIT]),
     }
 
 
 def segmenter_spec(
-    manager_ref: list[ModelManager],
+    manager: ModelManager,
     *,
     method: str,
     fill: str,
@@ -69,7 +91,6 @@ def segmenter_spec(
             "device": device,
             "points_per_side": points_per_side,
         }
-        manager = manager_ref[0]
         if reject_bg:
             kwargs["clip"] = manager.get(CLIP)
         if fill == "owlv2":
@@ -88,16 +109,16 @@ def build_manager(config: VisionConfig, free_vram_fn: Callable[[], int | None] |
 
         return tv_device.free_vram_mb()
 
-    ref: list[ModelManager] = []
     manager = ModelManager(
-        specs=default_specs(ref),
+        specs={},
         device=config.device,
         vram_budget_mb=config.vram_budget_mb,
         vram_headroom_mb=config.vram_headroom_mb,
         idle_unload_s=config.idle_unload_s,
         free_vram_fn=free_vram_fn or library_free_vram,
     )
-    ref.append(manager)
+    for spec in default_specs(manager).values():
+        manager.register(spec)
     return manager
 
 
@@ -112,6 +133,6 @@ def ensure_segmenter(
     """Register (once) and return the engine name of a segmenter variant."""
     name = segmenter_name(method, fill, reject_bg, points_per_side)
     manager.register(
-        segmenter_spec([manager], method=method, fill=fill, reject_bg=reject_bg, points_per_side=points_per_side)
+        segmenter_spec(manager, method=method, fill=fill, reject_bg=reject_bg, points_per_side=points_per_side)
     )
     return name

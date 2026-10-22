@@ -9,6 +9,7 @@ from pathlib import Path
 
 DEFAULT_LOOPBACK_PORT = 8795  # also the `HSW_VISION_URL` default of `hsw-editor doctor`
 FETCH_MODELS_HINT = "hsw-editor vision fetch-models"
+SETUP_HINT = "hsw-editor vision setup"
 
 
 def _cache_home(env: Mapping[str, str]) -> Path:

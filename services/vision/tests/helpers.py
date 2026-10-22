@@ -138,6 +138,9 @@ class Calls:
         self.fit: list[dict[str, Any]] = []
         self.recognise = 0
         self.check = 0
+        self.colours = 0
+        self.overlay = 0
+        self.embed = 0
 
 
 def fake_calibration(mm_per_px: float = 1.0, method: str = "two-point") -> dict[str, Any]:
@@ -241,6 +244,40 @@ def make_service(
             "needs_views": [{"azimuth_deg": 60.0, "elevation_deg": 30.0}],
         }
 
+    def sample_colours(rgb: np.ndarray, mask: np.ndarray, fit: dict[str, Any] | None = None, **_: Any) -> dict[str, Any]:
+        calls.colours += 1
+        mean = rgb[mask].mean(axis=0)
+        hex_colour = "#%02x%02x%02x" % tuple(int(v) for v in mean)
+        part = {"t0": 0.0, "t1": 1.0, "colour_srgb": [int(v) for v in mean], "hex": hex_colour, "lab": [50.0, 0.0, 0.0],
+                "area_frac": 1.0, "n_pixels": int(mask.sum()), "role_guess": "body"}  # fmt: skip
+        return {"parts": [part], "palette": [{k: part[k] for k in ("colour_srgb", "hex", "lab", "area_frac")}], "axis_deg": 0.0}
+
+    def axis_and_profile(mask: np.ndarray, mm_per_px: float | None) -> tuple[dict[str, Any], dict[str, Any] | None]:
+        ys, xs = np.nonzero(mask)
+        pts = np.c_[xs, ys].astype(float)
+        centre = pts.mean(axis=0)
+        axis = np.linalg.svd(pts - centre, full_matrices=False)[2][0]
+        deg = float(np.degrees(np.arctan2(axis[1], axis[0])))
+        info = {"deg": deg, "unit": axis.tolist(), "centerPx": centre.tolist()}
+        if mm_per_px is None:
+            return info, None
+        length = float(np.ptp(pts @ axis)) * mm_per_px
+        stations = [{"t": t, "lo_mm": -1.0, "hi_mm": 1.0} for t in (0.0, 0.5, 1.0)]
+        return info, {"kind": "box", "length_mm": length, "max_width_mm": 2.0, "stations": stations, "iou_recon": 0.95}
+
+    def embed_objects(manager: Any, rgb: np.ndarray, masks: list[np.ndarray]) -> np.ndarray:
+        calls.embed += 1
+        rows = np.stack([np.resize(np.array([float(m.sum()), float(i + 1)]), 512) for i, m in enumerate(masks)]) if masks else np.zeros((0, 512))
+        return (rows / np.maximum(np.linalg.norm(rows, axis=1, keepdims=True), 1e-9)).astype(np.float32) if masks else rows.astype(np.float32)
+
+    def embed_images(manager: Any, images: list[np.ndarray]) -> np.ndarray:
+        rows = np.stack([np.resize(np.array([float(im.mean()), 1.0]), 512) for im in images])
+        return (rows / np.linalg.norm(rows, axis=1, keepdims=True)).astype(np.float32)
+
+    def render_overlay(rgb: np.ndarray, items: list[Any], camera: Any) -> np.ndarray:
+        calls.overlay += 1
+        return rgb
+
     stages = Stages(
         calibrate=calibrate,
         segment=segment,
@@ -248,6 +285,12 @@ def make_service(
         fit_mask=fit_mask,
         write_glb=write_glb,
         check_fit=check_fit,
+        colours_available=lambda: True,
+        sample_colours=sample_colours,
+        render_overlay=render_overlay,
+        axis_and_profile=axis_and_profile,
+        embed_objects=embed_objects,
+        embed_images=embed_images,
     )
     manager = make_manager(Gpu(None), [])
     return VisionService(config=config, manager=manager, stages=stages, assist=assist), calls

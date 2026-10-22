@@ -2,6 +2,8 @@
 
   serve                       run the HTTP sidecar (loopback 127.0.0.1:8795, or --socket PATH)
   photo-to-wall IMAGE --out DIR   photo -> wall proposal, no server (evidence runs, `hsw-editor vision photo-to-wall`)
+  photo-to-objects IMAGE --out DIR   photo -> per-object masks, crops, classes, fitted models, colours (objects.json)
+  embed IMAGE... --out DIR       CLIP embeddings (512 floats, L2-normalised) of whole images or their single object
   models status|fetch [NAME...]   what is on disk / explicit download (the only place that downloads)
   doctor                      models present/missing, GPU free VRAM, ORT CUDA state, heavy imports
 
@@ -19,7 +21,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from hsw_vision.config import FETCH_MODELS_HINT, VisionConfig
+from hsw_vision.config import FETCH_MODELS_HINT, SETUP_HINT, VisionConfig
 from hsw_vision.errors import EXIT_BAD_INPUT, EXIT_FAILED, BadRequest, VisionServiceError, translate_library_error
 
 
@@ -47,21 +49,22 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--socket", help="serve on a unix socket instead of loopback TCP")
 
     p2w = subs.add_parser("photo-to-wall", help="photo -> wall proposal without the server")
-    p2w.add_argument("image", type=Path)
-    p2w.add_argument("--out", type=Path, required=True, help="output + result-cache directory")
-    p2w.add_argument("--device", choices=("auto", "cpu", "cuda"), default=None)
+    add_photo_options(p2w, out_help="output + result-cache directory")
     p2w.add_argument("--photo-id", help="id of the photo on a wall (recorded in item sources)")
-    p2w.add_argument("--bank-index", default="auto", help="bank index.json for classes + holder hints ('none' to skip)")
-    p2w.add_argument("--two-point", type=parse_two_point, metavar="X1,Y1,X2,Y2", help="manual scale: two picked photo pixels ...")
-    p2w.add_argument("--distance", type=float, metavar="MM", help="... and their real distance in mm")
-    p2w.add_argument("--mm-per-px", type=float, help="manual scale")
-    p2w.add_argument("--method", choices=("sam2", "sam2-dense", "u2net"), default="sam2")
-    p2w.add_argument("--fill", choices=("owlv2", "none"), default="owlv2")
-    p2w.add_argument("--max-objects", type=int, default=60)
     p2w.add_argument("--auto-apply", type=float, metavar="CONF", help="flag items >= CONF as autoApply (default: never)")
-    p2w.add_argument("--ai-assist", action="store_true", help="ask omp about low-confidence items (needs HSW_VISION_AI_ASSIST=1)")
-    p2w.add_argument("--refresh", action="store_true", help="ignore cached stage results")
-    p2w.add_argument("--json", action="store_true", help="print the full result JSON on stdout")
+
+    p2o = subs.add_parser("photo-to-objects", help="photo -> per-object masks, crops, classes, fitted models, colours")
+    add_photo_options(p2o, out_help="result directory (objects.json, masks/, crops/, cutouts/, models/, overlays) and stage cache")
+    p2o.add_argument("--topk", type=int, default=5, help="class candidates per object")
+    p2o.add_argument("--no-colours", action="store_true", help="skip per-part colour sampling")
+    p2o.add_argument("--extra-photo", action="append", type=Path, default=[], help="another viewpoint of the same objects (repeatable)")
+
+    embed = subs.add_parser("embed", help="CLIP image embeddings (embeddings.npy + embeddings.json)")
+    embed.add_argument("images", nargs="+", type=Path)
+    embed.add_argument("--out", type=Path, required=True, help="writes embeddings.npy (N x 512 float32) and embeddings.json")
+    embed.add_argument("--object", action="store_true", help="embed the masked single object (u2net) instead of the whole image")
+    embed.add_argument("--device", choices=("auto", "cpu", "cuda"), default=None)
+    embed.add_argument("--json", action="store_true", help="print embeddings.json on stdout")
 
     models = subs.add_parser("models", help="model files")
     msub = models.add_subparsers(dest="models_cmd", required=True)
@@ -72,6 +75,38 @@ def build_parser() -> argparse.ArgumentParser:
     doctor = subs.add_parser("doctor", help="models, GPU, ORT CUDA state")
     doctor.add_argument("--json", action="store_true")
     return parser
+
+
+def add_photo_options(parser: argparse.ArgumentParser, *, out_help: str) -> None:
+    """The options `photo-to-wall` and `photo-to-objects` share."""
+    parser.add_argument("image", type=Path)
+    parser.add_argument("--out", type=Path, required=True, help=out_help)
+    parser.add_argument("--device", choices=("auto", "cpu", "cuda"), default=None)
+    parser.add_argument("--bank-index", default="auto", help="bank index.json for classes + holder hints ('none' to skip)")
+    parser.add_argument("--two-point", type=parse_two_point, metavar="X1,Y1,X2,Y2", help="manual scale: two picked photo pixels ...")
+    parser.add_argument("--distance", type=float, metavar="MM", help="... and their real distance in mm")
+    parser.add_argument("--mm-per-px", type=float, help="manual scale")
+    parser.add_argument("--method", choices=("sam2", "sam2-dense", "u2net"), default="sam2")
+    parser.add_argument("--fill", choices=("owlv2", "none"), default="owlv2")
+    parser.add_argument("--categories", help="classes to recognise: a file or comma list (threed_vision.recognise.load_categories)")
+    parser.add_argument("--max-objects", type=int, default=60)
+    parser.add_argument("--ai-assist", action="store_true", help="ask omp about low-confidence items (needs HSW_VISION_AI_ASSIST=1)")
+    parser.add_argument("--refresh", action="store_true", help="ignore cached stage results")
+    parser.add_argument("--json", action="store_true", help="print the full result JSON on stdout")
+
+
+def calibration_params(args: argparse.Namespace) -> Any:
+    from hsw_vision.schemas import CalibrateParams
+
+    calibrate: dict[str, Any] = {}
+    if args.two_point:
+        if args.distance is None:
+            raise BadRequest("--two-point needs --distance MM (the real distance between the two points)")
+        x1, y1, x2, y2 = args.two_point
+        calibrate.update(points_px=((x1, y1), (x2, y2)), distance_mm=args.distance)
+    if args.mm_per_px:
+        calibrate["mm_per_px"] = args.mm_per_px
+    return CalibrateParams(**calibrate)
 
 
 def load_bank_index(spec: str) -> dict[str, Any] | None:
@@ -86,26 +121,41 @@ def load_bank_index(spec: str) -> dict[str, Any] | None:
     return None
 
 
+def progress_printer(event: dict[str, Any]) -> None:
+    """One stderr line per finished stage / object, and the events a human has to act on."""
+    if event.get("event") == "stage" and event.get("state") == "done":
+        print(f"[{event['stage']}] {event.get('seconds', '')}s", file=sys.stderr, flush=True)
+    elif event.get("event") == "object":
+        print(f"  object {event['instanceId']} {event['state']} ({event['done']}/{event['total']})", file=sys.stderr, flush=True)
+    elif event.get("type") == "request_view" or event.get("event") == "needs_calibration":
+        print(f"[{event.get('type') or event['event']}] {json.dumps(event)[:300]}", file=sys.stderr, flush=True)
+
+
+def write_artefacts(out: Path, result: dict[str, Any], started: float, *, proposal: bool) -> None:
+    out.mkdir(parents=True, exist_ok=True)
+
+    def write(name: str, value: Any) -> None:
+        (out / name).write_text(json.dumps(value, indent=2, default=str) + "\n", encoding="utf-8")
+
+    write("result.json", result)
+    write("timings.json", {**result["diagnostics"]["timing_s"], "wall_clock": round(time.monotonic() - started, 3)})
+    if proposal and result.get("proposal"):
+        write("proposal.json", result["proposal"])
+
+
 def cmd_photo_to_wall(args: argparse.Namespace, config: VisionConfig) -> int:
     from hsw_vision import photo_to_wall
-    from hsw_vision.schemas import CalibrateParams, PhotoToWallRequest, SegmentParams
+    from hsw_vision.schemas import PhotoToWallRequest, SegmentParams
     from hsw_vision.service import VisionService
 
-    calibrate: dict[str, Any] = {}
-    if args.two_point:
-        if args.distance is None:
-            raise BadRequest("--two-point needs --distance MM (the real distance between the two points)")
-        x1, y1, x2, y2 = args.two_point
-        calibrate.update(points_px=((x1, y1), (x2, y2)), distance_mm=args.distance)
-    if args.mm_per_px:
-        calibrate["mm_per_px"] = args.mm_per_px
     request = PhotoToWallRequest(
         image_path=args.image,
         work_dir=args.out,
         photo_id=args.photo_id,
-        calibrate=CalibrateParams(**calibrate),
+        calibrate=calibration_params(args),
         segment=SegmentParams(method=args.method, fill=args.fill),
         bank_index=load_bank_index(args.bank_index),
+        categories=args.categories,
         auto_apply_confidence=args.auto_apply,
         max_objects=args.max_objects,
         device=args.device,
@@ -115,26 +165,9 @@ def cmd_photo_to_wall(args: argparse.Namespace, config: VisionConfig) -> int:
     if args.device:
         config = dataclasses.replace(config, device=args.device)
     service = VisionService.create(config)
-
-    def emit(event: dict[str, Any]) -> None:
-        if event.get("event") == "stage" and event.get("state") == "done":
-            print(f"[{event['stage']}] {event.get('seconds', '')}s", file=sys.stderr, flush=True)
-        elif event.get("event") == "object":
-            print(f"  object {event['instanceId']} {event['state']} ({event['done']}/{event['total']})", file=sys.stderr, flush=True)
-        elif event.get("type") == "request_view" or event.get("event") == "needs_calibration":
-            print(f"[{event.get('type') or event['event']}] {json.dumps(event)[:300]}", file=sys.stderr, flush=True)
-
     started = time.monotonic()
-    result = photo_to_wall.run(service, request, emit)
-    args.out.mkdir(parents=True, exist_ok=True)
-
-    def write(name: str, value: Any) -> None:
-        (args.out / name).write_text(json.dumps(value, indent=2, default=str) + "\n", encoding="utf-8")
-
-    write("result.json", result)
-    write("timings.json", {**result["diagnostics"]["timing_s"], "wall_clock": round(time.monotonic() - started, 3)})
-    if result.get("proposal"):
-        write("proposal.json", result["proposal"])
+    result = photo_to_wall.run(service, request, progress_printer)
+    write_artefacts(args.out, result, started, proposal=True)
     overlay = (result.get("segmentation") or {}).get("overlay")
     if overlay:
         shutil.copyfile(Path(result["work"]["imageDir"]) / overlay, args.out / "overlay.jpg")
@@ -143,6 +176,95 @@ def cmd_photo_to_wall(args: argparse.Namespace, config: VisionConfig) -> int:
     else:
         print(summary(result, args.out))
     return EXIT_BAD_INPUT if result["status"] == "needs_calibration" else 0
+
+
+def cmd_photo_to_objects(args: argparse.Namespace, config: VisionConfig) -> int:
+    from hsw_vision import objects
+    from hsw_vision.schemas import PhotoToObjectsRequest, SegmentParams
+    from hsw_vision.service import VisionService
+
+    request = PhotoToObjectsRequest(
+        image_path=args.image,
+        work_dir=args.out / "cache",
+        out_dir=args.out,
+        calibrate=calibration_params(args),
+        segment=SegmentParams(method=args.method, fill=args.fill),
+        bank_index=load_bank_index(args.bank_index),
+        categories=args.categories,
+        max_objects=args.max_objects,
+        device=args.device,
+        ai_assist=args.ai_assist,
+        refresh=args.refresh,
+        topk=args.topk,
+        colours=not args.no_colours,
+        extra_photos=args.extra_photo,
+    )
+    if args.device:
+        config = dataclasses.replace(config, device=args.device)
+    service = VisionService.create(config)
+    started = time.monotonic()
+    result = objects.run(service, request, progress_printer)
+    write_artefacts(args.out, result, started, proposal=False)
+    if args.json:
+        print(json.dumps(result, default=str))
+    else:
+        print(objects_summary(result, args.out))
+    return EXIT_BAD_INPUT if result["status"] == "no_scale" else 0
+
+
+def cmd_embed(args: argparse.Namespace, config: VisionConfig) -> int:
+    """One CLIP embedding per image, rows in argument order. `--object` embeds the largest single object of each image
+    (u2net mask, the way `photo-to-objects` embeds its crops) so a thumbnail of one tool compares with a photo crop."""
+    import numpy as np
+
+    from hsw_vision.cache import file_sha256
+    from hsw_vision.files import save_npy, write_json
+    from hsw_vision.schemas import ImageRef, SegmentParams
+    from hsw_vision.service import VisionService
+    from hsw_vision.stages import embed as stage_embed
+
+    if args.device:
+        config = dataclasses.replace(config, device=args.device)
+    service = VisionService.create(config)
+    args.out.mkdir(parents=True, exist_ok=True)
+    photos = [service.read_photo(path) for path in args.images]
+    items: list[dict[str, Any]] = []
+    masks = []
+    if args.object:
+        for path, _ in photos:  # `segment` takes the run lock itself: never hold it here (it is not re-entrant)
+            img = service.open(ImageRef(image_path=path, work_dir=args.out / "cache"))
+            seg = service.segment(img, SegmentParams(method="u2net"))
+            if not seg["instances"]:
+                raise BadRequest(f"no object found in {path}")
+            largest = max(seg["instances"], key=lambda i: i["area_px"])
+            masks.append(service.masks(img, seg, only=[largest["id"]])[largest["id"]])
+    with service.run_lock:
+        if args.object:
+            rows = np.concatenate([service.stages.embed_objects(service.manager, rgb, [mask]) for (_, rgb), mask in zip(photos, masks, strict=True)])
+        else:
+            rows = service.stages.embed_images(service.manager, [rgb for _, rgb in photos])
+    for row, (path, rgb) in enumerate(photos):
+        items.append({"image": str(path), "sha256": file_sha256(path), "row": row, "object": bool(args.object), "size": [rgb.shape[1], rgb.shape[0]]})
+    save_npy(args.out / "embeddings.npy", rows)
+    report = {"model": stage_embed.MODEL, "dim": stage_embed.DIM, "file": "embeddings.npy", "items": items}
+    write_json(args.out / "embeddings.json", report)
+    print(json.dumps(report) if args.json else f"{len(items)} embedding(s) -> {args.out}/embeddings.npy (+ embeddings.json)")
+    return 0
+
+
+def objects_summary(result: dict[str, Any], out: Path) -> str:
+    s = result["summary"]
+    cal = result["calibration"]
+    scale = f"{cal['method']} {cal['mm_per_px']:.4f} mm/px" if cal.get("ok") else "NO SCALE (pass --two-point/--distance or --mm-per-px for dimensions)"
+    return "\n".join(
+        [
+            f"calibration: {scale}",
+            f"objects found {s['found']}, analysed {s['analysed']} (recognised {s['recognised']}, fitted {s['fitted']}, "
+            f"failed {s['failed']}, want another view {s['needsViews']}, needs confirmation {s['needsConfirmation']})",
+            f"timing_s {json.dumps(result['diagnostics']['timing_s'])}",
+            f"artefacts: {out}/objects.json masks/ crops/ cutouts/ models/ overlay.jpg fit-overlay.jpg",
+        ]
+    )
 
 
 def summary(result: dict[str, Any], out: Path) -> str:
@@ -217,13 +339,13 @@ def doctor_report(config: VisionConfig) -> dict[str, Any]:
         }
     except Exception as exc:  # noqa: BLE001
         translated = translate_library_error(exc)
-        checks["library"] = {"level": "fail", "detail": f"{type(exc).__name__}: {exc}", "fix": (translated.fix if translated else None) or "uv sync --project services/vision --extra ml"}
+        checks["library"] = {"level": "fail", "detail": f"{type(exc).__name__}: {exc}", "fix": (translated.fix if translated else None) or SETUP_HINT}
     for module in ("torch", "sam2", "transformers", "onnxruntime", "cma", "trimesh"):
         try:
             __import__(module)
             checks[f"import:{module}"] = {"level": "ok", "detail": "importable"}
         except ImportError:
-            checks[f"import:{module}"] = {"level": "warn", "detail": "not installed", "fix": "uv sync --project services/vision --extra ml"}
+            checks[f"import:{module}"] = {"level": "warn", "detail": "not installed", "fix": SETUP_HINT}
     return {"ok": all(c["level"] != "fail" for c in checks.values()), "modelsDir": str(config.models_dir), "checks": checks}
 
 
@@ -253,7 +375,10 @@ def main(argv: list[str] | None = None) -> int:
             overrides: dict[str, Any] = {}
             if args.host:
                 if args.host not in ("127.0.0.1", "localhost"):
-                    raise BadRequest("the sidecar reads and writes arbitrary local paths: it only binds loopback")
+                    raise BadRequest(
+                        "the sidecar reads and writes arbitrary local paths and its port picker is IPv4-only: "
+                        "bind 127.0.0.1 or localhost"
+                    )
                 overrides["host"] = args.host
             if args.port:
                 overrides["port"] = args.port
@@ -263,6 +388,10 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.cmd == "photo-to-wall":
             return cmd_photo_to_wall(args, config)
+        if args.cmd == "photo-to-objects":
+            return cmd_photo_to_objects(args, config)
+        if args.cmd == "embed":
+            return cmd_embed(args, config)
         if args.cmd == "models":
             return cmd_models(args, config)
         return cmd_doctor(args, config)
