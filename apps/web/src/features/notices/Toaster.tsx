@@ -11,11 +11,12 @@ export function Toaster() {
   const { t } = useI18n();
   const toasts = useStore(toastStore);
   const notice = useStore(sessionStore)?.notice ?? null;
-  const shown = useRef(0);
+  // Notice ids restart per WallSync, so identity (not id) tells a new notice from a repeat render.
+  const shown = useRef<typeof notice>(null);
 
   useEffect(() => {
-    if (!notice || notice.id === shown.current) return;
-    shown.current = notice.id;
+    if (!notice || notice === shown.current) return;
+    shown.current = notice;
     notify('error', t('sync.rejected', { reason: notice.message }));
   }, [notice, t]);
 

@@ -54,7 +54,7 @@ export class NetworkError extends Error {
 }
 
 /** Gateway statuses a dev proxy / reverse proxy answers with while the daemon is down or restarting. */
-const GATEWAY_DOWN = new Set([500, 502, 503, 504]);
+const GATEWAY_DOWN = new Set([502, 503, 504]);
 
 /** JSON request failing with `ApiError`/`NetworkError`; the caller parses the body. */
 export async function fetchJson(path: string, init?: RequestInit): Promise<unknown> {

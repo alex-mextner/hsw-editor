@@ -54,7 +54,8 @@ export function findFreeCell(
   near: GridCell,
   rotZ = 0,
 ): GridCell | null {
-  const maxRing = Math.max(wall.board.cols, wall.board.rows);
+  // Staggered lattice: opposite corners are up to cols + rows rings apart.
+  const maxRing = wall.board.cols + wall.board.rows;
   const seen = new Set<string>();
   for (let ring = 0; ring <= maxRing; ring += 1) {
     const candidates = ring === 0 ? [near] : ringCells(near, ring);

@@ -71,6 +71,20 @@ describe('finding free space', () => {
   });
 });
 
+describe('free space far from the requested cell', () => {
+  test('finds a gap in the opposite corner of the board', () => {
+    const taken: { col: number; row: number }[] = [];
+    for (let row = 0; row <= 10; row += 2) {
+      for (let col = 0; col < board.cols; col += 1) {
+        if (row === 10 && col === board.cols - 1) continue;
+        taken.push({ col, row });
+      }
+    }
+    const cell = findFreeCell(wallWith(taken), bank, two, { col: 0, row: 0 });
+    expect(cell).toEqual({ col: board.cols - 1, row: 10 });
+  });
+});
+
 describe('duplicate', () => {
   test('copies land on free cells and keep their relative layout', () => {
     const wall = wallWith([{ col: 5, row: 5 }]);
