@@ -70,12 +70,17 @@ function sanitize(entry: ClientErrorEntry): ClientErrorEntry {
     if (value !== undefined) clean[field] = limitText(value, CAPS[field]);
   }
   if (entry.detail !== undefined) {
-    clean.detail = Object.fromEntries(
-      Object.entries(entry.detail).map(([key, value]) => [
-        limitText(key, DETAIL_KEY_CAP),
-        typeof value === 'string' ? limitText(value, DETAIL_VALUE_CAP) : value,
-      ]),
-    );
+    // Keys that collide once scrubbed or truncated get a numeric suffix instead of overwriting each other.
+    const detail = new Map<string, string | number | boolean>();
+    const seen = new Map<string, number>();
+    for (const [rawKey, value] of Object.entries(entry.detail)) {
+      const base = limitText(rawKey, DETAIL_KEY_CAP);
+      const count = (seen.get(base) ?? 0) + 1;
+      seen.set(base, count);
+      const key = count === 1 ? base : `${base}#${count}`;
+      detail.set(key, typeof value === 'string' ? limitText(value, DETAIL_VALUE_CAP) : value);
+    }
+    clean.detail = Object.fromEntries(detail);
   }
   // Scrubbing can empty a message that was only a query; keep it readable back (the schema requires min 1).
   if (clean.message === '') clean.message = '(scrubbed)';

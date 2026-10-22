@@ -157,6 +157,17 @@ describe('POST /api/client-errors', () => {
     expect(raw).toContain('"attempts":2');
   });
 
+  test('detail keys that collide after scrubbing are kept, not overwritten', async () => {
+    resetLog();
+    await report({
+      detail: { 'https://cdn/a.glb?sig=1': 404, 'https://cdn/a.glb?sig=2': 200 },
+    });
+    const raw = readFileSync(logFile, 'utf8');
+    expect(raw).not.toContain('sig=');
+    expect(raw).toContain('"https://cdn/a.glb":404');
+    expect(raw).toContain('"https://cdn/a.glb#2":200');
+  });
+
   test('a message that is only a query string is stored as a placeholder and read back', async () => {
     resetLog();
     expect((await report({ message: '?token=SECRET' })).status).toBe(204);
