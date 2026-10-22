@@ -343,6 +343,13 @@ describe('nearestVariant edge cases', () => {
 });
 
 describe('prototype-named dimensions', () => {
+  test('a print limit named like an Object.prototype member does not exclude variants that lack it', () => {
+    const variants: VariantOption[] = [{ id: 'a', dimsMm: { length: 50 } }];
+    expect(
+      nearestVariant({ length: 50 }, variants, { printMaxMm: { valueOf: 10 } }).variant?.id,
+    ).toBe('a');
+  });
+
   test('a dimension called "constructor" or "toString" is not looked up on Object.prototype', () => {
     expect(snapSizes({ constructor: 5, toString: 6 }, {})).toEqual({});
     const variants: VariantOption[] = [{ id: 'a', dimsMm: { length: 50 } }];

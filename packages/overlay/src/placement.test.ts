@@ -306,6 +306,19 @@ describe('rotation edge cases', () => {
   });
 });
 
+describe('reasons when the pointer is past the edge', () => {
+  test('stays "kept in board" even when the edge cell is also taken (avoidCollisions)', () => {
+    const edge: Occupant = { id: 'e', cells: [{ col: 0, row: 0 }] };
+    const snap = snapPlacement(
+      board,
+      { x: -300, y: -300 },
+      { occupied: [edge], avoidCollisions: true },
+    );
+    expect(snap.snapped?.cell).not.toEqual({ col: 0, row: 0 });
+    expect(snap.reason).toEqual({ code: 'kept-in-board' });
+  });
+});
+
 describe('no placement', () => {
   test('a full board with avoidCollisions says there is no free cell, not that the item is too large', () => {
     const tiny: Board = { ...board, cols: 2, rows: 1 };

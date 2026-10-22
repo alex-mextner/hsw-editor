@@ -251,7 +251,8 @@ export function snapPlacement(
       }
     }
     if (chosen === null) return none({ code: anyFits ? 'no-free-cell' : 'footprint-too-large' });
-    reason = fits(nearest) ? { code: 'free-cell' } : { code: 'kept-in-board' };
+    // A pointer past the edge stays "kept in board" even when the cell it lands on is also taken.
+    if (pointerOnBoard) reason = fits(nearest) ? { code: 'free-cell' } : { code: 'kept-in-board' };
   }
   const centre = cellCenter(board, chosen);
   const movedMm = Math.hypot(centre.x - requested.x, centre.y - requested.y);

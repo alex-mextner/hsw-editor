@@ -272,7 +272,9 @@ export function nearestVariant(
   if (comparable.length === 0) return none({ code: 'no-comparable-variant' });
   const limits = Object.entries(options.printMaxMm ?? {});
   const eligible = comparable.filter((v) =>
-    limits.every(([key, max]) => (v.dimsMm[key] ?? -Infinity) <= max + MM_EPSILON),
+    limits.every(
+      ([key, max]) => !Object.hasOwn(v.dimsMm, key) || v.dimsMm[key]! <= max + MM_EPSILON,
+    ),
   );
   const excluded = comparable.length - eligible.length;
   if (eligible.length === 0) return none({ code: 'unbuildable' });

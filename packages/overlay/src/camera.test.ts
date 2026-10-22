@@ -96,6 +96,16 @@ describe('camera recovery', () => {
     expect(at(30)).toBeGreaterThan(FOCAL_CONDITIONING_MIN);
   });
 
+  test('the reliability score does not depend on the direction of the tilt', () => {
+    const score = (yaw: number, pitch: number): number =>
+      estimateFocalPx(homographyFromCamera(camera(yaw, pitch)), IMAGE)!.conditioning;
+    const yawOnly = score(20, 0);
+    const pitchOnly = score(0, 20);
+    const diagonal = score(20 / Math.SQRT2, 20 / Math.SQRT2);
+    expect(Math.abs(pitchOnly / yawOnly - 1)).toBeLessThan(0.05);
+    expect(Math.abs(diagonal / yawOnly - 1)).toBeLessThan(0.05);
+  });
+
   test('default focal length follows the 35 mm equivalent', () => {
     expect(defaultFocalPx({ width: 4000, height: 3000 }, 26)).toBeCloseTo(
       (26 / Math.hypot(36, 24)) * 5000,

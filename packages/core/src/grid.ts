@@ -111,7 +111,8 @@ export function cellAtOffset(anchor: GridCell, offset: CellOffset): GridCell {
 
 /**
  * Rotates an offset about the anchor by `rotZDeg` (counter-clockwise seen from the room). The lattice is regular
- * hexagonal, so multiples of 60 degrees map offsets onto offsets exactly; other angles go to the nearest valid offset.
+ * hexagonal (rowPitch = colPitch * 2 / sqrt(3), as on every HSW board), so multiples of 60 degrees map offsets onto
+ * offsets exactly; other angles, and boards with another pitch ratio, go to the nearest valid offset.
  */
 export function rotateCellOffset(board: Board, offset: CellOffset, rotZDeg: number): CellOffset {
   const angle = (rotZDeg * Math.PI) / 180;
@@ -119,10 +120,11 @@ export function rotateCellOffset(board: Board, offset: CellOffset, rotZDeg: numb
   const y = (offset.dRow2 * board.rowPitchMm) / 2;
   const rx = (x * Math.cos(angle) - y * Math.sin(angle)) / board.colPitchMm;
   const ry = ((x * Math.sin(angle) + y * Math.cos(angle)) * 2) / board.rowPitchMm;
-  // Nearest lattice point in mm: try the two columns around rx and, in each, the two parity-correct half-rows around ry.
+  // Nearest lattice point in mm: try the columns around rx (one more each side, so a tall-pitch board still finds its
+  // neighbours) and, in each, the two parity-correct half-rows around ry.
   let best: CellOffset = { dCol: 0, dRow2: 0 };
   let bestDistance = Infinity;
-  for (const dCol of [Math.floor(rx), Math.ceil(rx)]) {
+  for (const dCol of [Math.floor(rx) - 1, Math.floor(rx), Math.ceil(rx), Math.ceil(rx) + 1]) {
     const parityRow = Math.floor((ry - (dCol & 1)) / 2) * 2 + (dCol & 1);
     for (const dRow2 of [parityRow, parityRow + 2]) {
       const dx = (dCol - rx) * board.colPitchMm;

@@ -37,8 +37,9 @@ export interface FocalEstimate {
 }
 
 /**
- * Measured on 4 corner clicks with 0.7 px noise (200 seeds per tilt): at conditioning 0.0067 the median focal
- * error is 8%, at 0.03 it is 2.3%, at 0.12 it is 1%. Below this threshold use `defaultFocalPx` instead.
+ * Measured on 4 corner clicks with 0.7 px noise (200 seeds per tilt): at conditioning 0.010 the median focal
+ * error is 7%, at 0.021 it is 3.4%, at 0.047 it is 1.9%, at 0.19 it is 0.6%. Below this threshold use
+ * `defaultFocalPx` instead.
  */
 export const FOCAL_CONDITIONING_MIN = 0.02;
 
@@ -68,8 +69,11 @@ export function estimateFocalPx(wallToPx: Mat3, image: ImageSize): FocalEstimate
   const h2 = column(wallToPx, 1);
   const p1: Vec2 = [h1[0] - cx * h1[2], h1[1] - cy * h1[2]];
   const p2: Vec2 = [h2[0] - cx * h2[2], h2[1] - cy * h2[2]];
-  const a1 = p1[0] * p2[0] + p1[1] * p2[1];
-  const b1 = h1[2] * h2[2];
+  // The two constraints are g1.g2 = 0 and |g1|^2 - |g2|^2 = 0. Turning the wall's axes by theta turns the pair
+  // (|p1|^2 - |p2|^2, 2 p1.p2) by 2 theta, so the dot-product equation is weighted by 2: that makes both the
+  // least-squares fit and the conditioning score independent of the direction of the tilt.
+  const a1 = 2 * (p1[0] * p2[0] + p1[1] * p2[1]);
+  const b1 = 2 * h1[2] * h2[2];
   const n1 = p1[0] ** 2 + p1[1] ** 2;
   const n2 = p2[0] ** 2 + p2[1] ** 2;
   const a2 = n1 - n2;
