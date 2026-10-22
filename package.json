@@ -21,7 +21,8 @@
     "format:check": "oxfmt --check .",
     "test": "bun test packages apps scripts",
     "setup:state-lib": "bun scripts/setup-state-lib.ts",
-    "check": "bun run lint && bun run typecheck && bun run test && bun run build"
+    "bank:schema": "bun scripts/bank/schema.ts",
+    "check": "bun run lint && bun run typecheck && bun scripts/bank/schema.ts --check && bun run test && bun run build"
   },
   "devDependencies": {
     "@types/bun": "1.4.2",
