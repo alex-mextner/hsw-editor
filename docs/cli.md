@@ -77,9 +77,11 @@ Errors print as `error: <what>`, `why:`, `fix:` (agenttools_errors).
 
 ## Install and release
 
-- `scripts/install.sh [--rebuild] [--no-build]`: idempotent. Installs dependencies only when `node_modules` is missing, builds the
-  web app when `apps/web/dist` is missing, links `~/.local/bin/hsw-editor`. Needs no network when dependencies are installed and
-  the agent-tools lib is checked out.
-- `bun run release [patch|minor|major|x.y.z] [--dry-run] [--skip-checks]`: lint, typecheck, tests, web build and a server bundle
-  check, then bumps every `package.json`, moves `CHANGELOG.md`'s `[Unreleased]` section under the new version, commits
-  `chore: release vX.Y.Z` and creates the annotated tag. It never pushes (`git push origin main --follow-tags`).
+- `scripts/install.sh [--rebuild] [--no-build]`: idempotent. Always runs `bun install --frozen-lockfile` (a no-op when nothing
+  changed, so a pulled lockfile is picked up), builds the web app when `apps/web/dist` is missing (`--rebuild` forces it), links
+  `~/.local/bin/hsw-editor`. Needs no network when the bun cache is warm and the agent-tools lib is checked out.
+- `bun run release [patch|minor|major|x.y.z] [--dry-run] [--skip-checks]`: validates the `[Unreleased]` changelog section first,
+  then lint, typecheck, tests, web build and a server bundle check, bumps every `package.json`, refreshes `bun.lock`, moves
+  `CHANGELOG.md`'s `[Unreleased]` section under the new version, commits `chore: release vX.Y.Z` and creates the annotated tag.
+  It never pushes (`git push origin main --follow-tags`). To resume an interrupted run, pass the already-bumped version: only the
+  release files may be pending, and a release commit that already exists is not repeated.

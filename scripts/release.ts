@@ -58,9 +58,16 @@ if (capture(['git', 'tag', '--list', tag]) !== '') {
   console.error(`release: tag ${tag} already exists`);
   process.exit(1);
 }
-const pending = capture(['git', 'status', '--porcelain']);
-if (pending !== '' && !alreadyBumped) {
-  console.error(`release: the working tree must have no pending changes:\n${pending}`);
+const releaseFiles = ['CHANGELOG.md', 'bun.lock', ...manifests()];
+const releaseCommitted = capture(['git', 'log', '-1', '--format=%s']) === `chore: release ${tag}`;
+// Resume (version already bumped): only the release files may be pending, so nothing unrelated is committed.
+const pending = capture(['git', 'status', '--porcelain'])
+  .split('\n')
+  .filter((line) => line !== '' && !(alreadyBumped && releaseFiles.includes(line.slice(3))));
+if (pending.length > 0) {
+  console.error(
+    `release: the working tree must have no unrelated pending changes:\n${pending.join('\n')}`,
+  );
   process.exit(1);
 }
 
@@ -82,21 +89,23 @@ step(
   'bundling the server (apps/server/dist; a compile check, the daemon runs from source)',
 );
 
-if (rotatedChangelog !== undefined && !dryRun) {
-  for (const file of manifests()) {
-    const path = join(root, file);
-    writeFileSync(
-      path,
-      readFileSync(path, 'utf8').replace(/("version":\s*")[^"]+(")/, `$1${version}$2`),
-    );
+if (!dryRun) {
+  if (rotatedChangelog !== undefined) {
+    for (const file of manifests()) {
+      const path = join(root, file);
+      writeFileSync(
+        path,
+        readFileSync(path, 'utf8').replace(/("version":\s*")[^"]+(")/, `$1${version}$2`),
+      );
+    }
+    writeFileSync(changelogPath, rotatedChangelog);
   }
-  writeFileSync(changelogPath, rotatedChangelog);
-  // the lockfile records every workspace version; a stale one breaks `bun install --frozen-lockfile`
+  // the lockfile records every workspace version; a stale one breaks `bun install --frozen-lockfile`.
+  // Unconditional, so a re-run after an interrupted first run also refreshes it.
   step(['bun', 'install'], 'refreshing bun.lock');
 }
-step(['git', 'add', 'CHANGELOG.md', 'bun.lock', ...manifests()], 'staging the version files');
+step(['git', 'add', ...releaseFiles], 'staging the version files');
 // a re-run after a failed tag step finds the release commit already made: only tag
-const releaseCommitted = capture(['git', 'log', '-1', '--format=%s']) === `chore: release ${tag}`;
 if (!releaseCommitted) step(['git', 'commit', '-m', `chore: release ${tag}`], 'committing');
 step(['git', 'tag', '-a', tag, '-m', `hsw-editor ${version}`], `tagging ${tag}`);
 console.info('release: done. Publish with: git push origin main --follow-tags');

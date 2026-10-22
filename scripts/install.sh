@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Idempotent installer: dependencies, web build, and the ~/.local/bin/hsw-editor symlink.
-# Safe to re-run. Needs no network when node_modules is already populated and the agent-tools lib is checked out
+# Safe to re-run. Needs no network when the bun cache is warm and the agent-tools lib is checked out
 # (AGENT_TOOLS_LIB or ~/dev/agent-tools/lib). Flags: --rebuild (force the web build), --no-build.
 set -euo pipefail
 
