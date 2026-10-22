@@ -1,0 +1,49 @@
+name: Pages
+# Publishes the apps/web bundle at https://hsw.mextner.com (GitHub Pages, custom domain via apps/web/public/CNAME).
+# The bundle is the daemon-free web app; it is served at the domain root, so Vite's default base `/` is correct.
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/web/**
+      - packages/**
+      - package.json
+      - bun.lock
+      - tsconfig*.json
+      - .bun-version
+      - .github/workflows/pages.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      # state-lib is not published; the public build uses the dependency-free baseline store.
+      VITE_STATE_BACKEND: baseline
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: apps/web/dist
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
