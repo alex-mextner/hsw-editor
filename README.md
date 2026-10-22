@@ -6,6 +6,9 @@ and works offline.
 
 **Status:** skeleton. The monorepo, daemon, CLI, CI and roadmap exist; features are tracked as issues below.
 
+**Live:** https://hsw.mextner.com — the static web bundle (GitHub Pages, built by `.github/workflows/pages.yml`, DNS on Cloudflare).
+It runs without the daemon, so photo fitting and saved walls need the local install below.
+
 ## Why
 - Designing a tool wall from a photo is slow by hand. Fitting should be fast and **not need AI** (AI is optional for hard cases).
 - Humans and agents (omp / oh-my-pi) edit the same wall through one op stream with undo/redo.
