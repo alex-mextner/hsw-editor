@@ -4,6 +4,7 @@
  */
 import { z } from 'zod';
 import { type WallWarning } from './ops.ts';
+import type { RequestInputEvent, RequestResolvedEvent } from './request.ts';
 import {
   ActorSchema,
   BoardSchema,
@@ -131,4 +132,7 @@ export interface WallEventMap {
   op: ChangeEntry;
   heartbeat: { rev: number };
   deleted: Record<string, never>;
+  /** Not tied to a rev: no SSE `id`. Open requests are re-sent after every (re)connect. */
+  request_input: RequestInputEvent;
+  request_resolved: RequestResolvedEvent;
 }
