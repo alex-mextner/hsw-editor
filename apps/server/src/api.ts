@@ -25,11 +25,15 @@ import {
   WallParseError,
   formatIssues,
 } from '@hsw-editor/core';
+import type { SettingsRevConflictBody } from '@hsw-editor/user-settings';
 import type { z } from 'zod';
+import { HttpError } from './http-error.ts';
 import { SERVER_VERSION } from './version.ts';
 import { isGlb, sniffImage } from './image.ts';
 import { JobError } from './jobs.ts';
 import type { ServerDeps } from './modules.ts';
+import { SettingsConflictError } from './settings.ts';
+import { settingsRoutes } from './settings-routes.ts';
 import { sseResponse } from './sse.ts';
 import { StoreError, type Outcome, type StoreErrorCode } from './store/wall-store.ts';
 
@@ -37,17 +41,6 @@ const MAX_JSON_BYTES = 16 * 1024 * 1024;
 const MAX_PHOTO_BYTES = 40 * 1024 * 1024;
 const MAX_MODEL_BYTES = 100 * 1024 * 1024;
 const HUMAN: Actor = { kind: 'human' };
-
-class HttpError extends Error {
-  constructor(
-    readonly status: number,
-    readonly code: string,
-    message: string,
-    readonly details?: unknown,
-  ) {
-    super(message);
-  }
-}
 
 const STORE_STATUS: Record<StoreErrorCode, number> = {
   wall_not_found: 404,
@@ -75,6 +68,14 @@ export function errorResponse(error: unknown): Response {
     return Response.json(errorBody(error.code, error.message, error.details), {
       status: error.status,
     });
+  }
+  if (error instanceof SettingsConflictError) {
+    const body: SettingsRevConflictBody = {
+      error: { code: 'rev_conflict', message: error.message },
+      settings: error.settings,
+      currentRev: error.settings.rev,
+    };
+    return Response.json(body, { status: 409 });
   }
   if (error instanceof StoreError) {
     if (error.code === 'rev_conflict' && error.wall !== undefined) {
@@ -242,6 +243,9 @@ async function route(request: Request, url: URL, deps: ServerDeps): Promise<Resp
       { headers: { 'cache-control': 'no-store' } },
     );
   }
+
+  if (resource === 'settings')
+    return settingsRoutes(request, parts.slice(1), deps.settings, deps.config.heartbeatMs);
 
   if (resource === 'walls') {
     if (id === undefined) {

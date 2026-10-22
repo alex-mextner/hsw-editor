@@ -18,6 +18,7 @@
       "dependencies": {
         "@hsw-editor/core": "workspace:*",
         "@hsw-editor/draw": "workspace:*",
+        "@hsw-editor/user-settings": "workspace:*",
         "sharp": "^0.35.5",
         "zod": "^4.3.6",
       },
@@ -76,6 +77,14 @@
     "packages/draw": {
       "name": "@hsw-editor/draw",
       "version": "0.1.0",
+    },
+    "packages/user-settings": {
+      "name": "@hsw-editor/user-settings",
+      "version": "0.1.0",
+      "dependencies": {
+        "@hsw-editor/core": "workspace:*",
+        "zod": "^4.3.6",
+      },
     },
   },
   "packages": {
@@ -288,6 +297,8 @@
     "@hsw-editor/draw": ["@hsw-editor/draw@workspace:packages/draw"],
 
     "@hsw-editor/server": ["@hsw-editor/server@workspace:apps/server"],
+
+    "@hsw-editor/user-settings": ["@hsw-editor/user-settings@workspace:packages/user-settings"],
 
     "@hsw-editor/web": ["@hsw-editor/web@workspace:apps/web"],
 
