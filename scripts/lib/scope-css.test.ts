@@ -42,6 +42,10 @@ describe('scopeCss', () => {
     expect(() => scopeCss('.a { .b { top: 0; } }', S)).toThrow('nested CSS rule');
   });
 
+  test('keeps a comment between selector and block inside the rule prelude', () => {
+    expect(scopeCss('.a /* ; */ { top: 0; }', S)).toBe('.s .a /* ; */ { top: 0; }');
+  });
+
   test('fails loudly on an unterminated comment', () => {
     expect(() => scopeCss('.a { top: 0; } /* oops', S)).toThrow('unterminated comment');
     expect(() => scopeCss('.a { top: /* oops', S)).toThrow('unterminated comment');

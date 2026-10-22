@@ -89,7 +89,9 @@ export function scopeCss(css: string, scope: string): string {
     }
     let j = i;
     while (j < css.length && css[j] !== '{' && css[j] !== ';') {
-      j = css[j] === '"' || css[j] === "'" ? skipString(css, j) : j + 1;
+      if (css[j] === '"' || css[j] === "'") j = skipString(css, j);
+      else if (css[j] === '/' && css[j + 1] === '*') j = commentEnd(css, j);
+      else j++;
     }
     if (j >= css.length) failCss(`dangling CSS: ${css.slice(i, i + 60)}`);
     const prelude = css.slice(i, j);
