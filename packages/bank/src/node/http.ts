@@ -40,12 +40,15 @@ function json(body: unknown, init: ResponseInit = {}): Response {
   });
 }
 
-/** mtime of each root's index.json: changes when a built bank appears, is replaced, or is removed. */
+/** mtime and size of each root's index.json: changes when a built bank appears, is replaced, or is removed. */
 async function stampOf(roots: string[]): Promise<string> {
-  const mtimes = await Promise.all(
-    roots.map(async (root) => (await stat(join(root, 'index.json')).catch(() => null))?.mtimeMs),
+  const stamps = await Promise.all(
+    roots.map(async (root) => {
+      const info = await stat(join(root, 'index.json')).catch(() => null);
+      return info ? `${info.mtimeMs}:${info.size}` : '-';
+    }),
   );
-  return mtimes.map((m) => m ?? '-').join(',');
+  return stamps.join(',');
 }
 
 async function loadRoot(root: string, stamp: string): Promise<Loaded | null> {
@@ -94,7 +97,7 @@ export function createBankHandler(
     if (current && current.loaded.stamp === stamp) return current;
     const next = await loadFrom(options.roots, stamp);
     if (next?.loaded) current = { root: next.root, loaded: next.loaded };
-    else if (current) current = { ...current, loaded: { ...current.loaded, stamp } };
+    // A failed load keeps the stamp stale on purpose so the next request retries (an ingest mid-write).
     return current;
   }
 
