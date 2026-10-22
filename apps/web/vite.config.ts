@@ -48,9 +48,14 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       host: '127.0.0.1',
-      port: 5194,
+      port: Number(env['HSW_WEB_PORT'] ?? 5194),
       strictPort: true,
-      proxy: { '/api': 'http://127.0.0.1:8794' },
+      // The daemon serves the API and the bank assets; both are proxied in dev.
+      proxy: {
+        '/api/bank': env['HSW_BANK_TARGET'] ?? env['HSW_API_TARGET'] ?? 'http://127.0.0.1:8794',
+        '/api': env['HSW_API_TARGET'] ?? 'http://127.0.0.1:8794',
+        '/bank': env['HSW_BANK_TARGET'] ?? env['HSW_API_TARGET'] ?? 'http://127.0.0.1:8794',
+      },
     },
     build: { sourcemap: true, target: 'es2022' },
   };
