@@ -91,6 +91,8 @@ export function BankGrid({ elements, locale, query, resetKey, onOpen, onAdd }: B
   const navigate = useCallback(
     (from: number, key: NavigationKey): void => {
       const next = moveIndex(from, key, columns, elements.length);
+      // At the grid edge there is no move, so no re-render would ever consume the flag.
+      if (next === from) return;
       setFocusIndex(next);
       pendingFocus.current = true;
       scrollToRow(Math.floor(next / columns));

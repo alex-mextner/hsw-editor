@@ -96,7 +96,7 @@ export const BankCard = memo(function BankCard({
     if (event.key === 'Enter') {
       // Enter would otherwise synthesise a click and open the detail view.
       event.preventDefault();
-      onAdd(element);
+      if (!event.repeat) onAdd(element);
     } else if (isNavigationKey(event.key)) {
       event.preventDefault();
       onNavigate(position, event.key);
@@ -175,7 +175,9 @@ export const BankCard = memo(function BankCard({
         tabIndex={-1}
         aria-label={addLabel}
         title={addLabel}
-        onClick={() => onAdd(element)}
+        onClick={(event) => {
+          if (event.detail <= 1) onAdd(element);
+        }}
         className="absolute top-1 right-1 flex size-7 items-center justify-center rounded-md bg-primary text-primary-foreground opacity-0 shadow-sm transition-opacity outline-none group-focus-within/card:opacity-100 group-hover/card:opacity-100 focus-visible:opacity-100 focus-visible:ring-3 focus-visible:ring-ring/60 [@media(hover:none)]:opacity-100"
       >
         <PlusIcon className="size-4" aria-hidden />
