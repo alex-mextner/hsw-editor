@@ -13,7 +13,7 @@ afterEach(() => scratch.cleanup());
 
 /** A stand-in `omp` that behaves per `mode`, counting its invocations in a file. */
 async function fakeOmp(
-  mode: 'ok' | 'prose-then-ok' | 'no-credentials' | 'never-calls',
+  mode: 'ok' | 'prose-then-ok' | 'no-credentials' | 'never-calls' | 'slow-prose',
 ): Promise<OmpConfig> {
   const image = `${scratch.dir}/generated.png`;
   await writeObjectPng(image);
@@ -28,7 +28,10 @@ const calls = readFileSync(counter, 'utf8').length;
 const mode = ${JSON.stringify(mode)};
 const end = (extra) => console.log(JSON.stringify({ type: 'tool_execution_end', toolName: 'generate_image', ...extra }));
 console.log('{"type":"agent_start"}');
-if (mode === 'never-calls' || (mode === 'prose-then-ok' && calls === 1)) {
+if (mode === 'slow-prose') {
+  await Bun.sleep(4600);
+  console.log('{"type":"message","text":"hmm"}');
+} else if (mode === 'never-calls' || (mode === 'prose-then-ok' && calls === 1)) {
   console.log('{"type":"message","text":"I would draw a box"}');
 } else if (mode === 'no-credentials') {
   end({ isError: true, result: { content: [{ type: 'text', text: 'Image generation exhausted the resolved image chain.' }] } });
@@ -105,5 +108,17 @@ test('no second run is spawned when the request budget is nearly spent', async (
     .draw({ ...request(), timeoutMs: 5000 }, new AbortController().signal)
     .catch((e: unknown) => e);
   expect(failure).toBeInstanceOf(DrawError);
+  expect(await callsMade()).toBe(1);
+});
+
+test('a run that spends the whole budget is reported as timeout, not as a missing tool call', async () => {
+  const store = new GuardStore(`${scratch.dir}/guard.json`);
+  const config = await fakeOmp('slow-prose');
+  const started = Date.now();
+  const failure = await new OmpBackend(store, config)
+    .draw({ ...request(), timeoutMs: 5000 }, new AbortController().signal)
+    .catch((e: unknown) => e);
+  expect((failure as DrawError).code).toBe('timeout');
+  expect(Date.now() - started).toBeLessThan(8000);
   expect(await callsMade()).toBe(1);
 });

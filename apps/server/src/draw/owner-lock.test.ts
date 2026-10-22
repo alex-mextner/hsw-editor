@@ -46,3 +46,15 @@ test('a lock held by this very process is never mistaken for a stale leftover', 
   await first.release();
   await (await acquireOwnerLock(file, 'test browser')).release();
 });
+
+test('concurrent in-process acquisition: exactly one winner, and the loser cannot unlink its lock', async () => {
+  const file = `${scratch.dir}/owner.lock`;
+  const results = await Promise.allSettled(
+    Array.from({ length: 6 }, () => acquireOwnerLock(file, 'test browser')),
+  );
+  const winners = results.filter((r) => r.status === 'fulfilled');
+  expect(winners).toHaveLength(1);
+  expect(await Bun.file(file).exists()).toBe(true);
+  if (winners[0]?.status === 'fulfilled') await winners[0].value.release();
+  expect(await Bun.file(file).exists()).toBe(false);
+});

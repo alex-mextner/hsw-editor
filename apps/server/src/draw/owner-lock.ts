@@ -21,23 +21,39 @@ export interface OwnerLock {
 const heldHere = new Set<string>();
 
 export async function acquireOwnerLock(file: string, what: string): Promise<OwnerLock> {
+  // Reserve synchronously (before any await) so concurrent in-process callers can never both pass.
   if (heldHere.has(file)) {
     throw new DrawError('backend_unavailable', `${what} is already in use by this process`, {
       retryable: true,
     });
   }
+  heldHere.add(file);
+  try {
+    await takeLockFile(file, what);
+  } catch (error) {
+    heldHere.delete(file);
+    throw error;
+  }
+  return {
+    release: async () => {
+      await removeIfContent(file, content.get(file) ?? '');
+      content.delete(file);
+      heldHere.delete(file); // only after the file is gone: no window where it exists unreserved
+    },
+  };
+}
+
+/** What each held lock file contains, so release removes only our own file. */
+const content = new Map<string, string>();
+
+async function takeLockFile(file: string, what: string): Promise<void> {
   await mkdir(dirname(file), { recursive: true });
-  const content = `${process.pid}:${crypto.randomUUID()}`;
+  const mine = `${process.pid}:${crypto.randomUUID()}`;
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
-      await writeFile(file, content, { flag: 'wx', mode: 0o600 });
-      heldHere.add(file);
-      return {
-        release: async () => {
-          heldHere.delete(file);
-          await removeIfContent(file, content);
-        },
-      };
+      await writeFile(file, mine, { flag: 'wx', mode: 0o600 });
+      content.set(file, mine);
+      return;
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
       const seen = await readFile(file, 'utf8').catch(() => '');
@@ -47,8 +63,8 @@ export async function acquireOwnerLock(file: string, what: string): Promise<Owne
           retryable: true,
         });
       }
-      // Stale (dead owner or our own leftover): remove it only if it is still the file we judged
-      // stale, so a lock another process just took is never deleted.
+      // Stale (dead owner, or our own leftover from a crashed run: this call holds the in-process
+      // reservation, so no live holder here can own it). Remove only if still the file we judged stale.
       await removeIfContent(file, seen);
     }
   }
