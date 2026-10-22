@@ -1,6 +1,7 @@
 import type { Vec3 } from '@hsw-editor/bank';
 import type { Wall, WallItem } from '@hsw-editor/core';
-import { resolveModel } from '@/bank/models.ts';
+import { lastKnownElement } from '@/bank/client.ts';
+import { bboxCentre, resolveModel } from '@/bank/models.ts';
 import type { BankLookup } from '@/wall/edits.ts';
 import { toolDims } from '@/wall/toolPresets.ts';
 
@@ -11,6 +12,20 @@ export interface ItemBounds {
   readonly centre: Vec3;
 }
 
+/** Stand-in size for an item with no known model at all. */
+const FALLBACK_BOX: Vec3 = { x: 30, y: 30, z: 20 };
+
+/**
+ * Box drawn for an item without a loadable model: the element's real size if the bank ever told us
+ * (the index may have been trimmed since), else the tool preset's, else a small generic box.
+ */
+export function placeholderBounds(item: WallItem, wall: Wall): ItemBounds {
+  const known = item.bankId === undefined ? undefined : lastKnownElement(item.bankId);
+  if (known) return { dims: known.dimsMm, centre: bboxCentre(known.bboxMm) };
+  const dims = item.kind === 'tool' ? (toolDims(item, wall) ?? FALLBACK_BOX) : FALLBACK_BOX;
+  return { dims, centre: { x: 0, y: 0, z: dims.z / 2 } };
+}
+
 /** Bounding box used for selection frames and rotate handles: bank model dims, or a tool's box. */
 export function itemBounds(item: WallItem, wall: Wall, bank: BankLookup): ItemBounds | null {
   const source = resolveModel(item, bank);
@@ -19,5 +34,8 @@ export function itemBounds(item: WallItem, wall: Wall, bank: BankLookup): ItemBo
     const dims = toolDims(item, wall);
     if (dims) return { dims, centre: { x: 0, y: 0, z: dims.z / 2 } };
   }
-  return null;
+  // A bank element that is gone still has a box (and so a selection frame): the item stays editable.
+  return item.bankId === undefined || item.kind === 'photo-ref'
+    ? null
+    : placeholderBounds(item, wall);
 }

@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeftIcon, PlusIcon } from 'lucide-react';
 import type { BankElement, BankIndex } from '@hsw-editor/bank';
-import { bankRoutes } from '@/bank/client.ts';
 import { IconButton } from '@/components/IconButton.tsx';
 import { isTypingTarget } from '@/commands/registry.ts';
 import { Button } from '@/components/ui/button.tsx';
@@ -44,10 +43,7 @@ function DetailPreview({ element }: { readonly element: BankElement }) {
   return (
     <div className="relative aspect-4/3 w-full shrink-0 bg-viewport">
       <div className="absolute inset-0 p-4">
-        <Thumbnail
-          src={bankRoutes.asset(element.assets.thumbnail.path)}
-          className="bg-transparent"
-        />
+        <Thumbnail element={element} className="bg-transparent" />
       </div>
       {slot === key ? (
         <div

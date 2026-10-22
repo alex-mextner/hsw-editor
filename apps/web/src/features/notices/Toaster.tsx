@@ -38,7 +38,23 @@ export function Toaster() {
           ) : (
             <Info className="mt-0.5 size-4 shrink-0 text-primary" aria-hidden />
           )}
-          <span className="min-w-0 flex-1 break-words">{toast.text}</span>
+          <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+            <span className="break-words">{toast.text}</span>
+            {toast.actions.length > 0 ? (
+              <div className="flex flex-wrap gap-1.5">
+                {toast.actions.map((action) => (
+                  <button
+                    key={action.label}
+                    type="button"
+                    className="rounded-md border border-border px-2 py-0.5 text-xs font-medium hover:bg-muted"
+                    onClick={action.run}
+                  >
+                    {action.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <button
             type="button"
             aria-label={t('action.close')}

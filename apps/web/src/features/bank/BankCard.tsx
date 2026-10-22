@@ -8,7 +8,6 @@ import {
 } from 'react';
 import { LockIcon, PlusIcon } from 'lucide-react';
 import type { BankElement } from '@hsw-editor/bank';
-import { bankRoutes } from '@/bank/client.ts';
 import { highlightSegments } from '@/bank/search.ts';
 import { useI18n, type Locale } from '@/i18n/index.ts';
 import { cn } from '@/lib/cn.ts';
@@ -134,7 +133,7 @@ export const BankCard = memo(function BankCard({
         className="flex size-full cursor-pointer flex-col text-left outline-none focus-visible:ring-3 focus-visible:ring-ring/60 focus-visible:ring-inset"
       >
         <span className="relative block aspect-square w-full">
-          <Thumbnail src={bankRoutes.asset(element.assets.thumbnail.path)} />
+          <Thumbnail element={element} />
           {previewing ? <HoverPreview element={element} /> : null}
           <span
             title={`${t('bank.card.footprint', { cols, rows })}, ${tn('bank.cells', element.footprint.cells.length)}`}

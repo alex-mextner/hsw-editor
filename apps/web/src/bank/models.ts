@@ -62,7 +62,7 @@ export function variantFor(
   return Object.keys(params).length === 0 ? undefined : ensureVariant(elementId, params);
 }
 
-function bboxCentre(box: BankElement['bboxMm']): Vec3 {
+export function bboxCentre(box: BankElement['bboxMm']): Vec3 {
   return {
     x: (box.min.x + box.max.x) / 2,
     y: (box.min.y + box.max.y) / 2,

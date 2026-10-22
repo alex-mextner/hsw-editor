@@ -218,6 +218,12 @@ describe('errorEntry', () => {
     );
   });
 
+  test('an Error whose message is not a string cannot make the logger throw', () => {
+    const odd = Object.assign(new Error('x'), { message: 42 });
+    const { logger } = harness();
+    expect(() => logger.log(errorEntry('unhandled', odd))).not.toThrow();
+  });
+
   test('never throws on values without a string form', () => {
     expect(() => errorEntry('unhandled', Object.create(null))).not.toThrow();
     expect(errorEntry('unhandled', Object.create(null)).message).toBe('[object Object]');

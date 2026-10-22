@@ -33,7 +33,6 @@ export const bankEn = {
   'bank.card.footprint': 'Footprint {cols} × {rows}',
   'bank.license.localOnly': 'Local only',
   'bank.license.localOnlyTitle': 'Not redistributable ({spdx}): built locally, never published',
-  'bank.image.broken': 'No image',
   'bank.notice.added': 'Added: {name}',
   'bank.notice.noWall': 'Open a wall first to add elements.',
   'bank.notice.boardFull': 'No free space on the board for this element.',
@@ -138,7 +137,6 @@ export const bankRu: FeatureRu<typeof bankEn> = {
   'bank.license.localOnly': 'Только локально',
   'bank.license.localOnlyTitle':
     'Лицензия не разрешает распространение ({spdx}): собирается локально, не публикуется',
-  'bank.image.broken': 'Нет картинки',
   'bank.notice.added': 'Добавлено: {name}',
   'bank.notice.noWall': 'Сначала откройте стену, чтобы добавлять элементы.',
   'bank.notice.boardFull': 'На доске нет свободного места для этого элемента.',

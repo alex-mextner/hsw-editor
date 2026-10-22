@@ -28,6 +28,7 @@ import {
 import { sessionStore, submitOps } from '@/wall/session.ts';
 import { ItemWidgets } from '@/widgets/ItemWidgets.tsx';
 import { CompareSection } from '@/widgets/CompareSection.tsx';
+import { ItemModelNotice } from './ModelIssueNotice.tsx';
 import { WallPanel } from './WallPanel.tsx';
 
 export function itemTitle(
@@ -91,6 +92,7 @@ function ItemPanel({
         ) : null}
       </header>
 
+      <ItemModelNotice item={item} />
       <ItemActions items={[item]} />
       <Placement item={item} wall={wall} />
       <ItemWidgets item={item} />
