@@ -11,7 +11,7 @@ import type { BankPaths } from './paths.ts';
 
 export const SEED_BUDGET_BYTES = 5 * 1024 * 1024;
 /** Leave headroom for index.json, the search index and attribution. */
-const SEED_ASSET_BUDGET_BYTES = 4 * 1024 * 1024;
+const SEED_ASSET_BUDGET_BYTES = 3.6 * 1024 * 1024;
 
 export interface SeedResult {
   elements: number;
