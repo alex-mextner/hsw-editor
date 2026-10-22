@@ -59,6 +59,14 @@
       "name": "@hsw-editor/bank",
       "version": "0.1.0",
     },
+    "packages/commands": {
+      "name": "@hsw-editor/commands",
+      "version": "0.1.0",
+      "dependencies": {
+        "@hsw-editor/core": "workspace:*",
+        "zod": "^4.3.6",
+      },
+    },
     "packages/compat": {
       "name": "@hsw-editor/compat",
       "version": "0.1.0",
@@ -280,6 +288,8 @@
     "@floating-ui/utils": ["@floating-ui/utils@0.2.12", "", {}, "sha512-HpCo8tmWzLVad5s2d19EhAz5zqrrQ6s69qd6moPMQvkOuSwDT1YgRfWSVuc4ennqrgv3OHppiOGMQ7oC13yIww=="],
 
     "@hsw-editor/bank": ["@hsw-editor/bank@workspace:packages/bank"],
+
+    "@hsw-editor/commands": ["@hsw-editor/commands@workspace:packages/commands"],
 
     "@hsw-editor/compat": ["@hsw-editor/compat@workspace:packages/compat"],
 

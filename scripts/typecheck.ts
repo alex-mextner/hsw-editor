@@ -15,6 +15,7 @@ const projects = [
   'packages/core',
   'packages/bank',
   'packages/compat',
+  'packages/commands',
   'packages/draw',
   'apps/server',
   'apps/web',

@@ -20,6 +20,7 @@ apps/server     Bun daemon: REST/SSE, wall store, asset serving
 packages/core   wall schema, ops, validation
 packages/compat tool-to-holder compatibility, auto-attach, re-hang and the bank tool-filter model (pure)
 packages/bank   HSW element bank index
+packages/commands  action registry, hotkeys, command palette engine (docs/hotkeys.md)
 services/vision Python sidecar (uv + FastAPI): detect, segment, calibrate, fit
 cli/hsw_editor.py  lifecycle CLI on the shared agent-tools service manager
 docs/specs/     design spec
@@ -95,6 +96,10 @@ release: [docs/cli.md](docs/cli.md). HTTP API: [docs/api.md](docs/api.md). Relea
 - [#57](https://github.com/alex-mextner/hsw-editor/issues/57) web: bank filter by selected tools (override with reset), fit-score ranking
 - [#58](https://github.com/alex-mextner/hsw-editor/issues/58) bank: custom user elements (import, API, CLI, mine badge)
 - [#59](https://github.com/alex-mextner/hsw-editor/issues/59) web: drag and drop tools onto mounts, Tools panel with thumbnails
+- [#50](https://github.com/alex-mextner/hsw-editor/issues/50) (aa) Action registry and configurable hotkey engine ([docs/hotkeys.md](docs/hotkeys.md))
+- [#52](https://github.com/alex-mextner/hsw-editor/issues/52) (ab) Per-user settings API with offline localStorage mirror
+- [#53](https://github.com/alex-mextner/hsw-editor/issues/53) (ac) Cmd+Shift+P command palette: search everything, inline settings, ask the AI
+- [#54](https://github.com/alex-mextner/hsw-editor/issues/54) (ad) Keybinding editor, shortcut cheat-sheet, migration of ad-hoc shortcuts
 
 Full design: [docs/specs/2026-10-22-hsw-editor-design.md](docs/specs/2026-10-22-hsw-editor-design.md). Agent rules: [AGENTS.md](AGENTS.md).
 
