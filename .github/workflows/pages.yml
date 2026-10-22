@@ -7,7 +7,9 @@ on:
     paths:
       - apps/web/**
       - packages/**
+      - package.json
       - bun.lock
+      - tsconfig*.json
       - .bun-version
       - .github/workflows/pages.yml
   workflow_dispatch:
