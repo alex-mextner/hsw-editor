@@ -1,10 +1,11 @@
-import { createEmptyWall } from '@hsw-editor/core';
+import { boardSizeMm, createEmptyWall } from '@hsw-editor/core';
 import { useStore } from '@/state/react.ts';
 import { currentWallId } from '@/state/current-wall.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { WallCanvas } from '@/scene/WallCanvas.tsx';
 
 const wall = createEmptyWall('draft', 'Draft wall');
+const size = boardSizeMm(wall.board);
 
 export function App() {
   const wallId = useStore(currentWallId);
@@ -23,7 +24,7 @@ export function App() {
         </Button>
       </header>
       <main className="min-h-0 flex-1">
-        <WallCanvas widthMm={wall.widthMm} heightMm={wall.heightMm} />
+        <WallCanvas widthMm={size.width} heightMm={size.height} />
       </main>
     </div>
   );
