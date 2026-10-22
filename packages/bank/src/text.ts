@@ -84,8 +84,10 @@ export function normalizeText(input: string): string {
   return input
     .toLowerCase()
     .replace(/ё/g, 'е')
+    .replace(/й/g, '\uE000') // keep й: NFKD would split off its breve and turn it into и
     .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '');
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\uE000/g, 'й');
 }
 
 function stemRussian(word: string): string {

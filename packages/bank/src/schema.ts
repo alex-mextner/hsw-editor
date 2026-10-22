@@ -12,7 +12,9 @@ import { z } from 'zod';
 export const BANK_SCHEMA_VERSION = 1 as const;
 
 /** Lowercase kebab-case identifier, optionally `/`-separated for category paths. */
-const slug = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'expected lowercase kebab-case');
+export const slugSchema = z
+  .string()
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'expected lowercase kebab-case');
 const categoryPath = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?$/);
 const sha256Hex = z.string().regex(/^[0-9a-f]{64}$/);
 const assetPath = z.string().regex(/^(?:glb|thumb|variant)\/[0-9a-f]{16}\.(?:glb|webp)$/);
@@ -112,7 +114,7 @@ export const LicenseSchema = z.object({
   /** Human wording as observed on the source, kept verbatim for audit. */
   observed: z.string(),
   attribution: z.string(),
-  url: z.string().url().optional(),
+  url: z.url().optional(),
   /** May the files be committed to / redistributed from the public repo. false => built locally at setup only. */
   redistributable: z.boolean(),
 });
@@ -123,7 +125,7 @@ export const SourceRefSchema = z.object({
   modelId: z.string().optional(),
   title: z.string().optional(),
   author: z.string().optional(),
-  url: z.string().url().optional(),
+  url: z.url().optional(),
   /** File inside the HSW sources tree. */
   file: z.string(),
   /** Object inside a multi-part file (3MF object / STEP solid). */
@@ -145,6 +147,11 @@ export const ProvenanceSchema = z.object({
   origin: z.enum(['source-file', 'project-original', 'generated']),
   source: SourceRefSchema.optional(),
   generator: GeneratorRefSchema.optional(),
+  /**
+   * How the wall orientation of the source part was decided: `curated` (set by hand), `auto` (guessed from
+   * the wall-facing flat face / plug end — verify before trusting), `generator` (built in the wall frame).
+   */
+  orientation: z.enum(['curated', 'auto', 'generator']),
   /** Hash of the normalised triangle soup (0.01 mm, translation-invariant) of the source mesh. */
   geometryHash: sha256Hex,
   /** Other source files that hold the same geometry (deduped copies). */
@@ -160,7 +167,7 @@ export type DimRange = z.infer<typeof DimRangeSchema>;
  * object's measured dimensions in mm (keys are class specific, e.g. `shaftDiameter`, `width`).
  */
 export const FitsToolSchema = z.object({
-  toolClass: slug,
+  toolClass: slugSchema,
   dims: z.record(z.string(), DimRangeSchema).optional(),
   /** How many objects one element holds. */
   capacity: z.number().int().positive().optional(),
@@ -169,14 +176,14 @@ export const FitsToolSchema = z.object({
 export type FitsTool = z.infer<typeof FitsToolSchema>;
 
 export const BankElementSchema = z.object({
-  id: slug,
+  id: slugSchema,
   name: LocalizedTextSchema,
   description: LocalizedTextSchema.optional(),
   category: categoryPath,
   /** Search synonyms; also feed the text index. */
   tags: z.object({ ru: z.array(z.string()), en: z.array(z.string()) }),
   /** Tool classes the element is about (vocabulary in toolClasses.ts). */
-  toolClasses: z.array(slug),
+  toolClasses: z.array(slugSchema),
   fitsTool: z.array(FitsToolSchema),
   footprint: FootprintSchema,
   bboxMm: BboxMmSchema,
@@ -185,7 +192,7 @@ export const BankElementSchema = z.object({
   /** Parameters of the generator that can rebuild this element at other dimensions (dimension widget). */
   params: z.array(ParamDefSchema).optional(),
   /** Sibling elements share a family (size ladders, A/B/C variants of one design). */
-  family: slug.optional(),
+  family: slugSchema.optional(),
   /** Short label of this element inside its family, e.g. "6 slots, Ø8". */
   variantLabel: LocalizedTextSchema.optional(),
   generated: z.boolean(),
@@ -205,7 +212,7 @@ export const BankCategorySchema = z.object({
 export type BankCategory = z.infer<typeof BankCategorySchema>;
 
 export const ToolClassSchema = z.object({
-  id: slug,
+  id: slugSchema,
   name: LocalizedTextSchema,
   /** Words that name this class in ru/en; the recogniser maps detector labels onto the class through them. */
   synonyms: z.object({ ru: z.array(z.string()), en: z.array(z.string()) }),

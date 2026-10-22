@@ -12,6 +12,10 @@ export interface BankPaths {
   sourcesDir: string;
   /** Committed seed (redistributable subset). */
   seedDir: string;
+  /** Directory with the OpenSCAD generators and families.json. */
+  generatorsDir: string;
+  /** Honeycomb lattice of the bank (mm). */
+  grid: { colPitchMm: number; rowPitchMm: number };
 }
 
 const REPO_ROOT = resolve(import.meta.dir, '../../../..');
@@ -26,5 +30,7 @@ export function bankPaths(env: Record<string, string | undefined> = process.env)
     cacheDir: join(cache, 'bank-build'),
     sourcesDir: env.HSW_SOURCES_DIR ?? join(home, 'dev/garage-band/projects/HSW'),
     seedDir: join(REPO_ROOT, 'packages/bank/seed'),
+    generatorsDir: env.HSW_BANK_GENERATORS_DIR ?? join(REPO_ROOT, 'packages/bank/generators'),
+    grid: { colPitchMm: 20.4382, rowPitchMm: 23.6 },
   };
 }
