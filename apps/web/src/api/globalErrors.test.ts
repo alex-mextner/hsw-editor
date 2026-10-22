@@ -86,6 +86,16 @@ describe('installGlobalErrorLogging', () => {
     expect(posted).toHaveLength(1);
   });
 
+  test('a stale teardown cannot disable a newer install', async () => {
+    const first = stop;
+    first();
+    stop = installGlobalErrorLogging();
+    first();
+    window.dispatchEvent(rejection(new Error('still logged')));
+    await settleRequests();
+    expect(posted.map((entry) => entry.message)).toEqual(['still logged']);
+  });
+
   test('can be installed again after being stopped', async () => {
     stop();
     stop = installGlobalErrorLogging();

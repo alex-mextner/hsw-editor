@@ -1,3 +1,4 @@
+import { assetsEn } from './catalog/assets.ts';
 import { bankEn } from './catalog/bank.ts';
 import { compareEn } from './catalog/compare.ts';
 import { shellEn } from './catalog/shell.ts';
@@ -14,4 +15,5 @@ export const en = {
   ...bankEn,
   ...widgetsEn,
   ...compareEn,
+  ...assetsEn,
 } as const;

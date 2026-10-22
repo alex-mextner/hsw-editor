@@ -45,6 +45,8 @@ export interface ClientErrorLoggerDeps {
 }
 
 function clip(text: string, max: number): string {
+  // Callers hand over untyped throwables' fields: anything that is not a string is stringified, never thrown on.
+  if (typeof text !== 'string') return clip(errorMessage(text), max);
   return text.length <= max ? text : `${text.slice(0, max)}…`;
 }
 
@@ -178,7 +180,7 @@ export function errorEntry(
   if (error instanceof Error) {
     return {
       kind,
-      message: error.message || error.name,
+      message: errorMessage(error) || error.name,
       ...(error.stack === undefined ? {} : { stack: error.stack }),
       ...extra,
     };
@@ -208,10 +210,13 @@ export function installGlobalErrorLogging(): () => void {
   };
   window.addEventListener('error', onError);
   window.addEventListener('unhandledrejection', onRejection);
-  uninstall = () => {
+  const teardown = () => {
+    // A stale handle from an earlier install must not tear down a newer one.
+    if (uninstall !== teardown) return;
     window.removeEventListener('error', onError);
     window.removeEventListener('unhandledrejection', onRejection);
     uninstall = null;
   };
-  return uninstall;
+  uninstall = teardown;
+  return teardown;
 }
