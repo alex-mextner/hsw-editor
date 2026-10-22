@@ -252,7 +252,7 @@ def main(argv: list[str] | None = None) -> int:
 
             overrides: dict[str, Any] = {}
             if args.host:
-                if args.host not in ("127.0.0.1", "localhost", "::1"):
+                if args.host not in ("127.0.0.1", "localhost"):
                     raise BadRequest("the sidecar reads and writes arbitrary local paths: it only binds loopback")
                 overrides["host"] = args.host
             if args.port:

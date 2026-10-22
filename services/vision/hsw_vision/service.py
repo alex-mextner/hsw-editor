@@ -189,7 +189,7 @@ class VisionService:
     ) -> dict[str, Any]:
         classes = stage_recognise.classes_from_bank(bank_index)
         key = {
-            "seg": segmentation_digest(segmentation),
+            "seg": [segmentation["dir"], segmentation_digest(segmentation)],
             "instances": sorted(instance_ids),
             "classes": classes,
             "bank": (bank_index or {}).get("contentHash"),
@@ -225,7 +225,7 @@ class VisionService:
         camera = self.camera(calibration)
         resolved_device = device or self.config.device
         key = {
-            "seg": segmentation_digest(segmentation),
+            "seg": [segmentation["dir"], segmentation_digest(segmentation)],
             "instance": instance_id,
             "cal": params_hash(calibration.get("core") or calibration.get("camera"))[:16],
             "fixed": fixed_dims,

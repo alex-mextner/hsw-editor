@@ -100,3 +100,24 @@ def test_confidence_helpers_and_dimension_normalisation() -> None:
         stage_fit.normalise_fixed_dims({"height": 3})
     with pytest.raises(Exception, match="positive"):
         stage_fit.normalise_fixed_dims({"length": 0})
+
+
+def test_nan_confidence_is_zero_never_one() -> None:
+    nan = float("nan")
+    assert stage_fit.fit_confidence({"confidence": {"heldout_iou": nan}}, 0.6) == 0.0
+    assert stage_fit.fit_confidence({"confidence": {"train_min_iou": nan, "n_views": 3}}, 0.6) == 0.0
+
+
+def test_segmentation_digest_changes_when_instances_are_renumbered() -> None:
+    from hsw_vision.service import segmentation_digest
+
+    a = {"instances": [{"id": 1, "bbox_xywh": [0, 0, 5, 5], "area_px": 25}]}
+    b = {"instances": [{"id": 2, "bbox_xywh": [0, 0, 5, 5], "area_px": 25}]}
+    assert segmentation_digest(a) != segmentation_digest(b)
+    assert segmentation_digest(a) == segmentation_digest({"instances": [{"id": 1, "bbox_xywh": (0, 0, 5, 5), "area_px": 25}]})
+
+
+def test_serve_refuses_a_non_loopback_host() -> None:
+    from hsw_vision.cli import main
+
+    assert main(["serve", "--host", "0.0.0.0"]) == 2
