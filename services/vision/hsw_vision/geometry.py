@@ -15,7 +15,6 @@ import numpy as np
 # Source of the pitches: HSW panel calibration (`packages/core/src/grid.ts`: HSW_COL_PITCH_MM / HSW_ROW_PITCH_MM).
 HSW_COL_PITCH_MM = 20.4382
 HSW_ROW_PITCH_MM = 23.6
-HEX_SYMMETRY_DEG = 60.0
 
 
 @dataclass(frozen=True)

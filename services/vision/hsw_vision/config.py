@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 
 DEFAULT_LOOPBACK_PORT = 8795  # also the `HSW_VISION_URL` default of `hsw-editor doctor`
@@ -53,7 +53,6 @@ class VisionConfig:
     ai_assist_confidence: float = 0.5
     #: omp CLI used by the optional AI-assist adapter.
     omp_command: str = "omp"
-    extra_env: Mapping[str, str] = field(default_factory=dict)
 
     @classmethod
     def from_env(cls, env: Mapping[str, str] | None = None) -> VisionConfig:

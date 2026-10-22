@@ -22,7 +22,7 @@ from hsw_vision.errors import MissingDependency, VisionServiceError
 from hsw_vision.geometry import Board
 from hsw_vision.proposal import build_proposal
 from hsw_vision.schemas import PhotoToWallRequest
-from hsw_vision.service import Emit, Image, VisionService, _noop
+from hsw_vision.service import Emit, Image, VisionService, _noop, segmentation_digest
 from hsw_vision.stages import fit as stage_fit
 from hsw_vision.stages import multiview as stage_multiview
 
@@ -179,6 +179,7 @@ def run(
     proposal = build_proposal(
         photo_id=req.photo_id,
         image_sha256=img.sha256,
+        segmentation_digest=segmentation_digest(segmentation),
         calibration=calibration,
         objects=fitted,
         board=Board.from_json(req.board),
@@ -216,7 +217,7 @@ def run(
             "extraPhotos": [{k: v for k, v in r.items() if k != "views"} for r in registrations],
             "cache": {"segment": segmentation.get("cached"), "calibrate": calibration.get("cached")},
             "device": service.config.device,
-            "models": service.manager.status(),
+            "models": _safe_status(service),
         },
     }
 
@@ -297,3 +298,11 @@ def _write_crop(img: Image, inst: dict[str, Any]) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     cv2.imwrite(str(path), cv2.cvtColor(crop, cv2.COLOR_RGB2BGR))
     return path
+
+
+def _safe_status(service: VisionService) -> dict[str, Any]:
+    """Diagnostics must never fail a finished run (a GPU probe can raise)."""
+    try:
+        return service.manager.status()
+    except Exception as exc:  # noqa: BLE001
+        return {"error": f"{type(exc).__name__}: {exc}"}

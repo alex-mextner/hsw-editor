@@ -98,10 +98,11 @@ def build_proposal(
     auto_apply_confidence: float | None = None,
     min_confidence: float = 0.5,
     anchor_mm: tuple[float, float] = (0.0, 0.0),
+    segmentation_digest: str = "",
 ) -> dict[str, Any]:
     """`objects`: one dict per fitted object with `instance_id`, `centre_mm` [x, y], `fit`, `confidence`,
     `needs_view`, optional `recognition` and `glb` (relative path) + `glb_pose` (heading/x/y/z)."""
-    sid = short_id(image_sha256)
+    sid = short_id(image_sha256) + (segmentation_digest[:4] if segmentation_digest else "")
     grid_cells = bool(calibration and calibration.get("method") == "grid")
     items: list[dict[str, Any]] = []
     for index, obj in enumerate(sorted(objects, key=lambda o: o["instance_id"])):

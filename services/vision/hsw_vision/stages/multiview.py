@@ -66,7 +66,7 @@ def view_confidence(check: dict[str, Any]) -> float | None:
     if not check.get("views"):
         return None
     value = check.get("min_iou")
-    return None if value is None else float(value)
+    return None if value is None else (0.0 if value != value else float(value))
 
 
 def needs_view(check: dict[str, Any], confidence: float, threshold: float) -> bool:

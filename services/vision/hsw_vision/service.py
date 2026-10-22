@@ -54,6 +54,12 @@ def _load_rgb(path: Path) -> np.ndarray:
     return tv_io.load_rgb(path)
 
 
+def segmentation_digest(segmentation: dict[str, Any]) -> str:
+    """Identity of a segmentation's CONTENT: a refresh into the same seg-<params> dir can renumber instances, so the
+    dir name alone must not key recognise/fit results or proposal ids."""
+    return params_hash([(i["id"], i["bbox_xywh"], i["area_px"]) for i in segmentation["instances"]])[:12]
+
+
 def library_version() -> str:
     try:
         return metadata.version("threed-vision")
@@ -183,7 +189,7 @@ class VisionService:
     ) -> dict[str, Any]:
         classes = stage_recognise.classes_from_bank(bank_index)
         key = {
-            "seg": segmentation["dir"],
+            "seg": segmentation_digest(segmentation),
             "instances": sorted(instance_ids),
             "classes": classes,
             "bank": (bank_index or {}).get("contentHash"),
@@ -219,7 +225,7 @@ class VisionService:
         camera = self.camera(calibration)
         resolved_device = device or self.config.device
         key = {
-            "seg": segmentation["dir"],
+            "seg": segmentation_digest(segmentation),
             "instance": instance_id,
             "cal": params_hash(calibration.get("core") or calibration.get("camera"))[:16],
             "fixed": fixed_dims,

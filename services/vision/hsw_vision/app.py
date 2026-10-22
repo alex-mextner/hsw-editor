@@ -22,7 +22,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from hsw_vision import __version__
 from hsw_vision import photo_to_wall as pipeline
 from hsw_vision.config import VisionConfig
-from hsw_vision.errors import BadRequest, VisionServiceError, error_json_for
+from hsw_vision.errors import VisionServiceError, error_json_for
 from hsw_vision.schemas import (
     CalibrateRequest,
     FitRequest,
@@ -149,6 +149,7 @@ def create_app(
         svc = get_service()
         img = svc.open(req)
         calibration = svc.calibrate(img, req.calibrate, req.segment)
+        svc.camera(calibration)  # no scale: the cheap 422 comes before a SAM2 run
         seg = svc.segment(img, req.segment)
         result = svc.fit(
             img, seg, req.instance, calibration,

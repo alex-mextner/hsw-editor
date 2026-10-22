@@ -15,8 +15,6 @@ from hsw_vision.geometry import Camera, rotation_z_deg, rz
 from hsw_vision.manager import is_oom
 
 DIM_KEYS = ("length_mm", "max_width_mm", "thickness_mm")
-#: Params keys of `packages/core` items (`setParams`) <-> library dimension names.
-PARAM_OF_DIM = {"length_mm": "length", "max_width_mm": "width", "thickness_mm": "thickness"}
 
 
 def _lib() -> Any:
@@ -88,18 +86,23 @@ def fit_mask(
     return out
 
 
+def _unit(value: float) -> float:
+    """Clamp to [0, 1]; NaN (0/0 IoU of two empty silhouettes) is 0, never 1."""
+    return 0.0 if value != value else float(max(0.0, min(1.0, value)))
+
+
 def fit_confidence(fit: dict[str, Any], single_view_cap: float) -> float:
     """Geometry confidence in [0, 1]: held-out IoU when a held-out view exists, else the worst training IoU
     (capped for a single view, whose silhouette fit says little about the unseen 3-D shape)."""
     conf = fit.get("confidence") or {}
     heldout = conf.get("heldout_iou")
     if heldout is not None:
-        return float(max(0.0, min(1.0, heldout)))
+        return _unit(heldout)
     train = conf.get("train_min_iou")
     if train is None:
         views = fit.get("views") or []
         train = min((v.get("iou", 0.0) for v in views), default=0.0)
-    value = float(max(0.0, min(1.0, train)))
+    value = _unit(train)
     n_views = int(conf.get("n_views") or len(fit.get("views") or []) or 1)
     return min(value, single_view_cap) if n_views <= 1 else value
 
