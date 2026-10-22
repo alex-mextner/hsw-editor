@@ -81,11 +81,15 @@ export function BankDetail({ element, index, onBack, onAdd }: BankDetailProps) {
   // Window-level, because the grid card that had focus is gone and focus falls back to <body>.
   useEffect(() => {
     const onKeyDown = (event: globalThis.KeyboardEvent): void => {
-      if (event.key !== 'Escape' || event.defaultPrevented || isTypingTarget(event.target)) return;
+      if (event.key !== 'Escape' || isTypingTarget(event.target)) return;
+      // An open dialog (compare, calibration) owns Escape.
+      if (document.querySelector('[role="dialog"]:not([data-hsw-inline])')) return;
+      // Capture phase: going back wins over the global deselect shortcut.
+      event.preventDefault();
       onBack();
     };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [onBack]);
 
   const { dimsMm, footprint } = element;
