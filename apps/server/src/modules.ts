@@ -9,6 +9,7 @@
  *   export const modules: ServerModule[] = [drawModule];
  */
 import { bankModule } from './bank-routes.ts';
+import { clientErrorsModule } from './clientErrors.ts';
 import type { Server, WebSocketHandler } from 'bun';
 import type { ServerConfig } from './config.ts';
 import type { JobRunner } from './jobs.ts';
@@ -42,4 +43,4 @@ export interface ServerModule {
   readonly websocket?: WebSocketHandler<ModuleSocketData>;
 }
 
-export const modules: ServerModule[] = [bankModule];
+export const modules: ServerModule[] = [bankModule, clientErrorsModule];

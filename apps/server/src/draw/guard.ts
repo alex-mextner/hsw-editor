@@ -7,7 +7,7 @@ import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { DRAW_BACKEND_IDS, type DrawBackendId, DrawError } from '@hsw-editor/draw';
 import { type OwnerLock, acquireOwnerLock } from './owner-lock.ts';
-import { SerialQueue } from './serial-queue.ts';
+import { SerialQueue } from '../serial-queue.ts';
 
 export const DAY_MS = 86_400_000;
 export const DEFAULT_QUOTA_BLOCK_MS = 3_600_000;
