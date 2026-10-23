@@ -6,13 +6,14 @@
  * To add one, create it in your own directory and append it to `modules` below (a one-line change):
  *
  *   import { drawModule } from './draw/routes.ts';
- *   export const modules: ServerModule[] = [drawModule];
+ *   export const modules: ServerModule[] = [ompModule, drawModule];
  */
 import { bankModule } from './bank-routes.ts';
 import { clientErrorsModule } from './clientErrors.ts';
 import type { Server, WebSocketHandler } from 'bun';
 import type { ServerConfig } from './config.ts';
 import type { JobRunner } from './jobs.ts';
+import { ompModule } from './omp/module.ts';
 import type { SettingsStore } from './settings.ts';
 import type { WallStore } from './store/wall-store.ts';
 
@@ -41,6 +42,8 @@ export interface ServerModule {
   ): Response | undefined | null | Promise<Response | undefined | null>;
   /** WebSocket frames for sockets this module upgraded. */
   readonly websocket?: WebSocketHandler<ModuleSocketData>;
+  /** Release long-lived resources (child processes, sockets); called once when the daemon stops. */
+  stop?(): Promise<void>;
 }
 
-export const modules: ServerModule[] = [bankModule, clientErrorsModule];
+export const modules: ServerModule[] = [bankModule, clientErrorsModule, ompModule];

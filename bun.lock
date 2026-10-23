@@ -20,6 +20,7 @@
         "@hsw-editor/bank": "workspace:*",
         "@hsw-editor/core": "workspace:*",
         "@hsw-editor/draw": "workspace:*",
+        "@hsw-editor/omp-protocol": "workspace:*",
         "@hsw-editor/user-settings": "workspace:*",
         "sharp": "^0.35.5",
         "zod": "^4.3.6",
@@ -103,6 +104,13 @@
     "packages/draw": {
       "name": "@hsw-editor/draw",
       "version": "0.1.0",
+    },
+    "packages/omp-protocol": {
+      "name": "@hsw-editor/omp-protocol",
+      "version": "0.1.0",
+      "dependencies": {
+        "@oh-my-pi/pi-wire": "18.12.6",
+      },
     },
     "packages/overlay": {
       "name": "@hsw-editor/overlay",
@@ -336,6 +344,8 @@
     "@hsw-editor/core": ["@hsw-editor/core@workspace:packages/core"],
 
     "@hsw-editor/draw": ["@hsw-editor/draw@workspace:packages/draw"],
+
+    "@hsw-editor/omp-protocol": ["@hsw-editor/omp-protocol@workspace:packages/omp-protocol"],
 
     "@hsw-editor/overlay": ["@hsw-editor/overlay@workspace:packages/overlay"],
 

@@ -22,9 +22,22 @@ export interface StartOptions {
   hooks?: StoreHooks;
 }
 
+/**
+ * Bun takes one set of socket limits per server, so each module's limits are merged permissively: the
+ * largest payload, backpressure and idle values win, pings are on if any module wants them.
+ */
 function composeWebsocket(modules: readonly ServerModule[]): WebSocketHandler<ModuleSocketData> {
   const owner = (name: string) => modules.find((module) => module.name === name)?.websocket;
+  const handlers = modules.flatMap((module) => (module.websocket ? [module.websocket] : []));
+  const limits: Partial<Record<'maxPayloadLength' | 'backpressureLimit' | 'idleTimeout', number>> =
+    {};
+  for (const key of ['maxPayloadLength', 'backpressureLimit', 'idleTimeout'] as const) {
+    const values = handlers.flatMap((handler) => handler[key] ?? []);
+    if (values.length > 0) limits[key] = Math.max(...values);
+  }
   return {
+    ...limits,
+    ...(handlers.some((handler) => handler.sendPings) ? { sendPings: true } : {}),
     open: (ws) => owner(ws.data.module)?.open?.(ws),
     message: (ws, message) => owner(ws.data.module)?.message(ws, message),
     close: (ws, code, reason) => owner(ws.data.module)?.close?.(ws, code, reason),
@@ -69,8 +82,12 @@ export async function startServer(
     settings,
     url,
     async stop() {
-      await server.stop(true);
-      await store.close();
+      try {
+        await Promise.all(modules.map((module) => module.stop?.()));
+      } finally {
+        await server.stop(true);
+        await store.close();
+      }
     },
   };
 }
