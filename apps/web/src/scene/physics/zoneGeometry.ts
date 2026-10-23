@@ -1,7 +1,7 @@
 import type { BankElement, Vec3 } from '@hsw-editor/bank';
 import type { Wall, WallItem } from '@hsw-editor/core';
 import { resolveModel } from '@/bank/models.ts';
-import { itemBounds } from '../itemBounds.ts';
+import { itemBounds, placeholderBounds } from '../itemBounds.ts';
 
 /** What the amber marks of one tool are drawn on: its model when there is one, always with the stand-in box. */
 export interface ZoneGeometry {
@@ -25,7 +25,9 @@ export function physicsZoneGeometry(
   wall: Wall,
   bank: ReadonlyMap<string, BankElement>,
 ): ZoneGeometry | null {
-  const bounds = itemBounds(item, wall, bank);
+  // A tool with no known size is still drawn (as the generic placeholder box) and must be marked on that same box.
+  const bounds =
+    itemBounds(item, wall, bank) ?? (item.kind === 'tool' ? placeholderBounds(item, wall) : null);
   if (!bounds) return null;
   return {
     modelUrl: resolveModel(item, bank)?.lod0 ?? null,

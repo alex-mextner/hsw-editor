@@ -1,5 +1,6 @@
 /** Closed test solids (outward CCW triangles) for the physics tests: boxes, rods along Z, and unions of them. */
 import type { Mat3 } from '@hsw-editor/compat';
+import { SolidBody, type ToolBody } from './body.ts';
 import type { TriMesh } from './columns.ts';
 
 export interface MutableMesh {
@@ -124,8 +125,6 @@ export function union(...parts: MutableMesh[]): TriMesh {
   }
   return { positions: Float32Array.from(positions), indices: Uint32Array.from(indices) };
 }
-
-import { type ToolBody, SolidBody } from './body.ts';
 
 /** A plain bar: x +-w/2, y 0..length (butt to tip), z +-t/2; centre of gravity at mid length. */
 export function barTool(id = 'bar', length = 200, w = 20, t = 10, massG = 100): ToolBody {

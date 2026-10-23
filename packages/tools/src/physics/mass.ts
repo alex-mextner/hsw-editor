@@ -30,7 +30,7 @@
  * | glass                                      | 2.5    | soda-lime glass                          |
  * | paper (tape, labels)                       | .8     | paper/card 0.7-1.1                       |
  * | fabric                                     | .4     | woven strap, loose                       |
- * | paint (cast frames, enamel, can lacquer)   | 1.2 for thin coats; bodies of painted metal are treated as steel/cast iron (see `isPaintedMetal`) | |
+ * | paint (cast frames, enamel, can lacquer)   | 1.2 for thin coats; bodies of painted metal are treated as steel/cast iron (see `paintBaseDensity`) | |
  */
 import type { V3 } from '../math.ts';
 import type { Material, MaterialKind } from '../materials.ts';

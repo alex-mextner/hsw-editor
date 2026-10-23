@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from urllib.parse import quote
 import json
 import sys
 from typing import Any, Callable
@@ -185,9 +186,11 @@ def wall_export(args: argparse.Namespace, api: Api) -> int:
 
 
 def wall_physics(args: argparse.Namespace, api: Api) -> int:
-    path = f"/api/walls/{args.id}/physics"
-    if args.item:
-        path = f"/api/walls/{args.id}/items/{args.item}/physics"
+    wall = quote(args.id, safe="")
+    if args.item is not None:
+        path = f"/api/walls/{wall}/items/{quote(args.item, safe='')}/physics"
+    else:
+        path = f"/api/walls/{wall}/physics"
     data = api.request("GET", path)
     if args.json:
         return _dump(data)

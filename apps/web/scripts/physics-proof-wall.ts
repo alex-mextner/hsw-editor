@@ -17,7 +17,7 @@ import {
   type ToolInterface,
 } from '@hsw-editor/compat';
 import type { LeafOp, Pose } from '@hsw-editor/core';
-import { placementOfPose, seatTool, SolidBody } from '@hsw-editor/physics';
+import { seatTool, SolidBody } from '@hsw-editor/physics';
 import { readGlbSolid, readToolBody } from '@hsw-editor/physics/glb';
 import { exportGlb, generate, getToolClass } from '@hsw-editor/tools';
 
@@ -44,8 +44,8 @@ interface Scene {
   at: { x: number; y: number };
   /** `seated`: seatTool pose; `old`: the compat anchor pose. */
   how: 'seated' | 'old';
-  /** Extra copies of the tool on the same holder, `dx` mm to the right (a cramped neighbour). */
-  neighbour?: { dx: number };
+  /** Number of tools in consecutive slots of the holder (each seated next to the previous ones). */
+  count?: number;
 }
 
 const SCENES: readonly Scene[] = [
@@ -70,7 +70,7 @@ const SCENES: readonly Scene[] = [
     toolClass: 'wrench-combination',
     at: { x: 800, y: 300 },
     how: 'seated',
-    neighbour: { dx: 14 },
+    count: 2,
   },
 ];
 
@@ -117,17 +117,24 @@ for (const scene of SCENES) {
   if (scene.how === 'old') {
     poses.push(placeTool(ti, spec, slot, holderPose).pose);
   } else {
-    const seat = seatTool({
-      tool,
-      holder,
-      neighbours: [],
-      anchor: [holderPose.x + slot.anchor[0], holderPose.y + slot.anchor[1], slot.anchor[2]],
-      halfWidthMm: Math.min((spec.bboxMm.max.x - spec.bboxMm.min.x) / slots / 2, 14),
-      tipDown: prefersTipDown(ti),
-    });
-    if (seat === null) throw new Error(`${scene.toolClass}: no seat`);
-    poses.push(seat.pose);
-    if (scene.neighbour) poses.push({ ...seat.pose, x: seat.pose.x + scene.neighbour.dx });
+    const placed: SolidBody[] = [];
+    for (let k = 0; k < (scene.count ?? 1); k++) {
+      const at = mountSlots(spec, spec.fitsTool[0] ?? null)[k];
+      if (at === undefined) throw new Error('no slot');
+      const seat = seatTool({
+        tool,
+        holder,
+        neighbours: placed,
+        anchor: [holderPose.x + at.anchor[0], holderPose.y + at.anchor[1], at.anchor[2]],
+        halfWidthMm: Math.min((spec.bboxMm.max.x - spec.bboxMm.min.x) / slots / 2, 14),
+        tipDown: prefersTipDown(ti),
+      });
+      if (seat === null) throw new Error(`${scene.toolClass}: no seat`);
+      poses.push(seat.pose);
+      placed.push(
+        new SolidBody(`t${k}`, tool.mesh, seat.placement.rotation, seat.placement.position),
+      );
+    }
   }
   n += 1;
   const holderId = `holder-${scene.name}`;
@@ -162,7 +169,7 @@ for (const scene of SCENES) {
         modelRefId: `model-${scene.name}`,
         toolClass: ti.toolClass,
         parentId: holderId,
-        slot: 0,
+        slot: k,
         pose,
         params: { ...(scene.params ?? {}) },
         source: { type: 'manual' },

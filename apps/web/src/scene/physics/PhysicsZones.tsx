@@ -37,6 +37,7 @@ import { createStripeMaterial, setStripeDpr } from '../invalid-zones/stripeMater
 import { ModelBoundary } from '../ModelBoundary.tsx';
 import { MM } from '../units.ts';
 import { physicsHoverStore } from './hover.ts';
+import { withStripeColour } from './stripeColour.ts';
 import { physicsZoneGeometry, type ZoneGeometry } from './zoneGeometry.ts';
 
 const DEG = Math.PI / 180;
@@ -58,7 +59,9 @@ function collectParts(root: Object3D): Part[] {
   const parts: Part[] = [];
   root.traverse((node) => {
     const mesh = node as Mesh;
-    if (mesh.isMesh) parts.push({ geometry: mesh.geometry, local: mesh.matrixWorld.clone() });
+    if (mesh.isMesh) {
+      parts.push({ geometry: withStripeColour(mesh.geometry), local: mesh.matrixWorld.clone() });
+    }
   });
   return parts;
 }
@@ -244,13 +247,19 @@ type PartProps = Pick<ToolMarksProps, 'mark' | 'materials' | 'hot' | 'onHover'>;
 function ModelMarks({ url, ...rest }: PartProps & { readonly url: string }) {
   const gltf = useGLTF(url);
   const parts = useMemo(() => collectParts(gltf.scene), [gltf.scene]);
+  useEffect(
+    () => () => {
+      for (const part of parts) part.geometry.dispose();
+    },
+    [parts],
+  );
   return <Marks parts={parts} {...rest} />;
 }
 
 function BoxMarks(props: PartProps) {
   const { dimsMm, centreMm } = props.mark.geometry;
-  const box = useMemo<{ part: Part; owned: BoxGeometry }>(() => {
-    const owned = new BoxGeometry(dimsMm.x, dimsMm.y, dimsMm.z);
+  const box = useMemo<{ part: Part; owned: BufferGeometry }>(() => {
+    const owned = withStripeColour(new BoxGeometry(dimsMm.x, dimsMm.y, dimsMm.z));
     return {
       owned,
       part: {

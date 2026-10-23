@@ -51,8 +51,8 @@ describe('integrateMesh', () => {
 });
 
 describe('massPropertiesOfModel', () => {
-  test('cube 10 mm of density 1 g/cm3 weighs 1 g with inertia m(a²+b²)/12', () => {
-    const water = { ...plastic('#888'), name: 'water-like' };
+  test('cube of 10 mm in plastic weighs its volume times the plastic density with inertia m(a²+b²)/12', () => {
+    const water = { ...plastic('#888'), name: 'plastic' };
     // plastic is 1.05 g/cm3: compare against the table so the test pins the maths, not the table
     const rho = materialDensityGcm3(water);
     const m = ofParts(solid('cube', box(10, 10, 10), water));
