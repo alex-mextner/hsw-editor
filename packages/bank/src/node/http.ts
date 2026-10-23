@@ -21,6 +21,7 @@ import { createBank, type Bank, type ElementFilter, type MountingKind } from '..
 import { MOUNTING_KINDS, VariantRequestSchema, type BankIndex } from '../schema.ts';
 import { bankRoots, currentLink, generationsDir, listGenerations } from './generations.ts';
 import { composeIndex, searchIndexJson, withholdBroken } from './compose.ts';
+import { mergeUserElements, readUserRoot, type UserRootState } from './user/merge.ts';
 import { buildVariant, VariantError } from './variant.ts';
 import { firstProblemByElement, formatIssue, verifyBank, type VerifyIssue } from './verify.ts';
 import type { BankPaths } from './paths.ts';
@@ -48,6 +49,11 @@ export interface BankHandlerOptions {
   roots?: string[];
   /** Re-validate the root snapshot at most this often (ms); 0 = on every request. Default 500. */
   revalidateMs?: number;
+  /**
+   * Tree of user-made elements (`paths.userDir` in the daemon). Its elements are merged into the served
+   * index and its assets are served like the bank's own. Absent: no user elements (tests, tools).
+   */
+  userRoot?: string;
 }
 
 interface Served {
@@ -89,6 +95,8 @@ interface Snapshot {
   rebuiltAt: number;
   /** The first root with an index.json could not be read or verified (torn write, damage, a failed read). */
   decidingUnreadable: boolean;
+  /** State of the user tree when one is mounted. */
+  user: UserRootState | null;
 }
 
 function isMountingKind(value: string): value is MountingKind {
@@ -165,7 +173,12 @@ async function serveRoot(
 type LogOnce = (root: string, message: string) => void;
 
 /** Verifies every root with an index; the first usable one is served, the others only supply assets. */
-async function rebuild(roots: string[], signature: string, logOnce: LogOnce): Promise<Snapshot> {
+async function rebuild(
+  roots: string[],
+  signature: string,
+  logOnce: LogOnce,
+  userRoot: string | undefined,
+): Promise<Snapshot> {
   const states: RootState[] = [];
   const rejected: Rejected[] = [];
   const retained: Rejected[] = [];
@@ -204,6 +217,30 @@ async function rebuild(roots: string[], signature: string, logOnce: LogOnce): Pr
       rejected.push({ root, problems: [reason] });
     }
   }
+  let user: UserRootState | null = null;
+  if (userRoot !== undefined) {
+    user = await readUserRoot(userRoot);
+    states.push({ root: userRoot, sizes: user.sizes });
+    if (user.problems.length > 0)
+      logOnce(userRoot, `user elements not served: ${user.problems[0]}`);
+    if (user.withheld.length > 0)
+      logOnce(
+        userRoot,
+        `${user.withheld.length} user elements withheld, first: ${user.withheld[0]?.reason}`,
+      );
+    if (served && (user.elements.length > 0 || user.withheld.length > 0)) {
+      const view = mergeUserElements(served.bank.index, user.elements, user.withheld);
+      const searchJson = searchIndexJson(view);
+      served = {
+        ...served,
+        bank: createBank(view, searchJson),
+        etag: `"${view.contentHash}"`,
+        contentHash: view.contentHash,
+        paths: new Set(sizesOf(view).keys()),
+        searchJson,
+      };
+    }
+  }
   const now = Date.now();
   return {
     roots: states,
@@ -214,12 +251,17 @@ async function rebuild(roots: string[], signature: string, logOnce: LogOnce): Pr
     checkedAt: now,
     rebuiltAt: now,
     decidingUnreadable,
+    user,
   };
 }
 
-export function createBankHandler(
-  options: BankHandlerOptions,
-): (request: Request) => Promise<Response | null> {
+/** The request handler plus a hook for writers of the served data (user elements) to drop the cached snapshot. */
+export type BankHandler = ((request: Request) => Promise<Response | null>) & {
+  /** The next request re-checks every root instead of trusting the snapshot for `revalidateMs`. */
+  invalidate(): void;
+};
+
+export function createBankHandler(options: BankHandlerOptions): BankHandler {
   const revalidateMs = options.revalidateMs ?? CHECK_INTERVAL_MS;
   let snap: Snapshot | null = null;
   let pending: Promise<Snapshot> | null = null;
@@ -254,7 +296,9 @@ export function createBankHandler(
     if (snap && !dirty && Date.now() - snap.checkedAt < revalidateMs) return Promise.resolve(snap);
     pending = (async () => {
       const list = await roots();
-      const signature = await signatureOf(list);
+      const signature = await signatureOf(
+        options.userRoot === undefined ? list : [...list, options.userRoot],
+      );
       const previous = snap;
       const age = previous ? Date.now() - previous.rebuiltAt : Number.POSITIVE_INFINITY;
       // A request that proved damage forces a rebuild, but never more often than DIRTY_MIN_INTERVAL_MS.
@@ -267,7 +311,7 @@ export function createBankHandler(
         forced;
       const rebuilt = previous === null || stale;
       const next = rebuilt
-        ? await rebuild(list, signature, logOnce)
+        ? await rebuild(list, signature, logOnce, options.userRoot)
         : { ...previous, checkedAt: Date.now() };
       // The first root with an index decides. When its index cannot be read or verified (an ingest
       // mid-write, a failed read, damage) the bank already in use stays instead of a shrunken older root
@@ -305,7 +349,9 @@ export function createBankHandler(
       const info = await stat(file).catch(() => null);
       if (info?.size === expected) return file;
       // Present but truncated/replaced in the root being served: re-validate (debounced) so it is reported.
-      if (info && root === state.served?.root && state.served.paths.has(relative)) dirty = true;
+      const servedHere =
+        root === state.served?.root || (root === options.userRoot && state.user !== null);
+      if (info && servedHere && state.served?.paths.has(relative)) dirty = true;
     }
     return null;
   }
@@ -340,6 +386,15 @@ export function createBankHandler(
         generations,
         rejected: state.rejected,
         retainedDamaged: state.retained,
+        ...(state.user
+          ? {
+              user: {
+                elements: state.user.elements.length,
+                withheld: state.user.withheld,
+                problems: state.user.problems,
+              },
+            }
+          : {}),
         ...(deep ? { deep: { problems: issues.slice(0, 50).map(formatIssue) } } : {}),
       },
       { status: served ? 200 : 503, headers: { 'cache-control': 'no-store' } },
@@ -355,7 +410,7 @@ export function createBankHandler(
     return pending;
   }
 
-  return async (request) => {
+  const handle = async (request: Request): Promise<Response | null> => {
     const url = new URL(request.url);
     const { pathname } = url;
     if (!pathname.startsWith('/api/bank/') && !pathname.startsWith('/bank/assets/')) return null;
@@ -479,4 +534,9 @@ export function createBankHandler(
     }
     return json({ error: 'unknown bank route' }, { status: 404 });
   };
+  return Object.assign(handle, {
+    invalidate(): void {
+      if (snap) snap = { ...snap, checkedAt: 0 };
+    },
+  });
 }

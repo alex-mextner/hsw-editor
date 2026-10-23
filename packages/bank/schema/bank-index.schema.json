@@ -147,6 +147,10 @@
             "type": "string",
             "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
           },
+          "source": {
+            "type": "string",
+            "const": "user"
+          },
           "name": {
             "type": "object",
             "properties": {
@@ -586,7 +590,7 @@
             "properties": {
               "origin": {
                 "type": "string",
-                "enum": ["source-file", "project-original", "generated"]
+                "enum": ["source-file", "project-original", "generated", "user-upload"]
               },
               "source": {
                 "type": "object",

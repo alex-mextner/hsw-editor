@@ -15,7 +15,9 @@ export const BANK_SCHEMA_VERSION = 1 as const;
 export const slugSchema = z
   .string()
   .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/, 'expected lowercase kebab-case');
-const categoryPath = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?$/);
+export const categoryPath = z
+  .string()
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*(?:\/[a-z0-9]+(?:-[a-z0-9]+)*)?$/);
 const sha256Hex = z.string().regex(/^[0-9a-f]{64}$/);
 const assetPath = z.string().regex(/^(?:glb|thumb|variant)\/[0-9a-f]{16}\.(?:glb|webp)$/);
 
@@ -144,7 +146,7 @@ export const GeneratorRefSchema = z.object({
 export type GeneratorRef = z.infer<typeof GeneratorRefSchema>;
 
 export const ProvenanceSchema = z.object({
-  origin: z.enum(['source-file', 'project-original', 'generated']),
+  origin: z.enum(['source-file', 'project-original', 'generated', 'user-upload']),
   source: SourceRefSchema.optional(),
   generator: GeneratorRefSchema.optional(),
   /**
@@ -177,6 +179,11 @@ export type FitsTool = z.infer<typeof FitsToolSchema>;
 
 export const BankElementSchema = z.object({
   id: slugSchema,
+  /**
+   * Set (to `user`) on elements the user imported (`<home>/bank-user`, docs/bank.md "User elements"). Absent on
+   * everything the bank pipeline builds, so the committed seed and `bank:ingest` output never carry it.
+   */
+  source: z.literal('user').optional(),
   name: LocalizedTextSchema,
   description: LocalizedTextSchema.optional(),
   category: categoryPath,

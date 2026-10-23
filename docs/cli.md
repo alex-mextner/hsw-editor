@@ -55,6 +55,40 @@ hsw-editor wall undo garage
 
 All accept `--json`. Objects without a scale are listed with `needs scale` and are not added until the photo is calibrated.
 
+## Bank verbs
+
+Your own bank elements (#58): a mesh is uploaded, converted by the daemon into a normalised GLB in the wall frame and merged into
+the bank (`my-*` ids, `source: user`; see [bank.md](bank.md) and [api.md](api.md)). Need the running daemon; the converter needs
+`uv` (`hsw-editor doctor`).
+
+| Command | Effect |
+| --- | --- |
+| `bank add FILE --name TEXT --category ID [flags]` | upload `.stl`/`.glb`/`.3mf` (up to 100 MB), run the `bank.user.import` job, poll it (progress on stderr) and print `<id>  <name>  <category>  <dims>` |
+| `bank add --replace ID [FILE] [flags]` | replace a user element keeping its id; without FILE the stored original is re-converted (name and category default to the stored ones) |
+| `bank list [--all]` | id, name, category, tags, size, footprint of your elements; `--all` lists the whole bank with a `source` column (`user`\|`bank`) |
+| `bank show ID` | tags, tool classes, fitsTool, footprint and mounting, size, watertight/repaired, original file, dates |
+| `bank rm ID [--force]` | delete; exit 9 and the walls using it unless `--force` |
+| `bank edit ID [--name T] [--name-ru T] [--name-en T] [--category ID] [--tag T ...] [--add-tag T ...]` | change metadata only (at least one flag, else exit 2); `--tag` replaces all tags, `--add-tag` extends them |
+
+`add` flags: `--name` (both languages) or `--name-ru` / `--name-en` (a single language is mirrored), `--tag TEXT` (both
+languages) and `--tag-ru TEXT`, `--tool-class ID[:DIM=MIN-MAX,...][:capacity=N]` (repeatable; the class is also added to the
+element's tool classes), `--part ID`, `--out AXIS --up AXIS` (source axes, e.g. `+z`/`+y`; together or not at all),
+`--anchor back-bbox|origin|panel`, `--unit auto|mm|cm|m|in`, `--no-repair`, `--mounting hex-plug|m3-screw|clip|none` (cells are
+the ones detected for these settings), `--id my-x`. A missing file, a missing `--name`/`--category`, a half orientation or a
+malformed `--tool-class` exit 2 before any request. All bank verbs accept `--json` (`add` then prints the new element).
+
+Bank errors use the same exit codes: 2 for an unsupported format (415, fix: `.stl .glb .3mf`), a file over 100 MB (413) or an
+unreadable mesh (422 `mesh_unreadable`), 3 daemon down, 5 `element_not_found`, 9 `element_in_use`; a missing converter (503
+`converter_unavailable`) and a failed import job exit 1 with a `fix:` line.
+
+```sh
+hsw-editor bank add ~/models/driver-holder.stl --name "Driver holder" --category accessories \
+  --tag screwdriver --tool-class screwdriver:shaftDiameter=3-8:capacity=4 --out +z --up +y --mounting hex-plug
+hsw-editor bank list
+hsw-editor bank edit my-driver-holder --add-tag organizer
+hsw-editor bank rm my-driver-holder --force
+```
+
 ## doctor
 
 `hsw-editor doctor [--json]` prints `ok`, `warn` or `FAIL` per check, with a `fix:` line for everything that is not ok. Only

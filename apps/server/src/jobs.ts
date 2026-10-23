@@ -68,6 +68,8 @@ export interface JobContext {
   progress(update: JobProgress): void;
   log(message: string): void;
   readonly walls: JobWalls;
+  /** The daemon's data home (`HSW_EDITOR_HOME`): jobs that own on-disk state (bank-user) resolve it from here. */
+  readonly home: string;
 }
 
 export interface JobHandler<I> {
@@ -151,6 +153,7 @@ export class JobRunner {
   constructor(
     private readonly registry: JobRegistry,
     private readonly walls: JobWalls,
+    private readonly home: string,
     private readonly now: () => Date = () => new Date(),
   ) {}
 
@@ -256,6 +259,7 @@ export class JobRunner {
       wallId: job.wallId,
       signal: record.controller.signal,
       walls: this.walls,
+      home: this.home,
       progress: (update) => {
         if (TERMINAL.has(job.state)) return;
         job.progress = update;

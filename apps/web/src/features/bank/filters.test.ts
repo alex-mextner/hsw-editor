@@ -90,6 +90,18 @@ describe('combined filters', () => {
     expect(ids({})).toEqual(['a', 'b', 'c', 'd']);
   });
 
+  test('the "mine" origin keeps only the user\'s own elements and "sources" drops them', () => {
+    const mine = element('m', { source: 'user' });
+    const downloaded = element('s');
+    const generated = element('g', { generated: true });
+    const all = [mine, downloaded, generated];
+    const ids = (patch: Partial<BankFilters>) => applyFilters(all, filters(patch)).map((e) => e.id);
+    expect(ids({ origin: 'mine' })).toEqual(['m']);
+    expect(ids({ origin: 'sources' })).toEqual(['s']);
+    expect(ids({ origin: 'generated' })).toEqual(['g']);
+    expect(ids({})).toEqual(['m', 's', 'g']);
+  });
+
   test('size buckets cover 1, 2, 3-4 and 5+ cells', () => {
     expect([1, 2, 3, 4, 5, 12].map(sizeBucket)).toEqual([
       's1',

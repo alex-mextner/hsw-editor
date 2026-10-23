@@ -9,6 +9,11 @@ export interface BankPaths {
   repoRoot: string;
   /** Built bank served by the server: index.json, search-index.json, glb/, thumb/, variant/. */
   bankDir: string;
+  /**
+   * Tree of user-made elements (`<home>/bank-user`): a bank in the same format as a generation (index.json,
+   * glb/, thumb/) plus `meta/`, `sources/` and `uploads/`. Never touched by ingest, adopt or the seed export.
+   */
+  userDir: string;
   /** Scratch and caches of the pipeline. */
   cacheDir: string;
   /** Python virtualenv of scripts/bank/py (uv). */
@@ -34,6 +39,7 @@ export function bankPaths(env: Record<string, string | undefined> = process.env)
   return {
     repoRoot: REPO_ROOT,
     bankDir: env.HSW_BANK_DIR ?? join(data, 'bank'),
+    userDir: env.HSW_BANK_USER_DIR ?? join(data, 'bank-user'),
     cacheDir: join(cache, 'bank-build'),
     venvDir: join(cache, 'bank-venv'),
     sourcesDir: env.HSW_SOURCES_DIR ?? join(home, 'dev/garage-band/projects/HSW'),

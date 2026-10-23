@@ -14,6 +14,7 @@ export const ORIGIN_LABELS: Readonly<Record<OriginFilter, MessageKey>> = {
   all: 'bank.originOption.all',
   generated: 'bank.originOption.generated',
   sources: 'bank.originOption.sources',
+  mine: 'bank.originOption.mine',
 };
 
 /** Message keys for the enum-valued fields shown in the detail view. */
@@ -34,6 +35,7 @@ export const PROVENANCE_LABELS: Readonly<Record<Provenance['origin'], MessageKey
   'source-file': 'bank.provenance.source-file',
   'project-original': 'bank.provenance.project-original',
   generated: 'bank.provenance.generated',
+  'user-upload': 'bank.provenance.user-upload',
 };
 
 export const SITE_LABELS: Readonly<Record<SourceRef['site'], MessageKey>> = {

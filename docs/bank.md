@@ -172,3 +172,53 @@ and a grid of real sizes; each grid point becomes a `generated: true` element (`
 `POST /api/bank/elements/:id/variant` or `bun run bank:build-variant` renders any other value inside the ranges (clamped and
 snapped to the step), cached by parameter hash under `variant/`. Source elements without a generator declare variants as
 sibling elements of one `family` instead.
+
+## User elements
+
+A user can bring their own holder or panel into the bank (STL, GLB or 3MF): `hsw-editor bank add`, the *Add element* dialog of
+the web bank panel, or the routes in [api.md](api.md#user-elements-apibankuser-job-bankuserimport). The result is a normal
+`BankElement` with `source: "user"` (the *mine* badge), id `my-<slug>`, `provenance.origin: "user-upload"` and
+`license.redistributable: false` (never exported to the seed).
+
+**Storage** (`<home>/bank-user`, `HSW_BANK_USER_DIR`): a bank tree in the format of a generation (`index.json` with only the user
+elements, content-hashed `glb/` LOD0/LOD1 and `thumb/`), plus `meta/<id>.json` (import settings, original name/hash, repair
+report), `sources/<id>/original.<ext>` (the file as uploaded, so an element can be re-converted) and `uploads/` (24 h staging).
+It is deliberately NOT a bank generation: `bank:ingest` publishes a complete new bank from the HSW sources and would drop it.
+`bank:ingest`, `bank:adopt`, `bank:verify` and the seed export never read or write it. `bun scripts/bank/verify.ts --root <home>/bank-user` verifies it
+like any other bank tree. The daemon is the single writer: writes are serialised, assets are written before the index that
+references them, and the index is replaced atomically (tmp + fsync + rename), so a crash leaves the previous state. A corrupt
+`index.json` is never overwritten by a later write (`500 user_bank_corrupt`).
+
+**Serving** (`createBankHandler({ userRoot })`): the user tree is a second root next to the generations. The served view is the
+built bank plus the user elements, recomposed in memory (counts and `contentHash` are recomputed, so the index ETag changes with
+the user data), search index included; assets are served from whichever root lists them. The user root's `index.json` is part of
+the snapshot signature, and writers call `handler.invalidate()` so the next request sees the change at once. A damaged user
+element (missing/truncated file) is withheld into `unavailable`, a corrupt user index is ignored (listed under `user.problems` of
+`/api/bank/health`); neither affects the built bank, and a rebuilt bank (`bank:ingest`, generations, retention, withheld
+elements) never touches the user elements.
+
+**Conversion** (`scripts/bank/user/user_mesh.py`, run in the bank venv like `mesh_tool.py` and reusing its orientation, silhouette
+and thumbnail code; kept out of `scripts/bank/py` because that directory is hashed into the cache key of every built element):
+
+- Units: STL/3MF are millimetres; a glTF is metres, so with `unit: auto` a GLB smaller than 2 units across is scaled by 1000
+  (`mm|cm|m|in` override). Output is always millimetres.
+- Frame: STL and 3MF are Z-up, glTF is Y-up. `orient: { out, up }` names the SOURCE axis that points away from the wall and the
+  one that points up; the pipeline maps them with a proper rotation to the wall frame (x right, y up, z out, wall face at z = 0, see
+  "Geometry frame"). The default is guessed (hex plug end, else the largest flat face on the bounding box).
+- Anchor: `back-bbox` (default) finds the lattice phase from the wall-facing silhouette and puts the origin on the nearest cell
+  centre, `origin` keeps the source origin, `panel` anchors on the centre of the bounding box. The detected footprint is the lattice
+  cells under the silhouette; detected mounting cells are the silhouette's holes (M3 screws), else the footprint.
+- Parts: a 3MF/GLB with several parts imports the biggest by default; `partId` picks one, `*` merges all.
+- Watertight check and repair: vertices are welded, the mesh is probed for watertightness; if it is not and `repair` is on, holes
+  are filled and winding/normals fixed in process; a mesh still not watertight is handed to `3d mesh --repair` (meshfix; STL/3MF
+  with one part, only when the `3d` CLI and meshfix are installed, override the binary with `HSW_3D_BIN`). The outcome is reported
+  (`watertight`, `repaired`, `warnings`); a mesh that stays broken is still imported with a warning, because footprint and
+  thumbnail may then be off.
+- Thumbnail: the bank's headless pyrender/EGL renderer; on a machine without EGL a software rasteriser draws the same tile.
+- Compression: the same meshopt LOD0/LOD1 pipeline as the built bank (`compress.ts`); geometry hashes make an identical
+  re-import a `409 duplicate_element`.
+
+**Editing**: `PATCH` changes metadata only (name, category, tags, tool classes, `fitsTool` ranges, footprint cells, mounting kind
+and peg cells); changing geometry settings or the file is a re-import with `replaceId` (the id is kept; old assets are swept after an hour,
+so tabs holding the previous index still resolve them). `footprint` must contain `{0,0}`, mounting cells must be footprint cells, a
+mounting kind other than `none` needs at least one.

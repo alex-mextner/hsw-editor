@@ -5,7 +5,7 @@ Thin wrapper over the shared ``agenttools_service`` lib (agent-tools). The servi
 file with the hidden ``_serve`` verb, which exec()s the Bun server in the foreground, so the pid the
 lib tracks IS the server. Installed as ``~/.local/bin/hsw-editor`` (symlink to this file).
 
-Verbs: run|start|stop|restart|status|enable|disable (service lib), open, doctor, wall ... (HTTP API).
+Verbs: run|start|stop|restart|status|enable|disable (service lib), open, doctor, wall ... and bank ... (HTTP API).
 Other modules add verbs with ``register_verb`` (see the ``draw`` verb of the draw backends).
 Exit codes are a stable contract, see ``cli/hswlib/errors.py`` and ``docs/cli.md``.
 """
@@ -94,6 +94,7 @@ try:
         AutostartError,
         guard,
     )
+    from hswlib.bank import add_bank_parser, run_bank  # noqa: E402
     from hswlib.wall import add_wall_parser, run_wall  # noqa: E402
 
     LIBS_OK = True
@@ -223,6 +224,10 @@ def run_wall_verb(args: argparse.Namespace) -> int:
     return run_wall(args, Api(args.port))
 
 
+def run_bank_verb(args: argparse.Namespace) -> int:
+    return run_bank(args, Api(args.port))
+
+
 ACTIVE_PORT = [DEFAULT_PORT]  # resolved port for the lazy manager factory
 LIFECYCLE_VERBS = ("run", "start", "stop", "status", "enable", "disable")
 # start/enable return before the port answers; these verbs wait for the health endpoint afterwards
@@ -270,6 +275,7 @@ def build_parser() -> argparse.ArgumentParser:
     subs.add_parser("_serve")
     if LIBS_OK:
         add_wall_parser(subs)
+        add_bank_parser(subs)
         for hook in PARSER_HOOKS:
             hook(subs)
     for sub in subs.choices.values():
@@ -289,6 +295,8 @@ def dispatch(args: argparse.Namespace) -> int:
         return code
     if args.verb == "wall":
         return run_wall_verb(args)
+    if args.verb == "bank":
+        return run_bank_verb(args)
     handlers: dict[str, Handler] = {
         "_serve": serve,
         "doctor": run_doctor,
@@ -313,7 +321,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.verb is None:
         parser.print_help()
         return 0
-    if not LIBS_OK and args.verb in ("wall", "doctor"):
+    if not LIBS_OK and args.verb in ("wall", "bank", "doctor"):
         raise SystemExit(f"hsw-editor: agenttools_errors not importable. {INSTALL_HINT}")
     args.port = port_of(args)
     ACTIVE_PORT[0] = args.port

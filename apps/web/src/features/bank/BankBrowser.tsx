@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
 import { effectiveToolFilter, rankHoldersForTools } from '@hsw-editor/compat';
-import { SlidersHorizontalIcon } from 'lucide-react';
+import { PlusIcon, SlidersHorizontalIcon } from 'lucide-react';
 import type { BankElement, BankIndex } from '@hsw-editor/bank';
 import { createBankSearch, type BankSearch } from '@/bank/search.ts';
+import { Button } from '@/components/ui/button.tsx';
 import { IconButton } from '@/components/IconButton.tsx';
 import { useStore } from '@/state/react.ts';
 import { sessionStore } from '@/wall/session.ts';
@@ -47,10 +48,12 @@ interface BankBrowserProps {
   readonly panel: BankPanelState;
   readonly onOpen: (element: BankElement) => void;
   readonly onAdd: (element: BankElement) => void;
+  /** Opens the "Add element" dialog. */
+  readonly onAddElement: () => void;
 }
 
 /** Search + filters + virtual card grid of the loaded bank. */
-export function BankBrowser({ index, byId, panel, onOpen, onAdd }: BankBrowserProps) {
+export function BankBrowser({ index, byId, panel, onOpen, onAdd, onAddElement }: BankBrowserProps) {
   const { t, tn, locale } = useI18n();
   const { query } = panel;
   const toolFilter = useStore(toolFilterStore);
@@ -114,6 +117,17 @@ export function BankBrowser({ index, byId, panel, onOpen, onAdd }: BankBrowserPr
             </span>
           ) : null}
         </IconButton>
+        <Button
+          variant="outline"
+          size="icon"
+          data-testid="bank-add-element"
+          className="shrink-0"
+          aria-label={t('bank.add')}
+          title={t('bank.addTitle')}
+          onClick={onAddElement}
+        >
+          <PlusIcon aria-hidden />
+        </Button>
       </div>
       {panel.filtersOpen ? (
         <div className="max-h-[50vh] shrink-0 overflow-y-auto border-t border-border">

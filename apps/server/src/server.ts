@@ -55,15 +55,19 @@ export async function startServer(
     ...(options.hooks ? { hooks: options.hooks } : {}),
   });
   await store.init();
-  const jobs = new JobRunner(options.jobRegistry ?? defaultJobRegistry, {
-    get: (id) => store.get(id),
-    apply: (id, request) => store.apply(id, request),
-    addAsset: (id, slot) => store.addAsset(id, slot),
-    askUser: async (id, request, actor, signal) => {
-      const created = await store.createRequest(id, request, actor);
-      return store.awaitRequest(id, created.id, signal);
+  const jobs = new JobRunner(
+    options.jobRegistry ?? defaultJobRegistry,
+    {
+      get: (id) => store.get(id),
+      apply: (id, request) => store.apply(id, request),
+      addAsset: (id, slot) => store.addAsset(id, slot),
+      askUser: async (id, request, actor, signal) => {
+        const created = await store.createRequest(id, request, actor);
+        return store.awaitRequest(id, created.id, signal);
+      },
     },
-  });
+    config.home,
+  );
   const settings = new SettingsStore({ home: config.home });
   const handler = createHandler({ config, store, jobs, settings }, modules);
   const server = Bun.serve<ModuleSocketData>({
