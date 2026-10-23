@@ -69,7 +69,7 @@ export function bankIndex(
     categories: [],
     toolClasses: [],
     elements: [...elements],
-    ...(options.unavailable === undefined ? {} : { unavailable: options.unavailable }),
+    ...(options.unavailable === undefined ? {} : { unavailable: [...options.unavailable] }),
   };
 }
 
