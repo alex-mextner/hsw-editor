@@ -20,6 +20,8 @@ from typing import Callable
 
 HOST = "127.0.0.1"
 VISION_URL = os.environ.get("HSW_VISION_URL", "http://127.0.0.1:8795")
+# Written by `bun run build` only after vite succeeded (apps/web/package.json, scripts/lib/web-build.sh share the name).
+WEB_BUILD_STAMP = ".build-ok"
 
 
 @dataclass(frozen=True)
@@ -86,6 +88,9 @@ def check_web_build(ctx: Context) -> list[Check]:
     index = dist / "index.html"
     if not index.exists():
         return [Check("web build", "fail", f"{index} missing", "bun install && bun run build")]
+    if not (dist / WEB_BUILD_STAMP).exists():
+        return [Check("web build", "fail", f"{dist} has no {WEB_BUILD_STAMP}: the last build failed or was interrupted",
+                      "bun install && bun run build")]
     checks = [Check("web build", "ok", str(dist))]
     missing = [name for name in ("sw.js", "manifest.webmanifest") if not (dist / name).exists()]
     if missing:

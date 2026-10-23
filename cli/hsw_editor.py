@@ -85,6 +85,8 @@ def ensure_lib_path() -> str | None:
 sys.path.insert(0, str(CLI_DIR))
 LIB_DIR = ensure_lib_path()
 
+from hswlib.unit_lifecycle import VERBS as UNIT_VERBS, UnitControl, run_verb as run_unit_verb, unit_port  # noqa: E402 - stdlib only
+
 try:
     from hswlib import doctor as doctor_checks  # noqa: E402
     from hswlib.client import Api  # noqa: E402
@@ -212,9 +214,33 @@ def open_browser(args: argparse.Namespace) -> int:
     return 0
 
 
+def unit_control(mgr: Any, port: int) -> Any | None:
+    """The systemd unit controller when autostart owns the daemon on this port, else None (the pidfile daemon path)."""
+    backend = mgr.backend
+    if not (backend.manages_process and backend.is_installed(mgr.service)):
+        return None
+    if unit_port(backend.unit_path(mgr.service)) != port:
+        return None  # `--port N` addresses another daemon than the unit's
+    return UnitControl(f"{mgr.service.systemd_unit_name}.service")
+
+
+def run_unit_lifecycle(verb: str, unit: Any, mgr: Any, port: int) -> int:
+    return run_unit_verb(
+        verb,
+        unit,
+        name=SERVICE_NAME,
+        url=f"http://{HOST}:{port}/",
+        release_pidfile_daemon=mgr.stop,
+        wait_ready=lambda: ensure_serving(port),
+    )
+
+
 def restart(args: argparse.Namespace) -> int:
     lib = load_service_lib()
     mgr = manager(args.port)
+    unit = unit_control(mgr, args.port)
+    if unit is not None:
+        return run_unit_lifecycle("restart", unit, mgr, args.port)
     mgr.stop()
     code = lib.run_action(mgr, "start")
     return code if code != 0 else ensure_serving(args.port)
@@ -289,6 +315,11 @@ def port_of(args: argparse.Namespace) -> int:
 
 def dispatch(args: argparse.Namespace) -> int:
     if getattr(args, "_service_action", None):
+        if args.verb in UNIT_VERBS:
+            mgr = manager(args.port)
+            unit = unit_control(mgr, args.port)
+            if unit is not None:
+                return run_unit_lifecycle(args.verb, unit, mgr, args.port)
         code = int(load_service_lib().dispatch(args, on_no_subcommand=lambda: 0))
         if code == 0 and args.verb in WAIT_AFTER:
             return ensure_serving(args.port)

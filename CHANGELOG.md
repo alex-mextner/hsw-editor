@@ -143,6 +143,8 @@ needs an entry here first.
 ### Fixed
 
 - "Calibrate the photo" (palette) did nothing with the photo hidden (eye off in the Photos list). It now opens the calibrate view on the shown photo, or on the wall's first photo when none is shown, and so does the pencil of a photo row (photo mode is entered the usual way, clearing a stale "photo hidden"); Cancel on an already calibrated photo leaves it shown. The command is disabled (`hasPhoto`) when the wall has no photo (#215).
+- `hsw-editor start|stop|restart|status` go through the systemd user unit while autostart is enabled for that port (#216), so no second pidfile daemon fights the unit for the port and `status` shows the unit's real state.
+- The web build writes `apps/web/dist/.build-ok` only after a successful build; `scripts/install.sh` and `hsw-editor doctor` require it, so a failed or partial build is rebuilt or reported (#216; rebuild once after updating: `bun run build`).
 - The committed bank seed declares the current `TOOL_CLASSES` (it kept the 27 classes that predate the finer ones), so the
   palette, tool picker and bank filter on a seed-served bank offer chisel, punch, hacksaw, long-nose/locking/water-pump
   pliers, crimper and hex-key-set; `exportSeed` writes the vocabulary from `TOOL_CLASSES` instead of the built root (#156).

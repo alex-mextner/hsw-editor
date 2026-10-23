@@ -9,8 +9,8 @@ walls through its HTTP API ([api.md](api.md)). `--port N` selects another daemon
 | Command | Effect |
 | --- | --- |
 | `run` | foreground |
-| `start` / `stop` / `restart` | background daemon (pidfile `~/.local/state/hsw-editor/`, log `~/.cache/hsw-editor/hsw-editor.log`); `start` returns only once the API answers, otherwise exit 4 with the log path |
-| `status` | `running (pid, url) [autostart on]`, exit 3 when stopped |
+| `start` / `stop` / `restart` | background daemon (pidfile `~/.local/state/hsw-editor/`, log `~/.cache/hsw-editor/hsw-editor.log`); `start` returns only once the API answers, otherwise exit 4 with the log path. While autostart is enabled for the port (the unit's own `--port`; another `--port` keeps the pidfile path) the verbs go through `systemctl --user start\|stop\|restart agenttools-hsw-editor-hsw-editor.service` (a leftover pidfile daemon is stopped first), so exactly one daemon runs; `systemctl` failing or unreachable is exit 4, `stop` of an inactive unit exit 3 |
+| `status` | `running (pid, url) [autostart on]`, exit 3 when stopped; with autostart on, the pid is the unit's `MainPID` and an inactive unit reads `stopped` |
 | `enable` / `disable` | install / remove the systemd user unit `agenttools-hsw-editor-hsw-editor.service` (`Restart=on-failure`, `WantedBy=default.target`) and start / stop the daemon |
 | `open` | open the editor in the browser (exit 3 if the daemon is down) |
 | `--version` | read from the root `package.json` (`bun run release` is the only writer) |
@@ -120,7 +120,7 @@ backend is ready), `doctor`, `login chatgpt`, `stop`, `settings [auto|omp|chatgp
 | --- | --- | --- |
 | agent-tools lib | FAIL | `AGENT_TOOLS_LIB` or `~/dev/agent-tools/lib` |
 | bun | FAIL (warn on a version other than `.bun-version`) | |
-| web build | FAIL | `apps/web/dist/index.html` (`HSW_EDITOR_WEB_DIST` overrides) |
+| web build | FAIL | `apps/web/dist/index.html` plus the `.build-ok` stamp that `bun run build` writes only after a successful build (`HSW_EDITOR_WEB_DIST` overrides the directory); a build without the stamp is a failed or interrupted one, fix: `bun run build` |
 | offline assets | warn | `sw.js` + `manifest.webmanifest` in the build: without them the app does not work offline |
 | bank integrity | FAIL if the built bank is inconsistent, warn if absent (seed served) or the tooling is missing | runs `bun run bank:verify`: exit `0` consistent, `1` problems, `3` nothing built |
 | bank seed | FAIL if the committed seed is corrupt | `bank:verify --seed`; fix `git checkout packages/bank/seed` |
@@ -151,7 +151,7 @@ Errors print as `error: <what>`, `why:`, `fix:` (agenttools_errors).
 ## Install and release
 
 - `scripts/install.sh [--rebuild] [--no-build]`: idempotent. Always runs `bun install --frozen-lockfile` (a no-op when nothing
-  changed, so a pulled lockfile is picked up), builds the web app when `apps/web/dist` is missing (`--rebuild` forces it), links
+  changed, so a pulled lockfile is picked up), builds the web app when `apps/web/dist` lacks `index.html` or the `.build-ok` success stamp, so a failed or partial build is redone (`--rebuild` forces it), links
   `~/.local/bin/hsw-editor`. Needs no network when the bun cache is warm and the agent-tools lib is checked out.
 - `bun run release [patch|minor|major|x.y.z] [--dry-run] [--skip-checks]`: validates the `[Unreleased]` changelog section first,
   then lint, typecheck, tests, web build and a server bundle check, bumps every `package.json`, refreshes `bun.lock`, moves
