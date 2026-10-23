@@ -146,6 +146,11 @@ needs an entry here first.
   palette, tool picker and bank filter on a seed-served bank offer chisel, punch, hacksaw, long-nose/locking/water-pump
   pliers, crimper and hex-key-set; `exportSeed` writes the vocabulary from `TOOL_CLASSES` instead of the built root (#156).
 - `hsw-editor draw status|doctor|login|stop|settings|run` answered `invalid choice: 'draw'`: the verb was never registered in `cli/hsw_editor.py` (`cli/tests/test_draw_verb.py`).
+- Commands engine edge cases (#79): empty-query recents are filtered by availability before the cut, so stale ids no longer crowd real ones out;
+  a `repeat` command bound to a chord repeats while its last key is held, and holding a chord's first key past the timeout no longer restarts
+  it; a later chord stroke bound to Escape completes the chord; a bad palette-usage entry no longer wipes the whole record; hidden commands are
+  no longer AI-callable unless they set `aiHidden: false` (the per-setting commands do); `app_command` search queries are capped at 200
+  characters; command arguments are parsed once per AI run; `SettingsStore` throws on an unknown id from every accessor, not just `get`.
 
 ## [0.1.0] - 2026-10-22
 
