@@ -28,6 +28,13 @@ function parseLine(line: string): JsonValue | null {
   }
 }
 
+const PALETTE_BLOCK = /^<hsw-palette-mode>[\s\S]*?<\/hsw-palette-mode>\n/;
+
+/** Palette-mode prompts carry an instruction block (see the web paletteMode.ts); the preview shows the question only. */
+function withoutPaletteBlock(text: string): string {
+  return text.replace(PALETTE_BLOCK, '');
+}
+
 function userText(content: JsonValue | undefined): string | null {
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return null;
@@ -69,7 +76,7 @@ export function listSessionFiles(sessionDir: string): OmpSessionFile[] {
         } else if (entry['type'] === 'message' && preview === null) {
           const message = entry['message'];
           if (isJsonObject(message) && message['role'] === 'user') {
-            const text = userText(message['content']);
+            const text = withoutPaletteBlock(userText(message['content']) ?? '');
             if (text) preview = text.replace(/\s+/g, ' ').trim().slice(0, PREVIEW_CHARS);
           }
         }
