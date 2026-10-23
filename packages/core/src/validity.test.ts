@@ -5,6 +5,7 @@ import {
   broadphasePairs,
   compareReasons,
   forbiddenSlabs,
+  isBoundsChecked,
   itemWorldAabb,
   mayCollide,
   poseKey,
@@ -214,6 +215,15 @@ describe('mayCollide', () => {
     expect(mayCollide(holder, other)).toBe(true);
     expect(mayCollide(tool, other)).toBe(true);
     expect(mayCollide(holder, { id: 'p', kind: 'photo-ref' })).toBe(false);
+  });
+});
+
+describe('isBoundsChecked', () => {
+  test('holders and board parts must stay in the prism; a tool may overhang the board edge (tg#24300)', () => {
+    expect(isBoundsChecked({ kind: 'holder' })).toBe(true);
+    expect(isBoundsChecked({ kind: 'board-part' })).toBe(true);
+    expect(isBoundsChecked({ kind: 'tool' })).toBe(false);
+    expect(isBoundsChecked({ kind: 'photo-ref' })).toBe(false);
   });
 });
 

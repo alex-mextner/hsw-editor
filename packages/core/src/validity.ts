@@ -156,6 +156,15 @@ export function isSolid(item: Pick<WallItem, 'kind'>): boolean {
 }
 
 /**
+ * Whether the item must stay inside the board prism. A hung tool's free end may overhang the board edge (user rule
+ * tg#24300: whether it still hangs well is the physics check's question, not geometry's), so only holders and board
+ * parts are held to the prism. Overlap checks (`mayCollide`) are unaffected.
+ */
+export function isBoundsChecked(item: Pick<WallItem, 'kind'>): boolean {
+  return isSolid(item) && item.kind !== 'tool';
+}
+
+/**
  * Whether the overlap of two items is a defect worth testing. A tool interpenetrating the holder it is parented to
  * is the mating interface (the pocket is not modelled as a cavity of the right size), not a collision. Two tools in
  * the same holder are still checked against each other: sharing a holder does not allow them to share volume.

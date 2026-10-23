@@ -1,0 +1,21 @@
+{
+  "name": "@hsw-editor/physics",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pure rigid-body statics for tools on a wall: seating in holders, hang stability and removal ergonomics.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./glb": "./src/glb.ts"
+  },
+  "dependencies": {
+    "@hsw-editor/compat": "workspace:*",
+    "@hsw-editor/core": "workspace:*",
+    "manifold-3d": "^3.5.4",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@hsw-editor/tools": "workspace:*",
+    "@types/three": "^0.180.0"
+  }
+}

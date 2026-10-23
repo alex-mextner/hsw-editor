@@ -243,6 +243,53 @@ Import (several photos of one tool, or photos with several tools) goes through a
 
 Errors use the shape above; extra codes: `tool_not_found`, `class_not_found`, `draft_not_found` (404), `unsupported_media_type` (415), `invalid_request` (400, unknown class / preset, impossible edit), `conflict` (409, draft busy or already added), `vision_unavailable` (502: sidecar down, `HSW_VISION_URL`, default `http://127.0.0.1:8795`).
 
+## Physics
+
+Tools have mass and a centre of gravity, so they really hang. The daemon judges the tools of a stored wall exactly as the
+editor does (maths in [physics.md](physics.md)): holders and board parts are the bank GLBs at the item's pose and dimensions,
+tools are the generated class model (`gen:<class>` model ref or the item's `toolClass`, with the item's `params`) or the
+user's library tool (`tool:<id>` model ref), each tool is judged on the holder named by its `parentId`, every other tool and
+board part is an obstacle at its own pose. Read-only; `manifold-3d` is loaded on first use. Implemented in
+`apps/server/src/physics/` (module `physics`), the agent tool is `wall_analyse_hang` ([omp.md](omp.md)).
+
+| Method & path | Response |
+| --- | --- |
+| `GET /api/walls/:id/physics` | `WallPhysicsView` of the whole wall |
+| `GET /api/walls/:id/items/:itemId/physics` | the same for one tool (`tools` has one entry; the other tools stay in its way) |
+
+```ts
+WallPhysicsView = {
+  wallId, rev,
+  tools: [{
+    toolId, label: string | null, holderId,
+    status: 'stable' | 'marginal' | 'unstable',  // hang status
+    score: number,    // hang stability 0..1
+    rating: number,   // hang score and removal convenience folded, 0..1 (hang counts twice)
+    problems: [{ code, severity: 'error' | 'warning', params, text }],
+    hang: { score, status, reasons, marginsG, massG, contactCount, penetrationMm, swingDeg, rest: { tiltDeg, position } | null },
+    removal: RemovalReport | null,  // verdict free | needs_tilt | needs_two_hands | blocked, convenience, path, clearanceMm, ...
+  }],
+  flagged: number,   // tools with at least one problem
+  skipped: [{ toolId, reason }],  // no_holder | holder_missing | no_model | no_physics
+}
+```
+
+`code` is one of `levitating`, `penetrates` (not seated: stuck in the holder), `falls`, `tips`, `swings`, `slides_off`,
+`needs_retention`, `overloaded`, `removal_blocked`, `removal_needs_tilt`, `removal_two_hands`; `params` carries the numbers
+(`gapMm`, `depthMm`, `swingDeg`, `swayMm`, `marginG`, `neededG`, `massG`, `maxLoadG`, `blockedBy`, `path`, `reasons`). `text` is
+one English sentence built from them (`describeProblemEn`), for example `Floats about 42 mm above its holder: nothing touches
+it, so it would fall.`, `Swings freely (about 17° when bumped, about 40 mm sideways).`, `Needs two hands to take off: it is
+heavy, there is little room for fingers beside it.`, `Cannot be taken off: blocked by i-7.`. The page has its own ru/en
+catalogue for the same codes. A tool that overhangs the board edge is not a problem; only physics is judged. Bank elements
+carry no per-slot load rating, so `overloaded` needs a `maxLoadG` the bank does not provide yet.
+
+Items the analysis could not judge are listed in `skipped` (whole wall) instead of failing: `no_holder` (no `parentId`),
+`holder_missing` (the parent is not a holder on this wall or its element is not in the served bank), `no_model` (a plain
+box preset of a class without a generator), `no_physics` (the model carries no mass).
+
+Errors: `404 wall_not_found`, `404 item_not_found` (unknown `:itemId`), `409 not_a_hung_tool` (the item is not a tool, or
+the tool was not analysed: `details.reason` is the `skipped` reason), `400 invalid_id`, `405 method_not_allowed`.
+
 ## Jobs
 
 Long-running work (vision, drawing). Handlers are registered in-process with `registerJob` (`apps/server/src/jobs.ts`).

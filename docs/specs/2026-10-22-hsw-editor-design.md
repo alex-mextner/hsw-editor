@@ -22,6 +22,19 @@ Also required by the user:
   (unlimited.rs, evidence: NS dns1-4.unlimited.rs). Use keychain-cli. If something cannot be done, prepare all so the
   user finishes with minimal steps.
 
+## Clarifications log (user, normative)
+- **Physics of tools (tg#24290, 2026-10-23).** Tools are physical bodies with a mass and a centre of gravity (from material and
+  volume), so they really hang. The editor must detect when a tool hangs unstably (swings, tips, slides, falls out of its
+  holder) and when it is awkward to take off (the removal path is blocked by neighbours, the shelf or the holder lip, it needs
+  two hands, it collides on extraction). Tickets #167; design and calibration in `docs/physics.md`.
+- **Levitating tools (tg#24292).** The first review of tools drawn as models showed a hammer and a caliper resting on top of their
+  holders, screwdrivers and files floating above their racks, a tape roll on a peg without contact (reference
+  `docs/references/user-levitating-tools-2026-10-22.jpg`). A tool must be seated INSIDE its holder's slot, clip or peg and touch
+  it; the detector flags what is not (no support contact, centre of gravity outside the support, geometry not seated).
+- **Overhang is allowed (tg#24300).** A tool may hang over the board edge and stick up or sideways beyond it; that is not invalid.
+  Only physics problems (unstable support, awkward removal, collisions between tools and holders) are flagged, and a tool beyond
+  the edge is a physics problem only if its centre of gravity or support makes it unstable.
+
 ## Facts found (recon 2026-10-22)
 - agent-tools is a Python/markdown catalog, not an npm lib. Daemon verbs come from `lib/agenttools_service`
   (run|start|stop|status|enable|disable; pidfile, log, systemd user unit; `Service(name, argv, port, host, tool, description)`).

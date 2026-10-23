@@ -39,6 +39,7 @@
         "@hsw-editor/core": "workspace:*",
         "@hsw-editor/omp-protocol": "workspace:*",
         "@hsw-editor/overlay": "workspace:*",
+        "@hsw-editor/physics": "workspace:*",
         "@hsw-editor/tools": "workspace:*",
         "@hsw-editor/user-settings": "workspace:*",
         "@oh-my-pi/pi-wire": "18.12.6",
@@ -127,6 +128,20 @@
       "version": "0.1.0",
       "dependencies": {
         "@hsw-editor/core": "workspace:*",
+      },
+    },
+    "packages/physics": {
+      "name": "@hsw-editor/physics",
+      "version": "0.1.0",
+      "dependencies": {
+        "@hsw-editor/compat": "workspace:*",
+        "@hsw-editor/core": "workspace:*",
+        "manifold-3d": "^3.5.4",
+        "three": "^0.180.0",
+      },
+      "devDependencies": {
+        "@hsw-editor/tools": "workspace:*",
+        "@types/three": "^0.180.0",
       },
     },
     "packages/tools": {
@@ -370,6 +385,8 @@
     "@hsw-editor/omp-protocol": ["@hsw-editor/omp-protocol@workspace:packages/omp-protocol"],
 
     "@hsw-editor/overlay": ["@hsw-editor/overlay@workspace:packages/overlay"],
+
+    "@hsw-editor/physics": ["@hsw-editor/physics@workspace:packages/physics"],
 
     "@hsw-editor/server": ["@hsw-editor/server@workspace:apps/server"],
 
@@ -813,7 +830,7 @@
 
     "cn": ["cn@0.5.0", "", { "bin": { "cn": "bin/cn.mjs" } }, "sha512-JGEixZEpfFXm1P5uXwvEobOFLlHwIWi5v4tjd1ZwfiYmcEilkuD2l+054rvJcYCR1B+uVThHeUbgmNz1FwuxuA=="],
 
-    "commander": ["commander@15.0.0", "", {}, "sha512-z67u4ZhzCL/Tydu1lJARtEZYWbWaN7oYLHbsuzocr6y4N6WZAagG3RQ4FW61V1/0+jImpj293XfrcYnd1qxtPg=="],
+    "commander": ["commander@13.1.0", "", {}, "sha512-/rFeCpNJQbhSZjGVwO9RFV3xPqbnERS8MmIQzCtD/zl6gpJuV/bMLuN92oG3F7d8oDEHHRrujSXNUr8fpjntKw=="],
 
     "common-tags": ["common-tags@1.8.2", "", {}, "sha512-gk/Z852D2Wtb//0I+kRFNKKE9dIIVirjoqPoA1wJU+XePVXZfGeBpk45+A1rKO4Q43prqWBNY/MiIeRLbPWUaA=="],
 
@@ -1423,7 +1440,7 @@
 
     "filelist/minimatch": ["minimatch@5.1.9", "", { "dependencies": { "brace-expansion": "^2.0.1" } }, "sha512-7o1wEA2RyMP7Iu7GNba9vc0RWWGACJOCZBJX2GJWip0ikV+wcOsgVuY9uE8CPiyQhkGFSlhuSkZPavN7u1c2Fw=="],
 
-    "manifold-3d/commander": ["commander@13.1.0", "", {}, "sha512-/rFeCpNJQbhSZjGVwO9RFV3xPqbnERS8MmIQzCtD/zl6gpJuV/bMLuN92oG3F7d8oDEHHRrujSXNUr8fpjntKw=="],
+    "katex/commander": ["commander@15.0.0", "", {}, "sha512-z67u4ZhzCL/Tydu1lJARtEZYWbWaN7oYLHbsuzocr6y4N6WZAagG3RQ4FW61V1/0+jImpj293XfrcYnd1qxtPg=="],
 
     "path-scurry/lru-cache": ["lru-cache@11.5.3", "", {}, "sha512-U4N8FgzmWxc8k1VH8Kr6lQg18U7Fjvby6wXHVRX/ZZ7IwWbRMgrRbP0Wrb5q5NVinryp4SQampHKdvtecItxUg=="],
 
