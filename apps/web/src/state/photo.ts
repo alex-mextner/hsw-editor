@@ -76,8 +76,16 @@ export function leavePhotoMode(): void {
   patchPhoto({ photoId: null, calibrating: false, split: null, align: null, draft: null });
 }
 
+/**
+ * Opens the wizard on `photoId`. From another photo, or from photo mode off, photo mode is entered the usual way
+ * (clearing a stale "photo hidden" and the divider); on the shown photo only the wizard opens.
+ */
 export function startCalibration(photoId: string): void {
-  patchPhoto({ photoId, calibrating: true, align: null, draft: null });
+  if (photoStore.get().photoId !== photoId) {
+    enterPhotoMode(photoId, { calibrated: false });
+    return;
+  }
+  patchPhoto({ calibrating: true, align: null, draft: null });
 }
 
 export function finishCalibration(): void {

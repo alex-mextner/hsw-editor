@@ -116,6 +116,16 @@ describe('editor defaults', () => {
     expect(calls).toEqual(['checkPhysics']);
   });
 
+  test('photo.calibrate runs with a photo on the wall and is refused without one', async () => {
+    const { actions, calls } = recordingActions();
+    const registry = new CommandRegistry();
+    registry.register(...createEditorCommands(actions));
+    await registry.run('photo.calibrate', undefined, { ...SELECTED, hasPhoto: false });
+    expect(calls).toEqual([]);
+    await registry.run('photo.calibrate', undefined, { ...SELECTED, hasPhoto: true });
+    expect(calls).toEqual(['calibratePhoto']);
+  });
+
   test('physics.seat edits the wall, has ru/en titles and no default shortcut', async () => {
     const { actions, calls } = recordingActions();
     const registry = new CommandRegistry();

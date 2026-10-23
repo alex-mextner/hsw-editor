@@ -27,13 +27,18 @@ export function showPhoto(photo: Photo): void {
   enterPhotoMode(photo.id, { calibrated: photo.calibration !== undefined });
 }
 
+/** The wall's first original photo (a cleaned variant is not a photo of its own); what photo commands act on when none is shown. */
+export function firstPhoto(wall: Wall | null | undefined): Photo | undefined {
+  return wall?.photos.find((photo) => photo.cleanOf === undefined);
+}
+
 /** Photo mode on/off. With no photo on the wall yet, "on" asks for one. */
 export function togglePhotoMode(): void {
   if (photoStore.get().photoId !== null) {
     leavePhotoMode();
     return;
   }
-  const first = sessionStore.get()?.wall?.photos.find((photo) => photo.cleanOf === undefined);
+  const first = firstPhoto(sessionStore.get()?.wall);
   if (first) showPhoto(first);
   else choosePhotoFile();
 }
@@ -113,9 +118,10 @@ export async function findPhotoTools(): Promise<void> {
   }
 }
 
+/** Recalibrates the shown photo; with the photo hidden (photo mode off) the wall's first photo is opened for it. */
 export function calibrateShownPhoto(): void {
-  const shown = shownPhoto();
-  if (shown) startCalibration(shown.photo.id);
+  const target = shownPhoto()?.photo ?? firstPhoto(sessionStore.get()?.wall);
+  if (target) startCalibration(target.id);
 }
 
 export { togglePhotoHidden, toggleSplit };
