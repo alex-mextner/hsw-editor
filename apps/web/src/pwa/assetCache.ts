@@ -6,7 +6,13 @@
  * injected, so the behaviour is unit-tested against a fake CacheStorage and verified in real Chromium
  * with the same code.
  */
-import { planEviction, whyUnstorable, type RuntimeRoute, type Unstorable } from './cachePolicy.ts';
+import {
+  OFFLINE_COPY_HEADER,
+  planEviction,
+  whyUnstorable,
+  type RuntimeRoute,
+  type Unstorable,
+} from './cachePolicy.ts';
 import type { AssetRegistry } from './registry.ts';
 
 export interface AssetCacheDeps {
@@ -115,9 +121,14 @@ export async function handleRuntimeRequest(
   request: Request,
   route: RuntimeRoute,
 ): Promise<Response> {
-  return route.strategy === 'cache-first'
-    ? cacheFirst(deps, request, route)
-    : staleWhileRevalidate(deps, request, route);
+  switch (route.strategy) {
+    case 'cache-first':
+      return cacheFirst(deps, request, route);
+    case 'stale-while-revalidate':
+      return staleWhileRevalidate(deps, request, route);
+    case 'network-first':
+      return networkFirst(deps, request, route);
+  }
 }
 
 /** Requests in flight per URL, for the lifetime of the worker: a bank grid asking for the same file twice downloads it once. */
@@ -183,4 +194,47 @@ async function staleWhileRevalidate(
     return cached;
   }
   return refresh;
+}
+
+/**
+ * Data the page edits (the tool library): the daemon's answer wins whenever the daemon answers, so a stale copy is never shown (or saved over
+ * a newer tool) online; the cached copy is the answer only when the daemon cannot give one (unreachable, or a 5xx). A `404` means the
+ * thing is gone: the cached copy is dropped so it cannot come back offline.
+ */
+async function networkFirst(
+  deps: AssetCacheDeps,
+  request: Request,
+  route: RuntimeRoute,
+): Promise<Response> {
+  const cache = await deps.caches.open(route.cache);
+  // The kept copy is marked, so the page does not take it for a sign that the daemon is up.
+  const keptCopy = async (): Promise<Response | undefined> => {
+    const cached = await cache.match(request);
+    if (!cached) return undefined;
+    const headers = new Headers(cached.headers);
+    headers.set(OFFLINE_COPY_HEADER, '1');
+    return new Response(cached.body, {
+      status: cached.status,
+      statusText: cached.statusText,
+      headers,
+    });
+  };
+  let response: Response;
+  try {
+    response = await deps.fetch(request);
+  } catch (error) {
+    const copy = await keptCopy();
+    if (copy) return copy;
+    throw error;
+  }
+  if (response.status === 404) {
+    await cache.delete(request);
+    await deps.registry.remove([request.url]);
+  } else if (response.status >= 500) {
+    const copy = await keptCopy();
+    if (copy) return copy;
+  } else {
+    deps.waitUntil(storeQuietly(deps, request, response.clone(), route));
+  }
+  return response;
 }

@@ -16,6 +16,9 @@ It replaces the earlier `generateSW` config because that cannot do a user-accept
 | Wall photos / models | `/api/walls/:id/photos/:pid/file`, `/models/:mid/file` | cache-first | `hsw-media-v1` | yes |
 | Tool models | `/tools/assets/glb/<16 hex>.glb` (generated LOD0/LOD1 of every tool class and library tool) | cache-first | `hsw-media-v1` | yes |
 | Tool model index | `/api/tools/assets/index` | stale-while-revalidate | `hsw-bank-index-v1` | never (without it tools on the wall are boxes offline) |
+| Tool library | `/api/tools` (list), `/api/tools/classes`, `/api/tools/classes/:id`, `/api/tools/:id`, `/api/tools/:id/holding` | **network-first** (the daemon's answer when it answers; the cached copy only when it is unreachable or answers 5xx; a 404 drops the copy) | `hsw-bank-index-v1` | never (tens of KB; the Tools panel is "unavailable" offline without it) |
+| Tool thumbnails | `/api/tools/classes/:id/thumb.webp[?preset=name]` (revalidated on every use), `/api/tools/:id/thumb.webp?v=<version>` | stale-while-revalidate / cache-first | `hsw-media-v1` | yes |
+| Library tool models | `/api/tools/:id/model.glb?v=<version>`, `/model-lod1.glb?v=<version>` (the Tools panel preview) | cache-first | `hsw-media-v1` | yes |
 | Bank index | `/api/bank/index`, `/api/bank/search-index`, `/api/bank/elements/:id` | stale-while-revalidate | `hsw-bank-index-v1` | never (a few hundred KB; without it the bank cannot open offline) |
 
 Rules live in `cachePolicy.ts` (pure, unit-tested), mechanics in `assetCache.ts`. Names under `/bank/assets/` are content hashes, so a
@@ -26,11 +29,36 @@ cached copy is correct forever: it is served even if the server later answers 40
 - anything but a plain `200` (404 `asset_not_found`, 503 "bank not built", 5xx, 206, 304) and opaque responses;
 - a `200 text/html`: a server that falls back to the SPA shell for an unknown path would otherwise pin an HTML page under a `.glb` URL forever;
 - `Cache-Control: no-store`;
-- URLs with a query string or `Range` requests (they go to the network), non-GET requests.
+- URLs with a query string, except `?v=<version>` on a library tool's thumbnail and model (the version makes the name immutable) and `?preset=<name>` on a class thumbnail; `Range` requests (they go to the network), non-GET requests.
+  Class GLBs and holdings (`?p=<parameter values>`) and everything under `/api/tools/drafts`, `/api/tools/vision`, `/api/tools/:id/source/*` are never stored.
+  The daemon answers the library reads with `Cache-Control: no-cache` (always revalidated, storable). They used to be `no-store` like every other tool response, which the worker
+  rightly refuses to store: that, not a missing route, is why the Tools panel said "the tool library is unavailable" offline even after a visit.
 
 A failed revalidation never replaces a good cached copy. Everything else under `/api/*` (wall JSON, ops, SSE, jobs, settings, the bank
 variant POST) is untouched and goes to the network: the app keeps its own IndexedDB mirror of walls. Navigations to `/api/*`, `/bank/*` and `/tools/*`
 never fall back to the app shell.
+
+### Why the tool library is network-first
+
+The Tools panel edits what it reads (name, tags, dimensions, parameters of a tool are saved from a form filled from `GET /api/tools/:id`). A stale-while-revalidate copy
+online would show a tool as it was before a CLI or agent changed it, and saving the form would write that old state over the new one; it would also make the
+refetch that follows the app's own edit answer with the pre-edit copy. So online the daemon always answers, and the copy (kept fresh by every successful read) is
+used only when the daemon cannot answer. A tool deleted online is forgotten at its first 404 and cannot come back offline. The bank index stays stale-while-revalidate:
+nothing edits it from the page.
+
+## Warming ("one online visit is enough")
+
+A file is cached by the worker only when the page requests it under a controlling worker. Two gaps follow: the very first visit is not controlled yet (the
+bank and the library load before the worker claims the page), and some files are requested only deep in the UI (a cleaned variant of a wall photo is
+loaded when photo mode opens; a tool's JSON when its page opens). `warm.ts` closes them from the page, through the same store as the downloader
+(`downloadAssets`, 2 at a time, skipped when already cached, run again when the daemon comes back after a run stopped offline or over quota). It never pins, and never unpins
+a file the user kept offline with "Make available offline" (a run without `pin` leaves the stored flag as it is):
+
+- when the tool library has loaded: the list, the classes, every class thumbnail, and for every tool its JSON, holding and thumbnail;
+- when a wall opens (and when its photo or model files change): every photo, **including cleaned variants**, and every model file.
+
+So photo mode (the overlay view and the calibration view read `/api/walls/:id/photos/:pid/file`, with no query string, the URL the worker stores) opens
+offline after one online visit, not only the photos whose thumbnails happened to be on screen. The demo build does not warm (there is no daemon).
 
 ## Budget, LRU, pinning
 

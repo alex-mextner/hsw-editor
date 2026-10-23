@@ -43,6 +43,8 @@ const CATEGORY_LABEL = {
   'bank-index': 'offline.cat.index',
   'tool-model': 'offline.cat.toolModels',
   'tool-index': 'offline.cat.toolIndex',
+  'tool-library': 'offline.cat.toolLibrary',
+  'tool-thumbnail': 'offline.cat.toolThumbnails',
   'wall-photo': 'offline.cat.photos',
   'wall-model': 'offline.cat.wallModels',
 } as const satisfies Record<AssetCategory, string>;

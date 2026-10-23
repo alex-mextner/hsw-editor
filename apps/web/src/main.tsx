@@ -7,6 +7,7 @@ import { refreshBank, startBankAutoRefresh } from './bank/client.ts';
 import { refreshToolLibrary } from './features/tools/store.ts';
 import { AppErrorBoundary } from './shell/AppErrorBoundary.tsx';
 import './pwa/instance.ts';
+import { startOfflineWarmup } from './pwa/startWarmup.ts';
 import './state/theme.ts';
 import { initSession } from './wall/session.ts';
 import './styles.css';
@@ -18,6 +19,7 @@ void refreshBank();
 void refreshToolLibrary();
 startBankAutoRefresh();
 watchAssetNotices();
+startOfflineWarmup();
 
 const container = document.getElementById('root');
 if (!container) throw new Error('#root is missing from index.html');

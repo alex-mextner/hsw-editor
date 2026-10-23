@@ -6,14 +6,23 @@ import { toolAssetsStore } from '@/toolmodels/assets.ts';
 import { toolModelVersion } from '@/toolmodels/regen.ts';
 import { resolveToolModel } from '@/toolmodels/resolve.ts';
 import { toolRoutes } from '@/features/tools/api.ts';
+import { libraryStore } from '@/features/tools/store.ts';
 
-/** Thumbnail the daemon renders for the generator behind a model entry id (`class:<id>` / `tool:<id>`). */
-export function toolThumbUrl(entryId: string): string {
+/**
+ * Thumbnail the daemon renders for the generator behind a model entry id (`class:<id>` / `tool:<id>`). A library tool's is keyed by
+ * its version (`updatedAt`), the URL the service worker keeps for offline use; until the library has loaded it is asked for without.
+ */
+export function toolThumbUrl(
+  entryId: string,
+  tools: readonly { readonly id: string; readonly updatedAt: string }[],
+): string {
   const [kind, ...rest] = entryId.split(':');
   const id = rest.join(':');
-  return kind === 'tool'
+  if (kind !== 'tool') return toolRoutes.classThumb(id);
+  const version = tools.find((tool) => tool.id === id)?.updatedAt;
+  return version === undefined
     ? `/api/tools/${encodeURIComponent(id)}/thumb.webp`
-    : toolRoutes.classThumb(id);
+    : toolRoutes.toolThumb(id, version);
 }
 
 /**
@@ -24,6 +33,7 @@ export function ToolModelCard({ item, wall }: { readonly item: WallItem; readonl
   const { t } = useI18n();
   useStore(toolAssetsStore);
   useStore(toolModelVersion);
+  const library = useStore(libraryStore);
   const [thumbFailed, setThumbFailed] = useState(false);
   const model = resolveToolModel(item, wall);
   if (!model) return null;
@@ -32,7 +42,7 @@ export function ToolModelCard({ item, wall }: { readonly item: WallItem; readonl
     <section className="flex items-center gap-3 rounded-lg border p-2" data-slot="tool-model">
       {thumbFailed ? null : (
         <img
-          src={toolThumbUrl(model.entryId)}
+          src={toolThumbUrl(model.entryId, library.status === 'ready' ? library.tools : [])}
           alt=""
           width={56}
           height={56}

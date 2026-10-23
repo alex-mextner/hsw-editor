@@ -13,6 +13,7 @@ import {
   type WallResponse,
   type WallSummary,
 } from './schemas.ts';
+import { OFFLINE_COPY_HEADER } from '../pwa/cachePolicy.ts';
 
 function tabName(): string {
   try {
@@ -92,7 +93,8 @@ export async function fetchJson(path: string, init?: RequestInit): Promise<unkno
   }
   const json: unknown = await response.json().catch(() => null);
   if (!response.ok) throw failureFor(response.status, json);
-  reachability.onReachable();
+  // An answer the worker made from its kept copy says nothing about the daemon.
+  if (!response.headers.has(OFFLINE_COPY_HEADER)) reachability.onReachable();
   return json;
 }
 

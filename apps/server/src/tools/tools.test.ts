@@ -596,3 +596,39 @@ describe('vision status (the managed client, no fake sidecar)', () => {
     expect(missing.message).toContain('hsw-editor vision setup');
   });
 });
+
+describe('library reads are storable by the service worker', () => {
+  test('the list, classes, one tool and its holding answer no-cache; writes, errors and parameter-keyed reads stay no-store', async () => {
+    const created = await fetch(`${base}/api/tools`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ classId: 'screwdriver', name: { en: 'Cache probe' } }),
+    });
+    expect(created.status).toBe(201);
+    expect(created.headers.get('cache-control')).toBe('no-store');
+    const id = ((await created.json()) as { tool: { id: string } }).tool.id;
+    try {
+      for (const path of [
+        '/api/tools',
+        '/api/tools/classes',
+        '/api/tools/classes/screwdriver',
+        `/api/tools/${id}`,
+        `/api/tools/${id}/holding`,
+      ]) {
+        const response = await fetch(`${base}${path}`);
+        expect(response.status).toBe(200);
+        expect(`${path} ${response.headers.get('cache-control')}`).toBe(`${path} no-cache`);
+      }
+      const classHolding = await fetch(`${base}/api/tools/classes/screwdriver/holding`);
+      expect(classHolding.headers.get('cache-control')).toBe('no-store');
+      const missing = await fetch(`${base}/api/tools/nope-1`);
+      expect(missing.status).toBe(404);
+      expect(missing.headers.get('cache-control')).toBe('no-store');
+      expect((await fetch(`${base}/api/tools/classes/nope`)).headers.get('cache-control')).toBe(
+        'no-store',
+      );
+    } finally {
+      await fetch(`${base}/api/tools/${id}`, { method: 'DELETE' });
+    }
+  });
+});

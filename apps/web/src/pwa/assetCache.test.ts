@@ -4,6 +4,7 @@ import {
   effectiveBudget,
   INDEX_CACHE,
   MEDIA_CACHE,
+  OFFLINE_COPY_HEADER,
   MIN_MEDIA_BUDGET_BYTES,
   planEviction,
   routeFor,
@@ -54,6 +55,52 @@ describe('routeFor', () => {
       INDEX_CACHE,
       false,
     ],
+    [`${ORIGIN}/api/tools`, 'tool-library', 'network-first', INDEX_CACHE, false],
+    [`${ORIGIN}/api/tools/classes`, 'tool-library', 'network-first', INDEX_CACHE, false],
+    [`${ORIGIN}/api/tools/classes/hex-key`, 'tool-library', 'network-first', INDEX_CACHE, false],
+    [`${ORIGIN}/api/tools/tape-roll-10`, 'tool-library', 'network-first', INDEX_CACHE, false],
+    [
+      `${ORIGIN}/api/tools/tape-roll-10/holding`,
+      'tool-library',
+      'network-first',
+      INDEX_CACHE,
+      false,
+    ],
+    [
+      `${ORIGIN}/api/tools/classes/hex-key/thumb.webp`,
+      'tool-thumbnail',
+      'stale-while-revalidate',
+      MEDIA_CACHE,
+      true,
+    ],
+    [
+      `${ORIGIN}/api/tools/classes/hex-key/thumb.webp?preset=short`,
+      'tool-thumbnail',
+      'stale-while-revalidate',
+      MEDIA_CACHE,
+      true,
+    ],
+    [
+      `${ORIGIN}/api/tools/chisel/thumb.webp?v=2026-10-23T21%3A17%3A49.317Z`,
+      'tool-thumbnail',
+      'cache-first',
+      MEDIA_CACHE,
+      true,
+    ],
+    [
+      `${ORIGIN}/api/tools/chisel/model.glb?v=2026-10-23T21%3A17%3A49.317Z`,
+      'tool-model',
+      'cache-first',
+      MEDIA_CACHE,
+      true,
+    ],
+    [
+      `${ORIGIN}/api/tools/chisel/model-lod1.glb?v=2026-10-23T21%3A17%3A49.317Z`,
+      'tool-model',
+      'cache-first',
+      MEDIA_CACHE,
+      true,
+    ],
     [`${ORIGIN}/api/walls/w1/photos/p-1/file`, 'wall-photo', 'cache-first', MEDIA_CACHE, true],
     [`${ORIGIN}/api/walls/w1/models/m-1/file`, 'wall-model', 'cache-first', MEDIA_CACHE, true],
   ] as const)('%s is cached by rule', (url, category, strategy, cache, evictable) => {
@@ -75,10 +122,24 @@ describe('routeFor', () => {
     ['tool asset with a wrong extension', `${ORIGIN}/tools/assets/glb/0123456789abcdef.webp`],
     ['tool asset outside glb/', `${ORIGIN}/tools/assets/index.json`],
     [
-      'tool classes (server-rendered thumbnails and GLBs revalidate)',
-      `${ORIGIN}/api/tools/classes`,
+      'class GLB (parameter values in the query)',
+      `${ORIGIN}/api/tools/classes/hex-key/model.glb?lod=1&p=%7B%7D`,
     ],
-    ['library tool file', `${ORIGIN}/api/tools/my-1/model.glb`],
+    [
+      'class holding (parameter values in the query)',
+      `${ORIGIN}/api/tools/classes/hex-key/holding?p=%7B%7D`,
+    ],
+    ['class thumbnail with a foreign query', `${ORIGIN}/api/tools/classes/hex-key/thumb.webp?x=1`],
+    ['library tool file without its version', `${ORIGIN}/api/tools/my-1/model.glb`],
+    ['library tool thumbnail without its version', `${ORIGIN}/api/tools/my-1/thumb.webp`],
+    ['library tool JSON with a query', `${ORIGIN}/api/tools/my-1?x=1`],
+    ['draft list', `${ORIGIN}/api/tools/drafts`],
+    ['draft', `${ORIGIN}/api/tools/drafts/d-1`],
+    ['draft file', `${ORIGIN}/api/tools/drafts/d-1/files/crop.png`],
+    ['vision liveness', `${ORIGIN}/api/tools/vision`],
+    ['tool source file', `${ORIGIN}/api/tools/my-1/source/a.png`],
+    ['unknown class resource', `${ORIGIN}/api/tools/classes/hex-key/other`],
+    ['tool model index lookalike', `${ORIGIN}/api/tools/assets/other`],
     ['foreign origin', 'https://evil.test/bank/assets/glb/0123456789abcdef.glb'],
     ['upload path', `${ORIGIN}/api/walls/w1/photos`],
     ['health', `${ORIGIN}/api/health`],
@@ -89,6 +150,10 @@ describe('routeFor', () => {
   test('non-GET and Range requests are left to the network', () => {
     expect(route(GLB, 'POST')).toBeNull();
     expect(route(GLB, 'GET', true)).toBeNull();
+    for (const method of ['POST', 'PATCH', 'DELETE', 'PUT']) {
+      expect(route(`${ORIGIN}/api/tools/my-1`, method)).toBeNull();
+      expect(route(`${ORIGIN}/api/tools`, method)).toBeNull();
+    }
   });
 });
 
@@ -494,5 +559,125 @@ describe('registry concurrency', () => {
     await handleRuntimeRequest(h.deps, new Request(url), r); // a hit
     await h.settle();
     expect((await h.registry.all())[0]?.lastUsed).toBe(500);
+  });
+});
+
+describe('tool library (network-first)', () => {
+  const LIST = `${ORIGIN}/api/tools`;
+  const CLASSES = `${ORIGIN}/api/tools/classes`;
+  const TOOL = `${ORIGIN}/api/tools/chisel`;
+  const HOLDING = `${ORIGIN}/api/tools/chisel/holding`;
+  const CLASS_THUMB = `${ORIGIN}/api/tools/classes/chisel/thumb.webp`;
+  const TOOL_THUMB = `${ORIGIN}/api/tools/chisel/thumb.webp?v=2026-10-23T21%3A17%3A49.317Z`;
+  const json =
+    (body: string, status = 200) =>
+    () =>
+      new Response(body, { status, headers: { 'content-type': 'application/json' } });
+
+  async function fetchThrough(h: ReturnType<typeof harness>, url: string): Promise<Response> {
+    const r = route(url);
+    if (!r) throw new Error(`no route for ${url}`);
+    const response = await handleRuntimeRequest(h.deps, new Request(url), r);
+    await h.settle();
+    return response;
+  }
+
+  test('the list, classes, a tool and a thumbnail are served with the daemon stopped after one visit', async () => {
+    const h = harness();
+    h.net.respond = (url) =>
+      url.includes('thumb.webp')
+        ? bytesOf(7, { 'content-type': 'image/webp' })
+        : json(`{"u":"${url}"}`)();
+    for (const url of [LIST, CLASSES, TOOL, HOLDING, CLASS_THUMB, TOOL_THUMB]) {
+      expect((await fetchThrough(h, url)).status).toBe(200);
+    }
+    h.net.online = false;
+    for (const url of [LIST, CLASSES, TOOL, HOLDING]) {
+      expect(await (await fetchThrough(h, url)).json()).toEqual({ u: url });
+    }
+    for (const url of [CLASS_THUMB, TOOL_THUMB]) {
+      expect((await (await fetchThrough(h, url)).arrayBuffer()).byteLength).toBe(7);
+    }
+    const cats = new Map((await h.registry.all()).map((e) => [e.url, e.category]));
+    expect(cats.get(LIST)).toBe('tool-library');
+    expect(cats.get(TOOL_THUMB)).toBe('tool-thumbnail');
+  });
+
+  test('online the daemon always wins: a tool changed behind the page (CLI, agent) shows at once, never the cached copy', async () => {
+    const h = harness();
+    h.net.respond = json('{"tool":"v1"}');
+    await fetchThrough(h, TOOL);
+    h.net.respond = json('{"tool":"v2"}');
+    expect(await (await fetchThrough(h, TOOL)).json()).toEqual({ tool: 'v2' });
+    h.net.online = false;
+    expect(await (await fetchThrough(h, TOOL)).json()).toEqual({ tool: 'v2' });
+  });
+
+  test('an answer made from the kept copy is marked, one from the daemon is not', async () => {
+    const h = harness();
+    h.net.respond = json('{"tool":"v1"}');
+    expect((await fetchThrough(h, TOOL)).headers.has(OFFLINE_COPY_HEADER)).toBe(false);
+    h.net.online = false;
+    const copy = await fetchThrough(h, TOOL);
+    expect(copy.headers.get(OFFLINE_COPY_HEADER)).toBe('1');
+    expect(copy.headers.get('content-type')).toBe('application/json');
+    expect(await copy.json()).toEqual({ tool: 'v1' });
+    h.net.online = true;
+    h.net.respond = json('down', 503);
+    expect((await fetchThrough(h, TOOL)).headers.get(OFFLINE_COPY_HEADER)).toBe('1');
+  });
+
+  test('library JSON lives in the never-evicted index cache, thumbnails in the evictable media cache', async () => {
+    const h = harness();
+    h.net.respond = (url) => (url.includes('thumb.webp') ? bytesOf(7) : json('{}')());
+    await fetchThrough(h, LIST);
+    await fetchThrough(h, CLASS_THUMB);
+    const byUrl = new Map((await h.registry.all()).map((e) => [e.url, e]));
+    expect(byUrl.get(LIST)).toMatchObject({ cache: INDEX_CACHE, evictable: false });
+    expect(byUrl.get(CLASS_THUMB)).toMatchObject({ cache: MEDIA_CACHE, evictable: true });
+  });
+
+  test('a 5xx or an HTML answer never replaces a good copy and the copy answers a 5xx', async () => {
+    const h = harness();
+    h.net.respond = json('{"tools":[1]}');
+    await fetchThrough(h, LIST);
+    h.net.respond = json('down', 503);
+    expect(await (await fetchThrough(h, LIST)).json()).toEqual({ tools: [1] });
+    h.net.respond = () =>
+      new Response('<html></html>', { headers: { 'content-type': 'text/html' } });
+    await fetchThrough(h, LIST);
+    h.net.online = false;
+    expect(await (await fetchThrough(h, LIST)).json()).toEqual({ tools: [1] });
+  });
+
+  test('a 5xx with nothing cached is passed on as it is', async () => {
+    const h = harness();
+    h.net.respond = json('down', 503);
+    expect((await fetchThrough(h, LIST)).status).toBe(503);
+  });
+
+  test('a 404 (the tool was deleted) is passed on and drops the cached copy, offline too', async () => {
+    const h = harness();
+    h.net.respond = json('{"tool":{}}');
+    await fetchThrough(h, TOOL);
+    h.net.respond = json('{"error":{"code":"not_found"}}', 404);
+    expect((await fetchThrough(h, TOOL)).status).toBe(404);
+    expect(h.storage.stores.get(INDEX_CACHE)?.entries.has(TOOL)).toBe(false);
+    expect((await h.registry.all()).some((e) => e.url === TOOL)).toBe(false);
+    h.net.online = false;
+    await expect(fetchThrough(h, TOOL)).rejects.toThrow('Failed to fetch');
+  });
+
+  test('offline with nothing cached the failure reaches the caller', async () => {
+    const h = harness();
+    h.net.online = false;
+    await expect(fetchThrough(h, LIST)).rejects.toThrow('Failed to fetch');
+  });
+
+  test('ids that merely start with a reserved word are library tools', () => {
+    for (const id of ['classes-2', 'drafts-old', 'visions', 'assets-1']) {
+      expect(route(`${ORIGIN}/api/tools/${id}`)?.category).toBe('tool-library');
+      expect(route(`${ORIGIN}/api/tools/${id}/holding`)?.category).toBe('tool-library');
+    }
   });
 });

@@ -143,6 +143,10 @@ needs an entry here first.
 
 ### Fixed
 
+- The Tools panel and photo mode work with the daemon stopped after one online visit (#219, [docs/offline.md](docs/offline.md)): the tool library reads (list, classes, per-tool JSON and
+  holding) answered `Cache-Control: no-store`, which the service worker refuses to store, so the panel said "the tool library is unavailable" offline; they answer `no-cache` now and the worker keeps them
+  network-first (the daemon's answer online, the kept copy only when it is unreachable, so the edit form never shows or saves a stale tool), with class and tool thumbnails and versioned library tool models. A page-side warmup stores the tool library and every file of the open wall
+  (including the cleaned photo variants that only photo mode loads) on the first visit, which the worker cannot see because it does not control that visit yet.
 - "Calibrate the photo" (palette) did nothing with the photo hidden (eye off in the Photos list). It now opens the calibrate view on the shown photo, or on the wall's first photo when none is shown, and so does the pencil of a photo row (photo mode is entered the usual way, clearing a stale "photo hidden"); Cancel on an already calibrated photo leaves it shown. The command is disabled (`hasPhoto`) when the wall has no photo (#215).
 - `hsw-editor start|stop|restart|status` go through the systemd user unit while autostart is enabled for that port (#216), so no second pidfile daemon fights the unit for the port and `status` shows the unit's real state.
 - The web build writes `apps/web/dist/.build-ok` only after a successful build; `scripts/install.sh` and `hsw-editor doctor` require it, so a failed or partial build is rebuilt or reported (#216; rebuild once after updating: `bun run build`).
