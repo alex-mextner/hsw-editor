@@ -93,6 +93,12 @@ needs an entry here first.
   `$XDG_DATA_HOME/hsw-editor`. `bankPaths` no longer reads `HSW_EDITOR_DATA_DIR`; move a bank built under another directory
   or re-run `bun run bank:ingest`.
 
+### Fixed
+
+- The committed bank seed declares the current `TOOL_CLASSES` (it kept the 27 classes that predate the finer ones), so the
+  palette, tool picker and bank filter on a seed-served bank offer chisel, punch, hacksaw, long-nose/locking/water-pump
+  pliers, crimper and hex-key-set; `exportSeed` writes the vocabulary from `TOOL_CLASSES` instead of the built root (#156).
+
 ## [0.1.0] - 2026-10-22
 
 ### Added

@@ -5,6 +5,7 @@
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { BankIndexSchema, type BankElement } from '../schema.ts';
+import { TOOL_CLASSES } from '../toolClasses.ts';
 import { builtBankRoot, BankVerificationError } from './generations.ts';
 import type { BankPaths } from './paths.ts';
 import { composeIndex } from './compose.ts';
@@ -111,8 +112,12 @@ export async function exportSeed(paths: BankPaths): Promise<SeedResult> {
   const keep = pickSeedElements(built.elements.filter((e) => e.license.redistributable));
   const index = composeIndex({
     grid: built.grid,
+    // Categories stay as built: the seed is cut from what was ingested; only the tool vocabulary is
+    // re-declared from code, because pickers read it straight from the index (#156).
     categories: built.categories,
-    toolClasses: built.toolClasses,
+    // The vocabulary the code ships, not what the built bank was ingested with: a stale built root
+    // would otherwise freeze old classes into every seed-served picker.
+    toolClasses: [...TOOL_CLASSES],
     elements: keep,
   });
 

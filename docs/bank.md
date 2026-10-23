@@ -65,9 +65,10 @@ A holder that lists only the coarse class still serves the finer tool:
 - The bank tool filter, `listElements({ toolClass | fits })` and the holder suggestion expand a class through `acceptedToolClasses` /
   `expandToolClasses`. Only the ranked paths (`holdersForToolClass`, the selection ordering of the bank browser) put exact holders first;
   the filters keep index order.
-- A class an index declares without `broader` turns the built-in link off for that index. An index written before the finer classes (the
-  committed seed until it is re-exported with `bank:ingest --seed`) declares only the old ones: `broader` still resolves through the built-in
-  list, but pickers that list `index.toolClasses` offer only what the index declares.
+- A class an index declares without `broader` turns the built-in link off for that index. The committed seed declares exactly
+  `TOOL_CLASSES` (a test pins it) and `exportSeed` takes the vocabulary from `TOOL_CLASSES`, not from the built root, so a stale built
+  bank cannot freeze old classes into the seed. An index written before the finer classes still resolves `broader` through the
+  built-in list, but pickers that list `index.toolClasses` offer only what that index declares.
 - Search documents of a coarse holder also carry the words of its finer classes (`finerToolClasses`), so "chisel" finds the knife rack.
 
 ## Data layer (`@hsw-editor/bank`, browser-safe)
