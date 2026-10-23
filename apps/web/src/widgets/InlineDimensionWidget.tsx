@@ -1,4 +1,4 @@
-import { useState, type SyntheticEvent } from 'react';
+import { useState } from 'react';
 import { Html } from '@react-three/drei';
 import { Euler, Vector3 } from 'three';
 import { X } from 'lucide-react';
@@ -13,13 +13,9 @@ import { layoutStore } from '@/state/layout.ts';
 import { useStore } from '@/state/react.ts';
 import { DimensionWidget } from './DimensionWidget.tsx';
 import { paramsDraftStore } from './draft.ts';
+import { EventFence } from './EventFence.tsx';
 
 const DEG = Math.PI / 180;
-
-/** The R3F canvas listens for pointer/wheel/click on its container; none of that may reach it from here. */
-function keepInside(event: SyntheticEvent): void {
-  event.stopPropagation();
-}
 
 interface InlineDimensionWidgetProps {
   readonly wall: Wall;
@@ -66,20 +62,7 @@ export function InlineDimensionWidget({ wall, bank }: InlineDimensionWidgetProps
 
   return (
     <Html position={corner} zIndexRange={[40, 0]}>
-      {/* Presentation wrapper: only fences events off from the canvas; the dialog itself is passive. */}
-      <div
-        role="presentation"
-        onPointerDown={keepInside}
-        onPointerUp={keepInside}
-        onClick={keepInside}
-        onDoubleClick={keepInside}
-        onWheel={keepInside}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') dismiss();
-          // Delete, arrows and the other editor shortcuts must not act on the wall while typing here.
-          keepInside(event);
-        }}
-      >
+      <EventFence onEscape={dismiss}>
         <dialog
           open
           aria-label={t('widgets.dimensions.title')}
@@ -98,7 +81,7 @@ export function InlineDimensionWidget({ wall, bank }: InlineDimensionWidgetProps
             </IconButton>
           </div>
         </dialog>
-      </div>
+      </EventFence>
     </Html>
   );
 }

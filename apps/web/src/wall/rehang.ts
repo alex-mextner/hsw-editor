@@ -8,7 +8,7 @@
  */
 import { evaluateHolders, planHang, resolveDrop } from '@hsw-editor/compat';
 import { paramsKey } from '@/bank/models.ts';
-import { livePostStepDeps } from '@/physics/context.ts';
+import { livePostStepDeps, untilToolModelSettled } from '@/physics/context.ts';
 import {
   samePose,
   seatOps,
@@ -18,13 +18,7 @@ import {
   type PostStepDeps,
   type SeatOutcome,
 } from '@/physics/seat.ts';
-import { toolModelVersion } from '@/toolmodels/regen.ts';
-import { resolveToolModel } from '@/toolmodels/resolve.ts';
 import { attachContext } from './attach.ts';
-import { currentWall } from './actions.ts';
-
-/** How long a rebuild is waited for; a slower one leaves the tool where it is. */
-const MODEL_WAIT_MS = 8000;
 
 /** What the editor provides: the physics post-step inputs, and the wait for the rebuilt model. */
 export interface RehangDeps {
@@ -109,31 +103,11 @@ export async function rehangWith(deps: RehangDeps, itemId: string): Promise<Reha
   return seat === null ? 'replaced' : 'seated';
 }
 
-function modelSettled(itemId: string): boolean {
-  const wall = currentWall();
-  const item = wall?.items.find((candidate) => candidate.id === itemId);
-  if (!wall || !item) return true;
-  const source = resolveToolModel(item, wall);
-  return source === null || !source.pending;
-}
-
-function untilSettled(itemId: string): Promise<boolean> {
-  if (modelSettled(itemId)) return Promise.resolve(true);
-  return new Promise((resolve) => {
-    const finish = (settled: boolean): void => {
-      clearTimeout(timer);
-      unsubscribe();
-      resolve(settled);
-    };
-    const unsubscribe = toolModelVersion.subscribe(() => {
-      if (modelSettled(itemId)) finish(true);
-    });
-    const timer = setTimeout(() => finish(false), MODEL_WAIT_MS);
-  });
-}
-
 /** Places the hung tool `itemId` again in its own slot; false when it is not hung, no longer fits or is locked. */
 export async function rehangResizedTool(itemId: string): Promise<boolean> {
-  const status = await rehangWith({ post: livePostStepDeps(), settled: untilSettled }, itemId);
+  const status = await rehangWith(
+    { post: livePostStepDeps(), settled: untilToolModelSettled },
+    itemId,
+  );
   return status === 'seated' || status === 'replaced';
 }

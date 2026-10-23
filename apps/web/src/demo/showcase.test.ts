@@ -55,10 +55,13 @@ describe('showcase wall', () => {
 
   test('tools in one holder take different slots', () => {
     const { wall } = buildShowcaseWall('demo', 'Showcase', SHOWCASE_LAYOUT, specs, index);
-    const slots = wall.items
-      .filter((item) => item.parentId === 'sc-pliers')
-      .map((item) => item.slot)
-      .sort();
-    expect(slots).toEqual([0, 1, 2]);
+    const slotsOf = (holderId: string) =>
+      wall.items
+        .filter((item) => item.parentId === holderId)
+        .map((item) => item.slot)
+        .sort();
+    expect(slotsOf('sc-drivers')).toEqual([0, 1, 2]);
+    expect(slotsOf('sc-pliers')).toEqual([0, 1]);
+    expect(slotsOf('sc-cutters')).toEqual([0]);
   });
 });

@@ -512,6 +512,25 @@ describe('attachItem', () => {
     expect(tool?.slot).toBeUndefined();
   });
 
+  test('a hung tool may overhang the board edge (its origin lies outside): not an out_of_board warning, unlike a loose tool or a holder', () => {
+    const wall = fixture();
+    const overhang = { x: 100, y: -48.7, z: 20 };
+    const hung = applyOp(wall, { type: 'moveItem', id: 't1', to: overhang });
+    expect(hung.warnings.map((w) => w.code)).not.toContain('out_of_board');
+    const far = applyOp(wall, { type: 'moveItem', id: 't1', to: { x: 5000, y: -3000, z: 20 } });
+    expect(far.warnings).toContainEqual(
+      expect.objectContaining({ code: 'out_of_board', itemIds: ['t1'] }),
+    );
+    const loose = applyOp(hung.wall, { type: 'attachItem', id: 't1', parentId: null });
+    expect(loose.warnings).toContainEqual(
+      expect.objectContaining({ code: 'out_of_board', itemIds: ['t1'] }),
+    );
+    const holderOut = applyOp(wall, { type: 'moveItem', id: 'h2', to: { x: 100, y: -48.7 } });
+    expect(holderOut.warnings).toContainEqual(
+      expect.objectContaining({ code: 'out_of_board', itemIds: ['h2'] }),
+    );
+  });
+
   test('only tools hang, a non-holder parent is flagged (not refused), and never when locked', () => {
     const wall = fixture();
     expect(() => applyOp(wall, { type: 'attachItem', id: 'h1', parentId: 'h2' })).toThrow(OpError);

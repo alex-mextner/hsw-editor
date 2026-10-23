@@ -584,3 +584,19 @@ describe('mountTargetFor', () => {
     expect(mountTargetFor(ctx, find(wall, 'drv2'), 'nope')).toBeNull();
   });
 });
+
+describe('audit of slotless tools on a one-slot mount', () => {
+  test('only the non-fitting tool is flagged, whichever comes first on the wall', () => {
+    for (const order of [
+      ['tape', 'drv1'],
+      ['drv1', 'tape'],
+    ]) {
+      let wall = room();
+      for (const id of order) wall = apply1(wall, { type: 'attachItem', id, parentId: 'cradle' });
+      const hung = order.map((id) => find(wall, id));
+      const rest = wall.items.filter((item) => !order.includes(item.id));
+      const ordered: Wall = { ...wall, items: [...rest, ...hung] };
+      expect(auditHangs(contextFor(ordered)).map((a) => a.toolId)).toEqual(['drv1']);
+    }
+  });
+});

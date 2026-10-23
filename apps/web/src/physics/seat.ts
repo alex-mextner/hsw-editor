@@ -26,6 +26,11 @@ export interface PostStepDeps {
   readonly submit: (ops: readonly Op[], label: string) => boolean;
   /** The settings toggle "physics checks". */
   readonly enabled: () => boolean;
+  /**
+   * Resolves true once the model of the tool is no longer being rebuilt (a tool resized a moment ago is judged on the size it
+   * has now, not skipped), false when that took too long. Absent: models are never pending.
+   */
+  readonly settled?: (toolId: string) => Promise<boolean>;
 }
 
 export interface SeatOutcome {
@@ -130,6 +135,19 @@ export type SeatStatus = 'seated' | 'kept' | 'stale' | 'off' | 'skipped' | 'fail
  */
 export async function seatAfterHang(toolId: string, deps: PostStepDeps): Promise<SeatStatus> {
   if (!deps.enabled()) return 'off';
+  const first = deps.wall()?.items.find((item) => item.id === toolId);
+  if (first?.parentId === undefined || first.locked) return 'skipped';
+  if (deps.settled !== undefined) {
+    // The model of a tool resized a moment ago is still being rebuilt: wait for it, then seat the tool only if it is still
+    // hung exactly as it was (the user may have moved it on, or switched the physics off, meanwhile).
+    const built = await deps.settled(toolId);
+    if (!deps.enabled()) return 'off';
+    const live = deps.wall()?.items.find((item) => item.id === toolId);
+    if (!stillHung(live, { parentId: first.parentId, slot: first.slot, pose: first.pose })) {
+      return 'stale';
+    }
+    if (!built) return 'kept';
+  }
   const hung = deps.wall()?.items.find((item) => item.id === toolId);
   if (hung?.parentId === undefined || hung.locked) return 'skipped';
   const { parentId, pose: hungPose, slot } = hung;
@@ -153,6 +171,8 @@ export interface SeatAllOutcome {
   readonly unchanged: readonly string[];
   /** No seat exists (no model, no free slot, rotated holder, the holder does not take it): the pose stays and the check flags it. */
   readonly kept: readonly string[];
+  /** Hung without a slot number: which slot they take is anybody's guess, so they are left to the user. */
+  readonly unslotted: readonly string[];
   /** The ops were not applied: the wall changed while the worker was busy, or the submit was refused. */
   readonly stale: boolean;
 }
@@ -164,12 +184,19 @@ export interface SeatAllOutcome {
  */
 export async function seatAllTools(deps: PostStepDeps): Promise<SeatAllOutcome> {
   const start = deps.wall();
-  const empty: SeatAllOutcome = { seated: [], unchanged: [], kept: [], stale: false };
+  const empty: SeatAllOutcome = {
+    seated: [],
+    unchanged: [],
+    kept: [],
+    unslotted: [],
+    stale: false,
+  };
   if (start === null || !deps.enabled()) return empty;
   let local = start;
   const seated: string[] = [];
   const unchanged: string[] = [];
   const kept: string[] = [];
+  const unslotted: string[] = [];
   // A tool is seated among the holders and the tools already dealt with. Tools still waiting hang at the poses the wall
   // was built with (often sunk into their holders), which would only block the slots the physics is about to use.
   // Tools that will not move are real obstacles from the start, not ones that are still waiting: locked ones and ones
@@ -190,7 +217,7 @@ export async function seatAllTools(deps: PostStepDeps): Promise<SeatAllOutcome> 
   for (const item of start.items) {
     if (item.kind !== 'tool' || item.parentId === undefined || item.locked) continue;
     if (item.slot === undefined) {
-      kept.push(item.id);
+      unslotted.push(item.id);
       continue;
     }
     waiting.delete(item.id);
@@ -236,16 +263,16 @@ export async function seatAllTools(deps: PostStepDeps): Promise<SeatAllOutcome> 
     const to = local.items.find((candidate) => candidate.id === id)?.pose;
     return to === undefined ? [] : seatOps(id, to).ops;
   });
-  if (ops.length === 0) return { seated: moved, unchanged, kept, stale: false };
+  if (ops.length === 0) return { seated: moved, unchanged, kept, unslotted, stale: false };
   // Anything that touched the wall meanwhile (the user kept editing) makes these poses stale: apply none of them.
   const now = deps.wall();
   if (now?.id !== start.id || now.rev !== start.rev) {
-    return { seated: [], unchanged, kept, stale: true };
+    return { seated: [], unchanged, kept, unslotted, stale: true };
   }
   // Switched off while the worker was busy: the setting means no seating at all.
-  if (!deps.enabled()) return { seated: [], unchanged, kept, stale: false };
+  if (!deps.enabled()) return { seated: [], unchanged, kept, unslotted, stale: false };
   const applied = deps.submit([{ type: 'batch', label: 'seat all', ops }], 'seat all');
   return applied
-    ? { seated: moved, unchanged, kept, stale: false }
-    : { seated: [], unchanged, kept, stale: true };
+    ? { seated: moved, unchanged, kept, unslotted, stale: false }
+    : { seated: [], unchanged, kept, unslotted, stale: true };
 }

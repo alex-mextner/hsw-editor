@@ -7,6 +7,7 @@
  *   "say hi"                    one assistant text answer
  *   "wall:<json ops array>"     assistant calls the host tool wall_apply with those ops, then reports the result
  *   "tool:<name>:<json args>"   assistant calls the named host tool and reports the result
+ *   "toolcrash:<json args>"     calls app_command, then exits with code 3 while the call is pending
  *   "ask"                       raises a select dialog (Approve/Deny) and waits for the answer
  *   "gate:<tool>"               raises omp's own "Allow tool: <tool>" approval select and reports the answer
  *   "crash"                     exits with code 3 in the middle of the turn
@@ -269,6 +270,9 @@ async function runPrompt(rawText: string): Promise<void> {
   } else if (text === 'big') {
     big = true;
     messages.push(await streamText('big transcript prepared', 0));
+  } else if (text.startsWith('toolcrash:')) {
+    setTimeout(() => process.exit(3), 150);
+    await callTool('app_command', JSON.parse(text.slice(10)) as Json);
   } else if (text.startsWith('wall:') || text.startsWith('tool:')) {
     const wallCall = text.startsWith('wall:');
     const name = wallCall ? 'wall_apply' : (text.split(':')[1] ?? '');
