@@ -314,7 +314,7 @@ export const solderingIron = defineToolClass({
   id: 'soldering-iron',
   family: 'power',
   name: L('Soldering iron / station', 'Паяльник / паяльная станция'),
-  bankClass: 'multimeter',
+  bankClass: 'soldering-iron',
   keywords: {
     en: ['soldering iron', 'soldering station', 'solder pencil', 'hakko station'],
     ru: ['паяльник', 'паяльная станция'],

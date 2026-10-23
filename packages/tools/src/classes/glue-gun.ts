@@ -31,7 +31,7 @@ export const glueGun = defineToolClass({
   id: 'glue-gun',
   family: 'power',
   name: L('Hot glue gun', 'Клеевой пистолет'),
-  bankClass: 'drill',
+  bankClass: 'glue-gun',
   keywords: {
     en: ['glue gun', 'hot glue gun', 'hot melt gun'],
     ru: ['клеевой пистолет', 'термоклеевой пистолет'],

@@ -27,7 +27,7 @@ export const batteryPack = defineToolClass({
   id: 'battery-pack',
   family: 'power',
   name: L('Battery pack', 'Аккумулятор'),
-  bankClass: 'drill',
+  bankClass: 'battery-pack',
   keywords: {
     en: ['battery pack', 'drill battery', 'cordless battery', 'li-ion battery pack'],
     ru: ['аккумулятор', 'батарея шуруповёрта', 'аккумулятор для инструмента'],

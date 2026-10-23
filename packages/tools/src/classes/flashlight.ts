@@ -34,7 +34,7 @@ export const flashlight = defineToolClass({
   id: 'flashlight',
   family: 'power',
   name: L('Flashlight', 'Фонарь'),
-  bankClass: 'multimeter',
+  bankClass: 'flashlight',
   keywords: {
     en: ['flashlight', 'torch', 'led flashlight', 'maglite', 'headlamp'],
     ru: ['фонарь', 'фонарик', 'светодиодный фонарь'],
