@@ -56,20 +56,29 @@ export class NetworkError extends Error {
 /** Gateway statuses a dev proxy / reverse proxy answers with while the daemon is down or restarting. */
 const GATEWAY_DOWN = new Set([502, 503, 504]);
 
+/** Reachability reports of real API calls; the connection monitor (src/offline/runtime.ts) subscribes. */
+export const reachability: { onReachable: () => void; onUnreachable: () => void } = {
+  onReachable: () => undefined,
+  onUnreachable: () => undefined,
+};
+
 /** JSON request failing with `ApiError`/`NetworkError`; the caller parses the body. */
 export async function fetchJson(path: string, init?: RequestInit): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(path, init);
   } catch (error) {
+    reachability.onUnreachable();
     throw new NetworkError(error);
   }
   const json: unknown = await response.json().catch(() => null);
   if (!response.ok) {
     const parsed = ErrorBodySchema.safeParse(json);
     if (!parsed.success && GATEWAY_DOWN.has(response.status)) {
+      reachability.onUnreachable();
       throw new NetworkError(new Error(`HTTP ${response.status}`));
     }
+    reachability.onReachable();
     throw new ApiError(
       response.status,
       parsed.success ? parsed.data.error.code : 'http_error',
@@ -77,6 +86,7 @@ export async function fetchJson(path: string, init?: RequestInit): Promise<unkno
       json,
     );
   }
+  reachability.onReachable();
   return json;
 }
 

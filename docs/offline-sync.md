@@ -6,8 +6,15 @@ of edits the daemon has not acknowledged. With the daemon down the editor keeps 
 daemon returns the queue is replayed in order. All op semantics come from `@hsw-editor/core` (`applyOp`): there is no
 second reducer.
 
-This layer is a library: the editor's wall session (`WallSync` of the web editor, PR #73) consumes it in the follow-up that wires it
-in (#87), so until then nothing in the UI calls it.
+## Wiring in the editor
+
+`WallSync` (`apps/web/src/wall/sync.ts`) persists the open wall and its queued edits through `OfflineStore` (the IndexedDB mirror, composed in
+`offline/runtime.ts`) on every change. With the daemon down at start-up it reopens the mirrored wall with its queue, read/write. With it up and
+a queue left from before a reload it takes the edits back on the wall they were made on and reconciles with the daemon's wall. A 409, and remote
+edits that arrived over SSE while edits were queued, go through the same `planReplay`: nothing clashes -> replayed silently; a clash or an older
+daemon -> `SyncState.conflict`, sending stops, and `ConflictDialog` offers rebase / keep mine / keep theirs (`resolveConflict`). The session
+(`wall/session.ts`) runs the event stream through `createLiveSource` with the shared `connection` monitor; its reconnect refetches the wall,
+which sends the queue. Undo/redo steps are not persisted. Walls the device has mirrored are listed when the daemon is unreachable.
 
 ## Storage
 

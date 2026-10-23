@@ -11,7 +11,10 @@ import {
 } from '@hsw-editor/core';
 import { ApiError, NetworkError } from '@/api/http.ts';
 import type { ChangeEntry, OpResponse, WallResponse } from '@/api/schemas.ts';
-import { WallSync, type SyncApi } from './sync.ts';
+import { createMemoryStore } from '@/offline/kv.ts';
+import { WallMirror } from '@/offline/mirror.ts';
+import { parseWallRecord, type WallRecord } from '@/offline/record.ts';
+import { WallSync, type OfflineStore, type SyncApi } from './sync.ts';
 
 const ME: Actor = { kind: 'human', name: 'web-test' };
 
@@ -229,5 +232,136 @@ describe('WallSync optimistic edits', () => {
     const second = server.external({ type: 'addItem', item: holder('x2', 2, 2) });
     await sync.applyRemote(second); // rev 2 while the client is at rev 0
     expect(sync.getSnapshot().wall?.items.map((i) => i.id)).toEqual(['x1', 'x2']);
+  });
+});
+
+describe('offline mirror and queue', () => {
+  const move = (id: string, col: number): Op => ({
+    type: 'moveItem',
+    id,
+    to: { cell: { col, row: 2 } },
+  });
+
+  function mirrorStore(): { store: OfflineStore; mirror: WallMirror } {
+    const mirror = new WallMirror(createMemoryStore<WallRecord>(parseWallRecord));
+    return {
+      mirror,
+      store: { load: (id) => mirror.get(id), save: (record) => void mirror.put(record) },
+    };
+  }
+
+  function serverWith(...ids: string[]): FakeServer {
+    const server = new FakeServer();
+    for (const [index, id] of ids.entries()) {
+      server.wall = applyOp(server.wall, { type: 'addItem', item: holder(id, index + 1, 1) }).wall;
+    }
+    return server;
+  }
+
+  test('edits made while the daemon is down are written to the mirror', async () => {
+    const server = serverWith('a');
+    const { store, mirror } = mirrorStore();
+    const sync = new WallSync('w', server, ME, Date.now, store);
+    await sync.load();
+    server.failNext = new NetworkError(new Error('down'));
+    sync.submit([move('a', 5)]);
+    await sync.idle();
+    await mirror.flush();
+    expect(sync.getSnapshot().status).toBe('offline');
+    expect((await mirror.get('w'))?.edits).toHaveLength(1);
+    sync.dispose();
+  });
+
+  test('a reload with the daemon down reopens the mirrored wall with its queued edits, read/write', async () => {
+    const server = serverWith('a');
+    const { store, mirror } = mirrorStore();
+    const first = new WallSync('w', server, ME, Date.now, store);
+    await first.load();
+    server.failNext = new NetworkError(new Error('down'));
+    first.submit([move('a', 5)]);
+    await first.idle();
+    await mirror.flush();
+    first.dispose();
+
+    server.failNext = new NetworkError(new Error('still down'));
+    const second = new WallSync('w', server, ME, Date.now, store);
+    await second.load();
+    const state = second.getSnapshot();
+    expect(state.status).toBe('offline');
+    expect(state.pending).toBe(1);
+    expect(state.wall?.items.find((i) => i.id === 'a')?.cell?.col).toBe(5);
+    expect(second.submit([move('a', 6)]).ok).toBe(true);
+    expect(second.getSnapshot().pending).toBe(2);
+    second.dispose();
+  });
+
+  test('queued edits are replayed when the daemon is back; edits on other items than the remote ones need no question', async () => {
+    const server = serverWith('a', 'b');
+    const { store, mirror } = mirrorStore();
+    const first = new WallSync('w', server, ME, Date.now, store);
+    await first.load();
+    server.failNext = new NetworkError(new Error('down'));
+    first.submit([move('a', 7)]);
+    await first.idle();
+    await mirror.flush();
+    first.dispose();
+
+    server.wall = applyOp(server.wall, move('b', 9)).wall; // the agent moved another item meanwhile
+    const second = new WallSync('w', server, ME, Date.now, store);
+    await second.load();
+    await second.idle();
+    const state = second.getSnapshot();
+    expect(state.conflict).toBeNull();
+    expect(state.pending).toBe(0);
+    expect(server.wall.items.find((i) => i.id === 'a')?.cell?.col).toBe(7);
+    expect(server.wall.items.find((i) => i.id === 'b')?.cell?.col).toBe(9);
+    await mirror.flush();
+    expect((await mirror.get('w'))?.edits).toHaveLength(0);
+    second.dispose();
+  });
+
+  test('clashing edits stop the queue and ask; each answer yields the documented wall', async () => {
+    for (const [strategy, expected] of [
+      ['rebase', 7],
+      ['keepMine', 7],
+      ['keepTheirs', 9],
+    ] as const) {
+      const server = serverWith('a');
+      const { store, mirror } = mirrorStore();
+      const first = new WallSync('w', server, ME, Date.now, store);
+      await first.load();
+      server.failNext = new NetworkError(new Error('down'));
+      first.submit([move('a', 7)]);
+      await first.idle();
+      await mirror.flush();
+      first.dispose();
+
+      server.wall = applyOp(server.wall, move('a', 9)).wall;
+      const second = new WallSync('w', server, ME, Date.now, store);
+      await second.load();
+      await second.idle();
+      expect(second.getSnapshot().conflict).not.toBeNull();
+      expect(server.wall.items[0]?.cell?.col).toBe(9); // nothing sent while the user decides
+      second.resolveConflict(strategy);
+      await second.idle();
+      expect(second.getSnapshot().conflict).toBeNull();
+      expect(server.wall.items[0]?.cell?.col).toBe(expected);
+      second.dispose();
+    }
+  });
+
+  test('an undo step in the queue does not make later edits skip reconciliation, and keeps its place after a resolution', async () => {
+    const server = serverWith('a', 'b');
+    const { store, mirror } = mirrorStore();
+    const sync = new WallSync('w', server, ME, Date.now, store);
+    await sync.load();
+    server.failNext = new NetworkError(new Error('down'));
+    sync.submit([move('a', 7)]);
+    await sync.idle();
+    sync.undo();
+    sync.submit([move('b', 8)]);
+    await mirror.flush();
+    expect((await mirror.get('w'))?.wall.rev).toBe(server.wall.rev); // the base is the wall the queue started on
+    sync.dispose();
   });
 });

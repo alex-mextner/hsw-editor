@@ -102,6 +102,7 @@ function openWall(items: WallItem[]): void {
     lastRemote: null,
     notice: null,
     errorMessage: null,
+    conflict: null,
   });
   setViewportBridge({
     toWall: (x, y) => ({ x, y }),

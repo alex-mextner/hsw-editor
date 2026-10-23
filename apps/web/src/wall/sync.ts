@@ -18,6 +18,9 @@ import {
   type WallWarning,
 } from '@hsw-editor/core';
 import { ApiError, NetworkError } from '@/api/http.ts';
+import { newRecord } from '@/offline/mirror.ts';
+import { planReplay, resolvePlan, type ReplayPlan, type Strategy } from '@/offline/reconcile.ts';
+import type { QueuedEdit, WallRecord } from '@/offline/record.ts';
 import {
   ConflictResponseSchema,
   type ChangeEntry,
@@ -48,6 +51,18 @@ export interface RemoteEdit {
   readonly at: number;
 }
 
+/** Offline persistence of the open wall (IndexedDB mirror); optional so the sync works without it. */
+export interface OfflineStore {
+  load(wallId: string): Promise<WallRecord | undefined>;
+  save(record: WallRecord): void;
+}
+
+/** Queued edits that clash with what changed on the daemon meanwhile; the user decides (`resolveConflict`). */
+export interface SyncConflict {
+  readonly plan: ReplayPlan;
+  readonly serverRev: number;
+}
+
 export interface SyncState {
   readonly wallId: string;
   readonly status: SyncStatus;
@@ -61,6 +76,8 @@ export interface SyncState {
   readonly lastRemote: RemoteEdit | null;
   readonly notice: Notice | null;
   readonly errorMessage: string | null;
+  /** Set while the queue waits for the user's decision; nothing is sent meanwhile. */
+  readonly conflict: SyncConflict | null;
 }
 
 type PendingEdit =
@@ -69,6 +86,9 @@ type PendingEdit =
       readonly kind: 'ops';
       readonly ops: readonly LeafOp[];
       readonly label?: string;
+      /** Server rev this edit was made against, and when (epoch ms): persisted with the offline queue. */
+      readonly baseRev: number;
+      readonly at: number;
     }
   | { readonly id: number; readonly kind: 'undo' | 'redo' };
 
@@ -104,6 +124,7 @@ export class WallSync {
     private readonly api: SyncApi,
     private readonly actor: Actor,
     private readonly now: () => number = Date.now,
+    private readonly offline: OfflineStore | null = null,
   ) {
     this.state = {
       wallId,
@@ -117,6 +138,7 @@ export class WallSync {
       lastRemote: null,
       notice: null,
       errorMessage: null,
+      conflict: null,
     };
   }
 
@@ -131,7 +153,31 @@ export class WallSync {
 
   readonly getSnapshot = (): SyncState => this.state;
 
+  /**
+   * The wall the queued edits were made on. Reconciliation compares it with the daemon's wall after a 409, so it must stay
+   * the old base while edits are queued and is only dropped once the queue is empty.
+   */
+  private queueBase: Wall | null = null;
+
+  /** Writes the confirmed wall and the queued edits to the offline mirror (undo/redo steps are not persisted). */
+  private persist(): void {
+    const base = this.queueBase ?? this.confirmed;
+    if (this.disposed || !this.offline || !base) return;
+    const edits = this.queuedOps();
+    this.offline.save({
+      ...newRecord(
+        base,
+        this.actor,
+        { canUndo: this.state.canUndo, canRedo: this.state.canRedo },
+        this.now(),
+      ),
+      edits,
+      nextEditId: this.nextId,
+    });
+  }
+
   private publish(patch: Partial<SyncState> = {}): void {
+    if (this.pending.length === 0) this.queueBase = null;
     const view = this.fold();
     this.state = {
       ...this.state,
@@ -141,6 +187,7 @@ export class WallSync {
       pending: this.pending.length,
       warnings: view ? checkWall(view) : [],
     };
+    this.persist();
     for (const listener of [...this.listeners]) listener();
   }
 
@@ -159,6 +206,19 @@ export class WallSync {
   async load(): Promise<void> {
     try {
       const response = await this.api.getWall(this.wallId);
+      const stored = await this.offline?.load(this.wallId).catch(() => undefined);
+      if (stored && stored.edits.length > 0) {
+        // Edits queued before a reload or a crash: take them back on the wall they were made on, then reconcile with
+        // the daemon's current wall (silently when nothing clashes, with the conflict dialog otherwise).
+        this.pending = stored.edits.map((edit) => ({ ...edit, kind: 'ops' as const }));
+        this.nextId = stored.nextEditId;
+        this.queueBase = stored.wall;
+        this.confirmed = stored.wall;
+        this.state = { ...this.state, canUndo: response.canUndo, canRedo: response.canRedo };
+        this.publish({ status: 'ready', errorMessage: null });
+        if (this.reconcile(response.wall)) this.flush();
+        return;
+      }
       this.confirmed = response.wall;
       this.publish({
         status: 'ready',
@@ -168,8 +228,27 @@ export class WallSync {
       });
       this.flush();
     } catch (error) {
+      if (error instanceof NetworkError && (await this.restoreFromMirror())) return;
       this.fail(error);
     }
+  }
+
+  /** The daemon is down at start-up: open the last mirrored wall with its queued edits, read/write, offline. */
+  private async restoreFromMirror(): Promise<boolean> {
+    const record = await this.offline?.load(this.wallId).catch(() => undefined);
+    if (!record) return false;
+    this.confirmed = record.wall;
+    this.queueBase = record.edits.length > 0 ? record.wall : null;
+    this.pending = record.edits.map((edit) => ({ ...edit, kind: 'ops' as const }));
+    this.nextId = record.nextEditId;
+    this.publish({
+      status: 'offline',
+      canUndo: record.canUndo,
+      canRedo: record.canRedo,
+      errorMessage: null,
+    });
+    this.scheduleRetry();
+    return true;
   }
 
   /** Resolves when every queued edit has been sent (or sending stopped, e.g. offline). */
@@ -252,11 +331,15 @@ export class WallSync {
       if (error instanceof OpError) return { ok: false, error };
       throw error;
     }
+    // The base of the queue is the wall its first edit was made on; undo/redo steps in the queue count too.
+    this.queueBase ??= this.confirmed;
     this.pending.push({
       id: this.nextId++,
       kind: 'ops',
       ops: leaves,
       ...(label === undefined ? {} : { label }),
+      baseRev: this.confirmed?.rev ?? 0,
+      at: this.now(),
     });
     this.publish({ canUndo: true, canRedo: false });
     this.flush();
@@ -293,7 +376,7 @@ export class WallSync {
   }
 
   private flush(): void {
-    if (this.flushing || this.disposed) return;
+    if (this.flushing || this.disposed || this.state.conflict) return;
     this.flushing = true;
     this.flushRun = this.runFlush();
   }
@@ -305,6 +388,11 @@ export class WallSync {
         const head = this.pending[0];
         const confirmed = this.confirmed;
         if (!head || !confirmed) break;
+        // Remote edits arrived (SSE) while edits were queued: reconcile before sending so they are never overwritten blindly.
+        if (head.kind === 'ops' && this.queueBase && confirmed.rev !== this.queueBase.rev) {
+          if (!this.reconcile(confirmed)) break;
+          continue;
+        }
         try {
           const response =
             head.kind === 'ops'
@@ -314,7 +402,7 @@ export class WallSync {
                 : await this.api.redo(this.wallId, confirmed.rev);
           this.pending.shift();
           conflicts = 0;
-          this.onAck(head, response);
+          this.onAck(head, response, confirmed.rev);
         } catch (error) {
           const outcome = this.onSendError(head, error, conflicts);
           if (outcome === 'retry') {
@@ -329,7 +417,12 @@ export class WallSync {
     }
   }
 
-  private onAck(head: PendingEdit, response: OpResponse): void {
+  private onAck(head: PendingEdit, response: OpResponse, sentRev: number): void {
+    // The remaining edits were made on top of this one: the daemon's answer is their new base, unless a remote edit
+    // interleaved (then the answer is more than one rev ahead). Our own SSE echo may already have moved `confirmed`.
+    if (this.queueBase?.rev === sentRev && response.wall.rev === sentRev + 1) {
+      this.queueBase = response.wall;
+    }
     if (!this.confirmed || response.wall.rev >= this.confirmed.rev) this.confirmed = response.wall;
     this.publish({ status: 'ready', canUndo: response.canUndo, canRedo: response.canRedo });
   }
@@ -348,9 +441,7 @@ export class WallSync {
     if (error instanceof ApiError && error.isConflict) {
       const body = ConflictResponseSchema.safeParse(error.body);
       if (body.success && body.data.wall && conflictsSoFar < MAX_CONFLICT_RETRIES) {
-        this.confirmed = body.data.wall;
-        this.publish();
-        return 'retry';
+        return this.reconcile(body.data.wall) ? 'retry' : 'stop';
       }
     }
     if (error instanceof ApiError) {
@@ -364,6 +455,96 @@ export class WallSync {
     this.notice('error', 'unexpected', error instanceof Error ? error.message : String(error));
     this.publish();
     return 'dropped';
+  }
+
+  private conflictServer: Wall | null = null;
+
+  private queuedOps(): QueuedEdit[] {
+    return this.pending.flatMap((edit) =>
+      edit.kind === 'ops'
+        ? [
+            {
+              id: edit.id,
+              ops: edit.ops,
+              ...(edit.label === undefined ? {} : { label: edit.label }),
+              baseRev: edit.baseRev,
+              at: edit.at,
+            },
+          ]
+        : [],
+    );
+  }
+
+  /**
+   * The daemon's wall moved while edits were queued (409). Edits that touch nothing the other side changed are replayed on
+   * top silently; a real clash (same field, an item removed or locked meanwhile) or a daemon older than our base stops the
+   * queue and asks the user (`conflict`). Returns whether sending may go on.
+   */
+  private reconcile(server: Wall): boolean {
+    const base = this.queueBase ?? this.confirmed;
+    const edits = this.queuedOps();
+    if (!base || edits.length === 0) {
+      this.confirmed = server;
+      this.publish();
+      return true;
+    }
+    const plan = planReplay(base, edits, server);
+    if (plan.conflicts.length > 0 || plan.diverged) {
+      this.conflictServer = server;
+      this.publish({ conflict: { plan, serverRev: server.rev } });
+      return false;
+    }
+    this.applyResolution(base, edits, server, 'rebase');
+    return true;
+  }
+
+  private applyResolution(
+    base: Wall,
+    edits: readonly QueuedEdit[],
+    server: Wall,
+    strategy: Strategy,
+  ): void {
+    const resolution = resolvePlan(base, edits, server, strategy);
+    const kept = new Map(
+      resolution.send.map((edit) => [
+        edit.id,
+        {
+          id: edit.id,
+          kind: 'ops' as const,
+          ops: edit.ops,
+          ...(edit.label === undefined ? {} : { label: edit.label }),
+          baseRev: server.rev,
+          at: edit.at,
+        },
+      ]),
+    );
+    // Original order is kept: an undo or redo step stays where it was between the edits.
+    this.pending = this.pending.flatMap((edit): PendingEdit[] => {
+      if (edit.kind !== 'ops') return [edit];
+      const replacement = kept.get(edit.id);
+      return replacement ? [replacement] : [];
+    });
+    this.confirmed = server;
+    this.queueBase = this.pending.length > 0 ? server : null;
+    this.conflictServer = null;
+    this.publish({ conflict: null });
+    if (resolution.dropped.length > 0) {
+      this.notice(
+        'rejected',
+        'dropped',
+        resolution.dropped.map((entry) => entry.message ?? entry.reason).join('; '),
+      );
+      this.publish();
+    }
+  }
+
+  /** The user's answer to `state.conflict`: apply the strategy to the daemon state they were shown and carry on. */
+  resolveConflict(strategy: Strategy): void {
+    const server = this.conflictServer;
+    const base = this.queueBase;
+    if (!server || !base || this.state.conflict?.serverRev !== server.rev) return;
+    this.applyResolution(base, this.queuedOps(), server, strategy);
+    this.flush();
   }
 
   private scheduleRetry(): void {
