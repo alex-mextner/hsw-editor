@@ -1,4 +1,4 @@
-import { markGone, markRetrying, type AssetGoneReason } from './assetHealth.ts';
+import { forgetFailure, markGone, markRetrying, type AssetGoneReason } from './assetHealth.ts';
 import { bankStore, refreshBank, unavailableElements } from './client.ts';
 
 /**
@@ -78,8 +78,10 @@ export function registerRetryHandler(url: string, handler: RetryHandler): () => 
     set.delete(handler);
     if (set.size > 0) return;
     handlers.delete(url);
-    // Nobody left to draw the result: the countdown has no purpose.
+    // Nobody left to draw the result: the countdown has no purpose, and a record (and its toast) that
+    // promises "retrying automatically" would be a lie. The next boundary to fail re-creates both.
     cancelTimer(url);
+    forgetFailure(url);
   };
 }
 

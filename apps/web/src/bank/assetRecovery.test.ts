@@ -172,6 +172,18 @@ describe('retry handler registry', () => {
   });
 });
 
+describe('failure record lifetime', () => {
+  test('the record (and so its toast) goes away when the last boundary for the URL unmounts', () => {
+    failIt();
+    const offA = registerRetryHandler(URL, () => undefined);
+    const offB = registerRetryHandler(URL, () => undefined);
+    offA();
+    expect(getFailure(URL)).toBeDefined(); // another boundary still draws it
+    offB();
+    expect(getFailure(URL)).toBeUndefined();
+  });
+});
+
 describe('auto retry timer', () => {
   test('fires one requestRetry per URL however often it is rescheduled', () => {
     vi.useFakeTimers();
