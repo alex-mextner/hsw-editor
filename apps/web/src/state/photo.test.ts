@@ -4,9 +4,13 @@ import {
   enterPhotoMode,
   finishCalibration,
   leavePhotoMode,
+  patchPhoto,
   photoStore,
   setOverlayOpacity,
+  setSplit,
   startCalibration,
+  toggleAlign,
+  toggleSplit,
 } from './photo.ts';
 
 beforeEach(() => leavePhotoMode());
@@ -21,23 +25,50 @@ describe('photo mode state', () => {
     expect(photoStore.get()).toMatchObject({ photoId: 'p2', calibrating: false });
   });
 
-  test('recalibrating keeps the photo and reopens the wizard', () => {
+  test('recalibrating keeps the photo, reopens the wizard and drops a board drag', () => {
     enterPhotoMode('p1', { calibrated: true });
+    toggleAlign('move');
     startCalibration('p1');
-    expect(photoStore.get().calibrating).toBe(true);
+    expect(photoStore.get()).toMatchObject({ calibrating: true, align: null, draft: null });
   });
 
-  test('leaving clears the photo and the wizard', () => {
+  test('leaving clears the photo, the wizard, the divider and the board drag', () => {
     enterPhotoMode('p1', { calibrated: false });
+    toggleSplit();
+    toggleAlign('roll');
     leavePhotoMode();
-    expect(photoStore.get()).toMatchObject({ photoId: null, calibrating: false });
+    expect(photoStore.get()).toMatchObject({
+      photoId: null,
+      calibrating: false,
+      split: null,
+      align: null,
+    });
   });
 
-  test('opacity is clamped to 0..1', () => {
+  test('opacity and divider are clamped to 0..1', () => {
     expect(photoStore.get().overlayOpacity).toBe(DEFAULT_OVERLAY_OPACITY);
     setOverlayOpacity(3);
     expect(photoStore.get().overlayOpacity).toBe(1);
     setOverlayOpacity(-1);
     expect(photoStore.get().overlayOpacity).toBe(0);
+    setSplit(1.5);
+    expect(photoStore.get().split).toBe(1);
+  });
+
+  test('the divider toggles on at the centre and off again', () => {
+    toggleSplit();
+    expect(photoStore.get().split).toBe(0.5);
+    toggleSplit();
+    expect(photoStore.get().split).toBeNull();
+  });
+
+  test('board drag modes switch and toggle off, discarding any draft', () => {
+    toggleAlign('move');
+    expect(photoStore.get().align).toBe('move');
+    patchPhoto({ draft: { method: 'two-point', mmPerPx: 1 } });
+    toggleAlign('roll');
+    expect(photoStore.get()).toMatchObject({ align: 'roll', draft: null });
+    toggleAlign('roll');
+    expect(photoStore.get().align).toBeNull();
   });
 });

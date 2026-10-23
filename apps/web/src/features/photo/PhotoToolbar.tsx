@@ -1,44 +1,87 @@
-import { Eye, EyeOff, ImagePlus, Layers, RulerIcon } from 'lucide-react';
+import {
+  Columns2,
+  Eye,
+  EyeOff,
+  ImageOff,
+  ImagePlus,
+  ImageIcon,
+  Layers,
+  Move,
+  RotateCw,
+  Ruler,
+} from 'lucide-react';
 import { IconButton } from '@/components/IconButton.tsx';
 import { Slider } from '@/components/ui/slider.tsx';
 import { useShortcutLabel } from '@/commands/app.ts';
 import { useI18n } from '@/i18n/index.ts';
+import {
+  photoStore,
+  setOverlayOpacity,
+  startCalibration,
+  toggleAlign,
+  togglePhotoHidden,
+  toggleSplit,
+} from '@/state/photo.ts';
 import { useStore } from '@/state/react.ts';
 import { sessionStore } from '@/wall/session.ts';
 import { togglePhotoMode } from './photoActions.ts';
 import { choosePhotoFile } from './photoImport.ts';
-import { photoStore, setOverlayOpacity, startCalibration } from '@/state/photo.ts';
 
-/** Photo controls of the viewport toolbar: photo mode on/off, import, calibrate and the overlay opacity. */
+/** Photo controls of the viewport toolbar: photo mode on/off, import, calibrate, how the photo shows, board drag. */
 export function PhotoToolbar() {
   const { t } = useI18n();
   const overlayKey = useShortcutLabel('view.overlay');
   const photo = useStore(photoStore);
   const wall = useStore(sessionStore)?.wall;
-  const active = photo.photoId !== null;
+  const photoId = photo.photoId;
 
   return (
     <div className="pointer-events-auto flex items-center gap-1 rounded-lg border border-border bg-panel/95 p-0.5 pr-2 shadow-sm backdrop-blur">
       <IconButton
-        label={active ? t('overlay.hide') : t('overlay.show')}
+        label={photoId !== null ? t('overlay.hide') : t('overlay.show')}
         shortcut={overlayKey}
-        pressed={active}
+        pressed={photoId !== null}
         disabled={!wall}
         onClick={togglePhotoMode}
       >
-        {active ? <Eye /> : <EyeOff />}
+        {photoId !== null ? <Eye /> : <EyeOff />}
       </IconButton>
       <IconButton label={t('photo.import')} disabled={!wall} onClick={choosePhotoFile}>
         <ImagePlus />
       </IconButton>
-      {active && photo.photoId !== null ? (
+      {photoId !== null ? (
         <>
           <IconButton
             label={t('calibration.open')}
             pressed={photo.calibrating}
-            onClick={() => startCalibration(photo.photoId ?? '')}
+            onClick={() => startCalibration(photoId)}
           >
-            <RulerIcon />
+            <Ruler />
+          </IconButton>
+          <div className="mx-0.5 h-5 w-px bg-border" />
+          <IconButton
+            label={photo.photoHidden ? t('photo.showPhoto') : t('photo.hidePhoto')}
+            pressed={photo.photoHidden}
+            onClick={togglePhotoHidden}
+          >
+            {photo.photoHidden ? <ImageOff /> : <ImageIcon />}
+          </IconButton>
+          <IconButton label={t('photo.split')} pressed={photo.split !== null} onClick={toggleSplit}>
+            <Columns2 />
+          </IconButton>
+          <IconButton
+            label={t('photo.moveBoard')}
+            pressed={photo.align === 'move'}
+            onClick={() => toggleAlign('move')}
+          >
+            <Move />
+          </IconButton>
+          <IconButton
+            label={t('photo.rollBoard')}
+            pressed={photo.align === 'roll'}
+            onClick={() => toggleAlign('roll')}
+          >
+            <RotateCw />
           </IconButton>
           <Layers className="size-3.5 text-muted-foreground" aria-hidden />
           <Slider

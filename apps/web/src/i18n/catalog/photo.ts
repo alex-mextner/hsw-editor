@@ -50,6 +50,18 @@ export const photoEn = {
   'photo.wizard.problem.cornerOrder':
     'The corners are in the wrong order: lower left, lower right, upper right, upper left.',
   'photo.wizard.problem.degenerate': 'These points do not describe a rectangle.',
+  'photo.hidePhoto': 'Hide the photo',
+  'photo.showPhoto': 'Show the photo',
+  'photo.split': 'Before / after divider',
+  'photo.split.handle': 'Before / after divider: drag to compare',
+  'photo.moveBoard': 'Move the board over the photo',
+  'photo.rollBoard': 'Turn the board over the photo',
+  'photo.align.moveHint': 'Drag over the photo to line the grid up with the real wall.',
+  'photo.align.rollHint': 'Drag over the photo to turn the board about its centre.',
+  'photo.unusable.title': 'This calibration cannot be drawn on the photo',
+  'photo.unusable.body':
+    'Its geometry does not describe a flat wall seen by a camera. Calibrate the photo again.',
+  'photo.unusable.action': 'Calibrate again',
 } as const;
 
 export const photoRu: FeatureRu<typeof photoEn> = {
@@ -101,4 +113,16 @@ export const photoRu: FeatureRu<typeof photoEn> = {
   'photo.wizard.problem.cornerOrder':
     'Углы в неверном порядке: левый нижний, правый нижний, правый верхний, левый верхний.',
   'photo.wizard.problem.degenerate': 'Эти точки не образуют прямоугольник.',
+  'photo.hidePhoto': 'Скрыть фото',
+  'photo.showPhoto': 'Показать фото',
+  'photo.split': 'Разделитель «до / после»',
+  'photo.split.handle': 'Разделитель «до / после»: перетащите для сравнения',
+  'photo.moveBoard': 'Сдвинуть панель по фото',
+  'photo.rollBoard': 'Повернуть панель на фото',
+  'photo.align.moveHint': 'Тяните по фото, чтобы совместить сетку с реальной стеной.',
+  'photo.align.rollHint': 'Тяните по фото, чтобы повернуть панель вокруг центра.',
+  'photo.unusable.title': 'Эту калибровку нельзя нарисовать на фото',
+  'photo.unusable.body':
+    'Её геометрия не описывает плоскую стену, снятую камерой. Откалибруйте фото заново.',
+  'photo.unusable.action': 'Калибровать заново',
 };

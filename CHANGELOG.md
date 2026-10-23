@@ -63,6 +63,7 @@ needs an entry here first.
   the editor's registered commands on the page (`ViewportCall` method `app_command`, 5 min timeout, `ui_cancel` message on
   abort), and the palette's `PaletteAiBridge` now runs on the agent panel's connection (palette-mode prompt, streamed answer,
   `⌘K ·` marker in the panel transcript). Changing actions still need the palette's approval unless `auto` is on.
+- Photo mode, backdrop (#30): after calibration the photo is the viewport backdrop and the HSW board (white web with the cells open to the wall), items and invalid-zone stripes are drawn over it by a camera recovered from the calibration (`photoCamera`); photo opacity, hide-photo, before/after divider, and move/turn the board over the photo (one undoable `setCalibration` per drag).
 
 ### Changed
 
