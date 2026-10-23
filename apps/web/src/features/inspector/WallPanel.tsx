@@ -7,6 +7,7 @@ import { cn } from '@/lib/cn.ts';
 import { setSelection } from '@/state/editor.ts';
 import { useStore } from '@/state/react.ts';
 import { sessionStore } from '@/wall/session.ts';
+import { PhysicsSection } from '@/features/physics/PhysicsSection.tsx';
 import { showPhoto } from '@/features/photo/photoActions.ts';
 import { leavePhotoMode, photoStore, startCalibration } from '@/state/photo.ts';
 
@@ -98,6 +99,8 @@ export function WallPanel({ wall }: { readonly wall: Wall }) {
           </ul>
         )}
       </section>
+
+      <PhysicsSection wall={wall} />
 
       {warnings.length > 0 ? (
         <section className="grid gap-1.5">

@@ -30,6 +30,7 @@ import {
 import { sessionStore, submitOps } from '@/wall/session.ts';
 import { moveItemsOps, planToolDrag } from '@/wall/attach.ts';
 import { layoutProblems } from '@/wall/footprint.ts';
+import { seatAfterDrop } from '@/physics/postStep.ts';
 import { cancelSnap, glideTo } from './snapAnimation.ts';
 import { wallPointAt } from './viewportBridge.ts';
 
@@ -336,6 +337,8 @@ function beginWallToolDrag(
       if (!submitOps([planHang(liveTool, resolution.target)], 'hang').ok) return;
       const hung = currentWall()?.items.find((item) => item.id === id);
       if (hung) glideTo(id, outcome.pose, fullPose(hung));
+      // The hang is instant (compatibility pose); the physics seats the tool in the real holder a moment later.
+      seatAfterDrop(id, outcome.point);
       return;
     }
     const ops: LeafOp[] = [

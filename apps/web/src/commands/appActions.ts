@@ -8,6 +8,7 @@ import {
   togglePhotoMode,
   toggleSplit,
 } from '@/features/photo/photoActions.ts';
+import { checkPhysics } from '@/features/physics/checkPhysics.ts';
 import { bankStore } from '@/bank/client.ts';
 import { newWallDialogStore } from '@/features/wizard/NewWallDialog.tsx';
 import type { HistoryEntry } from '@hsw-editor/core';
@@ -128,6 +129,12 @@ export function createAppActions(deps: AppActionDeps): EditorActions {
     toggleOverlay: togglePhotoMode,
     exportPhoto: () => void exportPhotoPng(),
     findPhotoTools: () => void findPhotoTools(),
+    checkPhysics: () => {
+      // The report list lives in the wall view of the inspector: no selection, panel open.
+      setSelection([]);
+      layoutStore.set({ ...layoutStore.get(), [PANEL_LAYOUT_KEY.inspector]: true });
+      void checkPhysics();
+    },
     calibratePhoto: calibrateShownPhoto,
     togglePhotoVisible: togglePhotoHidden,
     togglePhotoSplit: toggleSplit,

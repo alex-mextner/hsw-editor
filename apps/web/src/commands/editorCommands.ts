@@ -31,6 +31,8 @@ export interface EditorActions {
   readonly toggleOverlay: () => void;
   readonly exportPhoto: () => void;
   readonly findPhotoTools: () => void;
+  /** Runs the wall physics check and opens its report list (the wall view of the inspector). */
+  readonly checkPhysics: () => void;
   readonly calibratePhoto: () => void;
   readonly togglePhotoVisible: () => void;
   readonly togglePhotoSplit: () => void;
@@ -316,6 +318,26 @@ export function createEditorCommands(actions: EditorActions): readonly Command[]
       when: `hasWall && ${FREE}`,
       mutates: false,
       handler: effect(actions.findPhotoTools),
+    }),
+    defineCommand({
+      id: 'physics.check',
+      title: msg('physics.cmd.check'),
+      keywords: [
+        'physics',
+        'stability',
+        'balance',
+        'hang',
+        'swing',
+        'tip',
+        'removal',
+        'физика',
+        'устойчивость',
+        'равновесие',
+      ],
+      group: 'view',
+      when: `hasWall && ${FREE}`,
+      mutates: false,
+      handler: effect(actions.checkPhysics),
     }),
     defineCommand({
       id: 'photo.calibrate',

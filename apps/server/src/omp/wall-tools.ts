@@ -153,6 +153,7 @@ const ViewArgsSchema = z.strictObject({
   view: z.enum(['current', 'front', 'iso']).default('current'),
   maxSidePx: z.number().int().min(200).max(MAX_VIEW_SIDE_PX).default(900),
 });
+const AnalyseHangArgsSchema = z.strictObject({ itemId: z.string().min(1).max(64).optional() });
 const RequestInputArgsSchema = z.strictObject({ request: NewInputRequestSchema });
 
 // ---- Tools ----------------------------------------------------------------------------------------------
@@ -169,6 +170,13 @@ interface ApiErrorReply {
     readonly details?: JsonValue;
   };
   readonly currentRev?: number;
+}
+
+/** The slice of the physics report the tool's `details` read; the body itself is passed on untouched. */
+interface WallPhysicsReply {
+  readonly rev?: number;
+  readonly tools?: readonly unknown[];
+  readonly flagged?: number;
 }
 
 export function createWallToolFactory(options: WallToolOptions): ToolFactory {
@@ -302,8 +310,7 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
       definition: {
         name: 'wall_apply',
         label: 'Wall: apply ops',
-        description:
-          `Apply one or more ops to the open wall as a single atomic batch (one rev, one undo step), attributed to you (agent omp). Op types: ${OP_TYPE_NAMES}. Omitted item ids are generated and returned. Pass baseRev from wall_get to detect concurrent edits by the user. Removing more items than the configured threshold needs the user to approve.`,
+        description: `Apply one or more ops to the open wall as a single atomic batch (one rev, one undo step), attributed to you (agent omp). Op types: ${OP_TYPE_NAMES}. Omitted item ids are generated and returned. Pass baseRev from wall_get to detect concurrent edits by the user. Removing more items than the configured threshold needs the user to approve.`,
         parameters: jsonSchemaOf(ApplyArgsSchema),
       },
       async execute(args, { signal }) {
@@ -456,7 +463,10 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
           }),
         );
         const results = elements.filter((entry): entry is BankElementSummary => entry !== null);
-        return jsonResult({ count: results.length, results }, { details: { count: results.length } });
+        return jsonResult(
+          { count: results.length, results },
+          { details: { count: results.length } },
+        );
       },
     };
 
@@ -549,6 +559,34 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
       },
     };
 
+    const analyseHang: HostTool = {
+      definition: {
+        name: 'wall_analyse_hang',
+        label: 'Wall: analyse hang',
+        description:
+          'Analyse how the tools hang on their holders, physically (mass and centre of gravity against the real holder geometry): per tool a stability score and status (stable|marginal|unstable), problems such as levitating above the holder, not seated, falls, tips, swings, slides off, needs retention, overloaded holder, and removal ergonomics (blocked by neighbours, needs a tilt, needs two hands, cramped), each with an English sentence. Tools that overhang the board edge are fine; only physics is judged. Without itemId the whole wall is analysed, with itemId one tool. Tools without a holder (parentId) or a tool model are listed under skipped.',
+        parameters: jsonSchemaOf(AnalyseHangArgsSchema),
+      },
+      async execute(args, { signal }) {
+        const parsed = AnalyseHangArgsSchema.safeParse(args);
+        if (!parsed.success) return failure(formatIssues(parsed.error));
+        const { itemId } = parsed.data;
+        const path =
+          itemId === undefined
+            ? `${wallPath}/physics`
+            : `${wallPath}/items/${encodeURIComponent(itemId)}/physics`;
+        const reply = await api<WallPhysicsReply & ApiErrorReply>('GET', path, undefined, signal);
+        if (reply.status !== 200) return apiFailure(reply.status, reply.body);
+        return jsonResult(reply.body, {
+          details: {
+            rev: reply.body.rev ?? null,
+            tools: reply.body.tools?.length ?? 0,
+            flagged: reply.body.flagged ?? 0,
+          },
+        });
+      },
+    };
+
     /** Long-poll the request until it is resolved; null when `signal` aborts first. */
     async function awaitRequest(path: string, signal: AbortSignal): Promise<InputRequest | null> {
       while (!signal.aborted) {
@@ -593,7 +631,16 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
       return `${named.join(', ')}${more}`;
     }
 
-    return [wallGet, wallApply, wallUndo, bankSearch, wallSelect, wallView, requestInput];
+    return [
+      wallGet,
+      wallApply,
+      wallUndo,
+      bankSearch,
+      wallSelect,
+      wallView,
+      requestInput,
+      analyseHang,
+    ];
   };
 }
 

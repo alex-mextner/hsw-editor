@@ -6,6 +6,7 @@ import { compareRu } from './catalog/compare.ts';
 import { ompRu } from './catalog/omp.ts';
 import { invalidZonesRu } from './catalog/invalidZones.ts';
 import { photoRu } from './catalog/photo.ts';
+import { physicsRu } from './catalog/physics.ts';
 import { shellRu } from './catalog/shell.ts';
 import { toolsRu } from './catalog/tools.ts';
 import { viewportRu } from './catalog/viewport.ts';
@@ -25,4 +26,5 @@ export const ru: Catalogue = {
   ...commandsRu,
   ...toolsRu,
   ...photoRu,
+  ...physicsRu,
 };

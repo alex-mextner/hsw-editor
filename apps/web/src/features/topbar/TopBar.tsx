@@ -36,6 +36,7 @@ import { useStore } from '@/state/react.ts';
 import { themeStore, toggleTheme } from '@/state/theme.ts';
 import { redoEdit, sessionStore, undoEdit } from '@/wall/session.ts';
 import { InvalidZonesToggle } from '@/features/invalid-zones/InvalidZonesToggle.tsx';
+import { PhysicsToggle } from '@/features/physics/PhysicsToggle.tsx';
 import { offlineStorageDialogStore } from '@/features/offline/OfflineStorageDialog.tsx';
 import { PresenceBadge } from './PresenceBadge.tsx';
 import { SyncStatus } from './SyncStatus.tsx';
@@ -92,6 +93,7 @@ export function TopBar() {
         <Redo2 />
       </IconButton>
       <InvalidZonesToggle />
+      <PhysicsToggle />
 
       <div className="flex-1" />
 

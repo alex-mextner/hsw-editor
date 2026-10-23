@@ -21,7 +21,7 @@ import {
   compareReasons,
   DEFAULT_VALIDITY_TOLERANCES,
   forbiddenSlabs,
-  isSolid,
+  isBoundsChecked,
   itemWorldAabb,
   mayCollide,
   poseKey,
@@ -196,7 +196,7 @@ export class InvalidZoneEngine {
     );
     // Bounds: only items whose box leaves the board prism need a boolean.
     for (const entry of live) {
-      if (!isSolid(entry.item)) continue;
+      if (!isBoundsChecked(entry.item)) continue;
       for (const side of slabsReachedBy(entry.box, board, tol.depthMm)) {
         const key = `bounds|${entry.item.solidKey}@${poseKey(entry.item.pose)}|${boardKey(board)}|${reach}|${side}`;
         const region = lookup(key, () =>

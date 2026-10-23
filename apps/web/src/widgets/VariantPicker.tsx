@@ -11,7 +11,10 @@ import { useStore } from '@/state/react.ts';
 import { addHolderForTool } from '@/wall/actions.ts';
 import { toolInterfaceOf } from '@/wall/toolInterface.ts';
 import { sessionStore, submitOps } from '@/wall/session.ts';
+import { usePhysicsRatings, useRankedCandidates } from '@/physics/suggest.ts';
 import { VariantPickerCard, type Candidate } from './VariantPickerCard.tsx';
+
+const NO_HOLDER_IDS: readonly string[] = [];
 
 const FOCUS_KEYS = ['ArrowLeft', 'ArrowRight', 'Home', 'End'];
 
@@ -86,10 +89,19 @@ export function VariantPicker({ item }: { readonly item: WallItem }) {
   const isTool = item.kind === 'tool';
   const toolClass = isTool ? toolClassOf(item, wall) : undefined;
 
-  const candidates = useMemo(
+  // Fit order of the compatibility maths.
+  const suggested = useMemo(
     () => (bank.status === 'ready' ? candidatesFor(item, wall, bank.index, bank.byId) : []),
     [bank, item, wall],
   );
+  // Stability and convenience of hanging this tool on each suggested holder (tools only).
+  const holderIds = useMemo(
+    () => (isTool ? suggested.map((candidate) => candidate.element.id) : NO_HOLDER_IDS),
+    [isTool, suggested],
+  );
+  const ratings = usePhysicsRatings(item.id, holderIds);
+  // Re-ranked as ratings arrive; rows already shown move only when their place changes by more than one.
+  const candidates = useRankedCandidates(suggested, ratings);
   // Keyed by item so the message of one pick never shows on another selection.
   const [noRoomFor, setNoRoomFor] = useState<string | null>(null);
   const noRoom = noRoomFor === item.id;
@@ -191,6 +203,7 @@ export function VariantPicker({ item }: { readonly item: WallItem }) {
               <VariantPickerCard
                 key={candidate.element.id}
                 candidate={candidate}
+                physics={ratings.get(candidate.element.id)}
                 current={!isTool && candidate.element.id === item.bankId}
                 disabled={!isTool && item.locked}
                 adds={isTool}

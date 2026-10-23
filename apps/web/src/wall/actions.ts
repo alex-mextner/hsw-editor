@@ -29,6 +29,7 @@ import { t, tn } from '@/i18n/index.ts';
 import { localeStore } from '@/i18n/locale.ts';
 import { editorStore, patchEditor, setSelection, type Vec2 } from '@/state/editor.ts';
 import { wallPointAt } from '@/scene/viewportBridge.ts';
+import { seatAfterChosenHang } from '@/physics/postStep.ts';
 import { attachContext } from './attach.ts';
 import { reasonText, toolClassName } from './attachReasons.ts';
 import { toolClassOfItem } from './toolInterface.ts';
@@ -312,6 +313,8 @@ export function addHolderForTool(tool: WallItem, element: BankElement): AddHolde
   ).ok;
   if (!ok) return 'failed';
   setSelection([tool.id]);
+  // A holder chosen for the tool (a suggestion): the physics seats the tool in it a moment later.
+  seatAfterChosenHang(tool.id);
   return 'ok';
 }
 
