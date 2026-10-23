@@ -38,9 +38,13 @@ stored and **pinned** entries are never chosen. A quota error evicts down to 75 
 cached. Sizes, last use and the pin flag live in the `assets` store of the offline IndexedDB (`registry.ts`); cache hits are batched in
 memory before they are written.
 
-"Make available offline" (`storage.ts`) downloads the chosen bank categories, the whole bank or a wall's media through the same store
+"Make available offline" (`storage.ts`, UI: the Offline storage dialog from the top bar, `features/offline/OfflineStorageDialog.tsx`) downloads the chosen bank categories, the whole bank or a wall's media through the same store
 function, from the page (so it works on the very first visit, before the worker controls it), and pins them. It skips files already cached
 (it only pins them), stops as offline on a network error, as `quota` when origin usage passes 90 % of the quota, and can be cancelled.
+
+The Offline storage dialog shows the browser's usage and quota, files/size/pinned per category, downloads the whole bank or one top-level
+category (with progress, cancel and the stop reasons offline / quota), clears models or thumbnails, asks the browser to keep the storage
+(`storage.persist()`), and offers Install the app (or the Share -> Add to Home Screen hint on iPhone).
 
 ## Update flow
 
