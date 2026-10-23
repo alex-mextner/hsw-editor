@@ -11,6 +11,7 @@ describe('EventFence', () => {
       const reached: string[] = [];
       const mounted = await mount(
         <div
+          role="presentation"
           onContextMenu={() => reached.push('contextmenu')}
           onClick={() => reached.push('click')}
           onDoubleClick={() => reached.push('dblclick')}
