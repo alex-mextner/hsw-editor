@@ -59,8 +59,8 @@ photo overlay. Region meshes are merged into one geometry (one draw call per pas
 
 - `WallViewport` builds the scene with `engineScene` (`wallAdapter.ts`: wall items -> engine items, live drag poses included) and `itemSolid`
   (the bank GLB at full detail, absolute url; tools without a model as their stand-in box), runs `useInvalidZones`, and mounts `<InvalidZones/>`.
-  The whole-instance red tint is gone: only the stripes mark invalid parts. The selection frame still turns red for an item the exact check flags, or
-  that the cell-based check / server warnings flag (so it also works with the zones off or still loading); drag validity (the green/red
+  The whole-instance red tint is gone: only the stripes mark invalid parts. The selection frame (an outline, not a model tint) still turns red for a selected item the exact check flags, or
+  that the cell-based check / server warnings flag, also with the zones off; drag validity (the green/red
   ghost) is still the cell-based check. The op reducer and saving are unchanged (everything stays advisory). While models are still
   downloading the legend says "Checking geometry…" instead of "No invalid zones".
 - Top bar: `InvalidZonesToggle` (persisted in `localStorage` `hsw-editor.invalid-zones`, on by default). Viewport: `InvalidZonesLegend` (swatch +
