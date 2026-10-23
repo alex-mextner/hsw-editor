@@ -5,6 +5,8 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=lib/web-build.sh
+. "$root/scripts/lib/web-build.sh"
 bin_dir="${HSW_EDITOR_BIN_DIR:-$HOME/.local/bin}"
 rebuild=0
 build=1
@@ -37,7 +39,7 @@ echo "install: bun install --frozen-lockfile"
 bun install --frozen-lockfile
 
 if [ "$build" = 1 ]; then
-  if [ "$rebuild" = 1 ] || [ ! -f apps/web/dist/index.html ]; then
+  if [ "$rebuild" = 1 ] || ! web_build_present apps/web/dist; then
     echo "install: building the web app"
     bun run build
   else
