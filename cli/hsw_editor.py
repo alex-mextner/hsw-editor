@@ -276,8 +276,8 @@ def build_parser() -> argparse.ArgumentParser:
     if LIBS_OK:
         add_wall_parser(subs)
         add_bank_parser(subs)
-        for hook in PARSER_HOOKS:
-            hook(subs)
+    for hook in PARSER_HOOKS:  # the stdlib-only verbs (vision, draw) exist without the agent-tools libs too
+        hook(subs)
     for sub in subs.choices.values():
         sub.add_argument("--port", type=int, default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     return parser
@@ -315,6 +315,10 @@ if LIBS_OK:
 import vision_verb  # noqa: E402 - sibling module (cli/ is the script directory); stdlib only
 
 register_verb("vision", vision_verb.handle, vision_verb.configure)
+
+import draw_verb  # noqa: E402 - sibling module; stdlib only
+
+register_verb("draw", draw_verb.handle, draw_verb.configure)
 
 
 def main(argv: list[str] | None = None) -> int:

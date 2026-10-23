@@ -106,6 +106,11 @@ hsw-editor bank rm my-driver-holder --force
 
 Exit codes of the photo verbs: 0 ok, 2 bad input or no scale (`--two-point X1,Y1,X2,Y2 --distance MM` or `--mm-per-px`), 127 missing model or dependency (names the fix).
 
+## draw
+
+`hsw-editor draw VERB ...` (`cli/draw_verb.py` execs `apps/server/src/draw/cli.ts`; details in [draw.md](draw.md)): `status [--probe] [--json]` (exit 1 when no automatic
+backend is ready), `doctor`, `login chatgpt`, `stop`, `settings [auto|omp|chatgpt-browser|manual]`, `run [--backend id] < request.json`.
+
 ## doctor
 
 `hsw-editor doctor [--json]` prints `ok`, `warn` or `FAIL` per check, with a `fix:` line for everything that is not ok. Only
