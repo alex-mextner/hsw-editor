@@ -1,6 +1,6 @@
 /**
  * Wall -> physics scene: which model each item is, where it stands, what its holder carries. Pure: the editor-specific
- * lookups (bank, tool library, tool interface) arrive in an `AssetContext`, so this is testable under bun.
+ * lookups (bank, tool models, tool interface) arrive in an `AssetContext`, so this is testable under bun.
  *
  * A tool is judged only when its generated model is known and carries mass data; there is no invented stand-in
  * (a box would have an invented centre of gravity). Holders and shelves use the bank GLB at full detail, the same
@@ -23,7 +23,6 @@ import type { Pose, Wall, WallItem } from '@hsw-editor/core';
 import { defaultLoadCapacityG } from '@hsw-editor/physics';
 import { bankRoutes } from '@/bank/client.ts';
 import { resolveModel } from '@/bank/models.ts';
-import { toolRoutes, type ToolClassInfo, type ToolSummary } from '@/features/tools/api.ts';
 import { itemBounds } from '@/scene/itemBounds.ts';
 import type {
   BodySource,
@@ -34,17 +33,14 @@ import type {
   SeatCandidate,
 } from './protocol.ts';
 
-/** The tool library as far as model lookup needs it (a subset of `libraryStore`). */
-export interface ToolLibrary {
-  readonly classes: readonly Pick<ToolClassInfo, 'id' | 'bankClass' | 'schema'>[];
-  readonly tools: readonly Pick<ToolSummary, 'id' | 'updatedAt'>[];
-}
-
-export const EMPTY_LIBRARY: ToolLibrary = { classes: [], tools: [] };
-
 export interface AssetContext {
   readonly bank: ReadonlyMap<string, BankElement>;
-  readonly library: ToolLibrary;
+  /**
+   * The generated model that draws a tool item (`resolveToolModel` in the editor), as the worker fetches it; null when it
+   * has none or is still being built for the item's size (the scene draws the class default meanwhile, and a check of that
+   * stand-in would judge a tool nobody sees).
+   */
+  readonly toolModel: (item: WallItem) => ToolModelSource | null;
   /** Resolves the relative asset urls; the worker needs absolute ones. */
   readonly baseUrl: string;
   /** Holding interface of a tool item (for the holder's mount entry and the tip-down preference). */
@@ -54,74 +50,8 @@ export interface AssetContext {
 /** Route of a tool's generated model. `key` identifies the geometry: equal keys are the same model. */
 export interface ToolModelSource {
   readonly key: string;
-  /** Relative url of the GLB (level of detail 1: enough for balance and slots, light to fetch). */
+  /** Url of the GLB (level of detail 1: enough for balance and slots, light to fetch); relative, absolute or a blob url. */
   readonly path: string;
-}
-
-/** Parameters of a class that are box sizes of the wall item, not the generator's. */
-const BOX_KEYS: ReadonlySet<string> = new Set(['width', 'length', 'thickness']);
-
-/** Parameters the item changes against the class defaults: the same build the library draws for it. */
-function classOverrides(
-  params: Readonly<Record<string, number>>,
-  cls: Pick<ToolClassInfo, 'schema'>,
-): Record<string, number> {
-  const out: Record<string, number> = {};
-  for (const key of Object.keys(params).sort()) {
-    const spec = cls.schema[key];
-    const value = params[key];
-    if (spec?.kind !== 'num' || BOX_KEYS.has(key) || value === undefined) continue;
-    if (Math.abs(spec.def - value) > 1e-3) out[key] = value;
-  }
-  return out;
-}
-
-/** Generator class that draws a tool of bank class `toolClass`: the class of the same id first, else the first one. */
-function classOfBankClass(
-  library: ToolLibrary,
-  toolClass: string,
-): ToolLibrary['classes'][number] | undefined {
-  const named = library.classes.filter((cls) => cls.bankClass === toolClass);
-  return named.find((cls) => cls.id === toolClass) ?? named[0];
-}
-
-/**
- * Generated model of a wall tool item, or null when it has none (no library entry, class unknown, library not
- * loaded). A tool added from the user library (`source.by = tool:<id>`) uses that tool's stored model; one added from a
- * generator class (`gen:<class>`) that class; any other tool the class of its bank class. Swap this function for
- * `resolveToolModel` once the scene draws generated tools: both answer the same question.
- */
-export function toolModelSource(
-  item: WallItem,
-  wall: Wall,
-  library: ToolLibrary,
-): ToolModelSource | null {
-  if (item.kind !== 'tool') return null;
-  const ref =
-    item.modelRefId === undefined ? undefined : wall.models.find((m) => m.id === item.modelRefId);
-  const by = ref?.source.by;
-  if (by?.startsWith('tool:') === true) {
-    const id = by.slice('tool:'.length);
-    const tool = library.tools.find((t) => t.id === id);
-    // A user tool that left the library has no model to analyse; the bank class default would be another tool.
-    return tool === undefined
-      ? null
-      : { key: `tool|${id}|${tool.updatedAt}`, path: toolRoutes.toolGlb(id, tool.updatedAt, 1) };
-  }
-  const named = by?.startsWith('gen:') === true ? by.slice('gen:'.length) : undefined;
-  const toolClass = item.toolClass ?? ref?.toolClass;
-  const cls =
-    named !== undefined
-      ? library.classes.find((c) => c.id === named)
-      : toolClass === undefined
-        ? undefined
-        : classOfBankClass(library, toolClass);
-  if (cls === undefined) return null;
-  const values = classOverrides(item.params, cls);
-  return {
-    key: `class|${cls.id}|${JSON.stringify(values)}`,
-    path: toolRoutes.classGlb(cls.id, values, 1),
-  };
 }
 
 export interface SceneBuild {
@@ -146,10 +76,7 @@ function solidOf(
 }
 
 /** What a holder's slot carries for a tool: the bank's number for the matched entry, else the category default. */
-export function loadLimitG(
-  tool: ToolInterface | undefined,
-  holder: HolderSpec,
-): number {
+export function loadLimitG(tool: ToolInterface | undefined, holder: HolderSpec): number {
   const compat = tool === undefined ? null : compatibility(tool, holder);
   const entry = compat === null ? null : matchedEntry(holder, compat);
   return entry?.maxLoadG ?? defaultLoadCapacityG(holder.category);
@@ -167,7 +94,7 @@ export function buildPhysicsScene(wall: Wall, ctx: AssetContext): SceneBuild {
       const body = solidOf(item, ctx, sources);
       if (body !== null) (item.kind === 'holder' ? holders : others).push(body);
     } else if (item.kind === 'tool') {
-      const model = toolModelSource(item, wall, ctx.library);
+      const model = ctx.toolModel(item);
       if (model === null) continue;
       sources.set(model.key, { kind: 'tool', url: absolute(model.path, ctx.baseUrl) });
       const holder = item.parentId === undefined ? undefined : holderItems.get(item.parentId);
@@ -317,7 +244,7 @@ export function planWallRank(
   slots: readonly WallSlot[],
   removal: boolean,
 ): RankPlan | null {
-  const model = toolModelSource(toolItem, wall, ctx.library);
+  const model = ctx.toolModel(toolItem);
   const tool = ctx.toolInterface(toolItem);
   if (model === null || tool === undefined) return null;
   const built = buildPhysicsScene(wall, ctx);
@@ -368,7 +295,7 @@ export function planVirtualRank(
   toolItem: WallItem,
   element: BankElement,
 ): RankPlan | null {
-  const model = toolModelSource(toolItem, wall, ctx.library);
+  const model = ctx.toolModel(toolItem);
   const tool = ctx.toolInterface(toolItem);
   if (model === null || tool === undefined) return null;
   const compat = compatibility(tool, element);

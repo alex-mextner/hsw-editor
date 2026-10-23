@@ -30,7 +30,7 @@ import {
   type ToolBody,
 } from '@hsw-editor/physics';
 import { readGlbSolid, readToolBody } from '@hsw-editor/physics/glb';
-import { exportGlb, generate, getToolClass, listToolClasses } from '@hsw-editor/tools';
+import { exportGlb, generate, getToolClass } from '@hsw-editor/tools';
 import { loadManifold } from '@/scene/invalid-zones/manifold.ts';
 import type { AssetContext } from './assets.ts';
 import type { PhysicsChecker } from './client.ts';
@@ -212,15 +212,6 @@ function serve(url: string): ArrayBuffer {
   throw new Error(`404 ${url}`);
 }
 
-const classes = listToolClasses().map((cls) => ({
-  id: cls.id,
-  bankClass: cls.bankClass,
-  // The numeric parameters are all the model lookup reads.
-  schema: Object.fromEntries(
-    Object.entries(cls.schema).flatMap(([key, spec]) => (spec.kind === 'num' ? [[key, spec]] : [])),
-  ),
-}));
-
 function wallOf(cases: readonly (Case & { readonly tool: Pose })[]): Wall {
   const empty = createEmptyWall('w', 'physics', { ...DEFAULT_BOARD, cols: 40, rows: 40 });
   const items: WallItem[] = [];
@@ -327,7 +318,16 @@ describe('runPhysicsCheck on a wall of seed holders and generated tools', () => 
     ]);
     const ctx: AssetContext = {
       bank: bankById,
-      library: { classes, tools: [] },
+      toolModel: (item) => {
+        const by = wall.models.find((m) => m.id === item.modelRefId)?.source.by;
+        if (by === undefined || !by.startsWith('gen:')) return null;
+        const id = by.slice('gen:'.length);
+        const p = JSON.stringify(item.params);
+        return {
+          key: `gen|${id}|${p}`,
+          path: `/api/tools/classes/${id}/model.glb?lod=1&p=${encodeURIComponent(p)}`,
+        };
+      },
       baseUrl: BASE_URL,
       toolInterface: () => undefined,
     };
@@ -337,7 +337,7 @@ describe('runPhysicsCheck on a wall of seed holders and generated tools', () => 
         wall: () => wall,
         context: () => ctx,
         checker: inProcessChecker,
-        ensureLibrary: async () => undefined,
+        ensureModels: async () => undefined,
         now: () => 0,
       },
       { force: true },

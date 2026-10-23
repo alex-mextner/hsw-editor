@@ -6,7 +6,7 @@
 import type { Wall } from '@hsw-editor/core';
 import { buildPhysicsScene, type AssetContext } from './assets.ts';
 import type { PhysicsChecker } from './client.ts';
-import { currentWall, ensureToolLibrary, liveContext } from './context.ts';
+import { currentWall, ensureToolModels, liveContext } from './context.ts';
 import { physicsClient } from './service.ts';
 import { physicsStore, reportOf } from './store.ts';
 
@@ -14,7 +14,7 @@ export interface RunDeps {
   readonly wall: () => Wall | null;
   readonly context: (wall: Wall) => AssetContext | null;
   readonly checker: () => PhysicsChecker;
-  readonly ensureLibrary: () => Promise<void>;
+  readonly ensureModels: () => Promise<void>;
   readonly now: () => number;
 }
 
@@ -22,7 +22,7 @@ const liveDeps: RunDeps = {
   wall: currentWall,
   context: liveContext,
   checker: physicsClient,
-  ensureLibrary: ensureToolLibrary,
+  ensureModels: ensureToolModels,
   now: Date.now,
 };
 
@@ -54,7 +54,7 @@ export async function runPhysicsWith(deps: RunDeps, options: RunOptions = {}): P
     return;
   }
   try {
-    await deps.ensureLibrary();
+    await deps.ensureModels();
     const ctx = deps.context(wall);
     if (ctx === null) {
       // The bank is not loaded: nothing can be judged yet; the live hook runs again when it is.

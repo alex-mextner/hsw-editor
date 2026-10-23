@@ -122,6 +122,12 @@ export function nearbyObstacles(
   return out;
 }
 
+/**
+ * The reference bump and pull are conventions, not cliffs: a hang that holds 0.29 g where 0.3 g is the reference is the same
+ * hang, and friction alone often caps a margin just there. A margin of at least this factor times the reference is not reported.
+ */
+const REFERENCE_MARGIN_FACTOR = 0.9;
+
 /** Widest contact band (mm) still treated as a line: the chord a round rod makes with a bigger round hole at the rest tolerance. */
 const LINE_CONTACT_MM = 10;
 /** How far (mm) the centre of gravity may sit off the vertical through a hinge and still hang in equilibrium. */
@@ -392,7 +398,7 @@ export function judge(
       }
       score = Math.min(score, 0.95 - 0.45 * clamp01(swayMm / 150));
     }
-  } else if (side < options.bumpG) {
+  } else if (side < options.bumpG * REFERENCE_MARGIN_FACTOR) {
     const bump = options.bumpG;
     const left = balances(contacts, com, eq, DISTURBANCES.left, bump, true).ok;
     const right = balances(contacts, com, eq, DISTURBANCES.right, bump, true).ok;
@@ -402,7 +408,7 @@ export function judge(
     });
     score = Math.min(score, 0.25 + 0.5 * clamp01(side / bump));
   }
-  if (marginsG.outward < options.pullG) {
+  if (marginsG.outward < options.pullG * REFERENCE_MARGIN_FACTOR) {
     reasons.push({
       code: 'needs_retention',
       params: { marginG: round3(marginsG.outward), neededG: options.pullG },

@@ -47,6 +47,7 @@ function recordingActions(): { actions: EditorActions; calls: string[] } {
     exportPhoto: record('exportPhoto'),
     findPhotoTools: record('findPhotoTools'),
     checkPhysics: record('checkPhysics'),
+    seatPhysics: record('seatPhysics'),
     calibratePhoto: record('calibratePhoto'),
     togglePhotoVisible: record('togglePhotoVisible'),
     togglePhotoSplit: record('togglePhotoSplit'),
@@ -111,6 +112,23 @@ describe('editor defaults', () => {
     );
     await registry.run('physics.check', undefined, SELECTED);
     expect(calls).toEqual(['checkPhysics']);
+  });
+
+  test('physics.seat edits the wall, has ru/en titles and no default shortcut', async () => {
+    const { actions, calls } = recordingActions();
+    const registry = new CommandRegistry();
+    registry.register(...createEditorCommands(actions));
+    const command = registry.get('physics.seat');
+    expect(command?.title).toEqual({
+      en: 'Seat tools in their holders',
+      ru: 'Посадить инструменты в держатели',
+    });
+    expect(command?.mutates).toBe(true);
+    expect(bindingsOf(buildKeymap(commands, EMPTY_USER_KEYMAP, 'linux'), 'physics.seat')).toEqual(
+      [],
+    );
+    await registry.run('physics.seat', undefined, SELECTED);
+    expect(calls).toEqual(['seatPhysics']);
   });
 
   test('keep every shortcut of the old flat list', () => {

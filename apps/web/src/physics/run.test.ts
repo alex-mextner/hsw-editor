@@ -21,7 +21,7 @@ function setup(wall: Wall | null, check: PhysicsChecker['check']) {
         return check(scene, sources);
       },
     }),
-    ensureLibrary: async () => {
+    ensureModels: async () => {
       ensured += 1;
     },
     now: () => 42,
@@ -127,7 +127,7 @@ describe('runPhysicsWith', () => {
     expect(physicsStore.get().status).toBe('error');
   });
 
-  test('the tool library is awaited before the scene is built', async () => {
+  test('the tool model index is awaited before the scene is built', async () => {
     const { deps, ensured } = setup(hungWall(), () => ok(REPORT));
     await runPhysicsWith(deps, { force: true });
     expect(ensured()).toBe(1);

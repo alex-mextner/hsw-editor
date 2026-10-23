@@ -26,17 +26,12 @@ import {
 } from '@hsw-editor/physics';
 import { useEffect, useMemo, useState } from 'react';
 import { bankStore } from '@/bank/client.ts';
-import { libraryStore } from '@/features/tools/store.ts';
+import { toolAssetsStore } from '@/toolmodels/assets.ts';
+import { toolModelVersion } from '@/toolmodels/regen.ts';
 import { useStore } from '@/state/react.ts';
 import { sessionStore } from '@/wall/session.ts';
-import {
-  planVirtualRank,
-  planWallRank,
-  toolModelSource,
-  wallSlot,
-  type WallSlot,
-} from './assets.ts';
-import { ensureToolLibrary, physicsContext } from './context.ts';
+import { planVirtualRank, planWallRank, wallSlot, type WallSlot } from './assets.ts';
+import { ensureToolModels, physicsContext } from './context.ts';
 import { physicsEnabledStore } from './enabled.ts';
 import { samePose, seatAfterHang, seatOps, type PostStepDeps, type SeatStatus } from './seat.ts';
 import { physicsClient } from './service.ts';
@@ -204,38 +199,33 @@ export function usePhysicsRatings(
   const enabled = useStore(physicsEnabledStore);
   const wall = useStore(sessionStore)?.wall ?? null;
   const bank = useStore(bankStore);
-  const library = useStore(libraryStore);
+  // The model index loading and a model being rebuilt change which model a tool is.
+  useStore(toolAssetsStore);
+  useStore(toolModelVersion);
   const rated = useStore(ratingsStore);
-  const ctx = useMemo(
-    () => (wall === null ? null : physicsContext(wall, bank, library)),
-    [wall, bank, library],
-  );
+  const ctx = useMemo(() => (wall === null ? null : physicsContext(wall, bank)), [wall, bank]);
   const toolItem = wall?.items.find((item) => item.id === toolItemId && item.kind === 'tool');
-  const model = useMemo(
-    () =>
-      wall === null || toolItem === undefined || ctx === null
-        ? null
-        : toolModelSource(toolItem, wall, ctx.library),
-    [wall, toolItem, ctx],
-  );
+  // A synchronous lookup, cheap enough per render; the two store reads above re-render this hook when a model arrives.
+  const modelKey =
+    ctx === null || toolItem === undefined ? null : (ctx.toolModel(toolItem)?.key ?? null);
   const idsKey = holderIds.join('\n');
 
-  // The generated models are found through the tool library, which may not have been opened yet.
+  // The generated models are found through the tool model index, which may not have been loaded yet.
   useEffect(() => {
-    if (enabled && idsKey !== '') void ensureToolLibrary();
+    if (enabled && idsKey !== '') void ensureToolModels();
   }, [enabled, idsKey]);
 
   useEffect(() => {
-    if (!enabled || wall === null || ctx === null || toolItem === undefined || model === null)
+    if (!enabled || wall === null || ctx === null || toolItem === undefined || modelKey === null)
       return undefined;
     let cancelled = false;
     const ids = idsKey === '' ? [] : idsKey.split('\n');
-    const pending = ids.filter((id) => !ratingsStore.get().has(`${model.key}|${id}`));
+    const pending = ids.filter((id) => !ratingsStore.get().has(`${modelKey}|${id}`));
     if (pending.length === 0) return undefined;
     ratingQueue = ratingQueue.then(async () => {
       for (const id of pending) {
         if (cancelled) return;
-        const key = `${model.key}|${id}`;
+        const key = `${modelKey}|${id}`;
         if (ratingsStore.get().has(key)) continue;
         const element = ctx.bank.get(id);
         const plan = element === undefined ? null : planVirtualRank(wall, ctx, toolItem, element);
@@ -253,17 +243,17 @@ export function usePhysicsRatings(
     return () => {
       cancelled = true;
     };
-  }, [enabled, wall, ctx, toolItem, model, idsKey]);
+  }, [enabled, wall, ctx, toolItem, modelKey, idsKey]);
 
   return useMemo(() => {
-    if (!enabled || model === null) return EMPTY;
+    if (!enabled || modelKey === null) return EMPTY;
     const out = new Map<string, HolderRating>();
     for (const id of idsKey === '' ? [] : idsKey.split('\n')) {
-      const rating = rated.get(`${model.key}|${id}`);
+      const rating = rated.get(`${modelKey}|${id}`);
       if (rating !== undefined && rating !== null) out.set(id, rating);
     }
     return out;
-  }, [enabled, model, idsKey, rated]);
+  }, [enabled, modelKey, idsKey, rated]);
 }
 
 // ---- order of the suggestion list ----------------------------------------------------------------------

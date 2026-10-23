@@ -3,6 +3,17 @@ import type { FeatureRu } from '../keys.ts';
 
 export const physicsEn = {
   'physics.cmd.check': 'Check wall physics',
+  'physics.cmd.seat': 'Seat tools in their holders',
+  'physics.seat.button': 'Seat tools',
+  'physics.seat.off': 'Physics checks are off: switch them on to seat tools',
+  'physics.seat.stale': 'The wall changed while seating: nothing was moved, try again',
+  'physics.seat.nothing': 'Every tool already sits where the physics puts it',
+  'physics.seat.kept.one':
+    '{count} tool could not be seated (no model yet, no free slot or a rotated holder)',
+  'physics.seat.kept.other':
+    '{count} tools could not be seated (no model yet, no free slot or a rotated holder)',
+  'physics.seat.done.one': '{count} tool seated in its holder',
+  'physics.seat.done.other': '{count} tools seated in their holders',
   'physics.toggle': 'Physics',
   'physics.toggleHint':
     'Mark tools that hang unstably or are awkward to take off with amber stripes',
@@ -86,6 +97,23 @@ export const physicsEn = {
 
 export const physicsRu = {
   'physics.cmd.check': 'Проверить физику стены',
+  'physics.cmd.seat': 'Посадить инструменты в держатели',
+  'physics.seat.button': 'Посадить',
+  'physics.seat.off': 'Проверки физики выключены: включите их, чтобы посадить инструменты',
+  'physics.seat.stale': 'Стена изменилась во время посадки: ничего не сдвинуто, повторите',
+  'physics.seat.nothing': 'Все инструменты уже сидят там, где их ставит физика',
+  'physics.seat.kept.one':
+    '{count} инструмент не удалось посадить (нет модели, свободного места или держатель повёрнут)',
+  'physics.seat.kept.few':
+    '{count} инструмента не удалось посадить (нет модели, свободного места или держатель повёрнут)',
+  'physics.seat.kept.many':
+    '{count} инструментов не удалось посадить (нет модели, свободного места или держатель повёрнут)',
+  'physics.seat.kept.other':
+    '{count} инструмента не удалось посадить (нет модели, свободного места или держатель повёрнут)',
+  'physics.seat.done.one': '{count} инструмент посажен в держатель',
+  'physics.seat.done.few': '{count} инструмента посажены в держатели',
+  'physics.seat.done.many': '{count} инструментов посажено в держатели',
+  'physics.seat.done.other': '{count} инструмента посажено в держатели',
   'physics.toggle': 'Физика',
   'physics.toggleHint':
     'Отмечать янтарными полосами инструменты, которые висят неустойчиво или неудобно снимаются',

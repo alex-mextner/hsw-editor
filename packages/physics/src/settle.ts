@@ -72,13 +72,16 @@ export function scanAll(
   y: number,
   stride = 1,
   abortBelowFallMm = -Infinity,
+  primaryCount = Infinity,
 ): ScanResult {
   let fall = Infinity;
   let penetration = 0;
-  for (const obstacle of obstacles) {
+  for (let index = 0; index < obstacles.length; index++) {
+    const obstacle = obstacles[index] as ColumnGrid;
     const r = scanObstacle(tool, obstacle, di, dj, y, stride, abortBelowFallMm);
     if (r.fallMm < fall) fall = r.fallMm;
-    if (r.penetrationMm > penetration) penetration = r.penetrationMm;
+    // Only the first `primaryCount` obstacles count as being in the way at the start (see `settleBelow`).
+    if (index < primaryCount && r.penetrationMm > penetration) penetration = r.penetrationMm;
     if (fall < abortBelowFallMm) break;
   }
   return { fallMm: fall, penetrationMm: penetration };
@@ -98,8 +101,9 @@ export function settle(
   di: number,
   dj: number,
   startY: number,
+  primaryCount = obstacles.length,
 ): Settled {
-  const r = scanAll(tool, obstacles, di, dj, startY);
+  const r = scanAll(tool, obstacles, di, dj, startY, 1, -Infinity, primaryCount);
   return { y: startY - r.fallMm, startPenetrationMm: r.penetrationMm };
 }
 
@@ -110,6 +114,11 @@ const SPARSE_STRIDE = 4;
  * `settle` for a search over many candidates: returns `null` as soon as the rest height is known to exceed
  * `maxRestY`. A sparse subset of the columns gives a lower bound of the rest height (fewer constraints, deeper
  * fall), which prunes most candidates before the full scan.
+ *
+ * The tool is lowered from `startY` into the holder, which is `obstacles[0]`, from outside: only the first `primaryCount`
+ * obstacles must be clear at the start. Anything else (a neighbouring tool, another holder above) may overlap the
+ * tool's start volume without making the start invalid, and does not stop the fall unless it is below the tool; where
+ * the tool ends up inside it is reported as a collision by the hang analysis, not hidden by choosing another start.
  */
 export function settleBelow(
   tool: ColumnGrid,
@@ -118,13 +127,23 @@ export function settleBelow(
   dj: number,
   startY: number,
   maxRestY: number,
+  primaryCount = obstacles.length,
 ): Settled | null {
   const abortBelow = startY - maxRestY;
   if (Number.isFinite(maxRestY)) {
-    const sparse = scanAll(tool, obstacles, di, dj, startY, SPARSE_STRIDE, abortBelow);
+    const sparse = scanAll(
+      tool,
+      obstacles,
+      di,
+      dj,
+      startY,
+      SPARSE_STRIDE,
+      abortBelow,
+      primaryCount,
+    );
     if (sparse.fallMm < abortBelow) return null;
   }
-  const r = scanAll(tool, obstacles, di, dj, startY, 1, abortBelow);
+  const r = scanAll(tool, obstacles, di, dj, startY, 1, abortBelow, primaryCount);
   if (r.fallMm < abortBelow) return null;
   return { y: startY - r.fallMm, startPenetrationMm: r.penetrationMm };
 }

@@ -141,7 +141,11 @@ describe('WorkerCore solve', () => {
     const h = harness();
     define(h);
     for (let n = 0; n < 150; n += 1) {
-      h.core.handle({ type: 'define', key: `filler-${n}`, source: { kind: 'solid', url: `u://filler-${n}` } });
+      h.core.handle({
+        type: 'define',
+        key: `filler-${n}`,
+        source: { kind: 'solid', url: `u://filler-${n}` },
+      });
     }
     await h.core.idle();
     expect(h.fetched.filter((url) => url === 'u://block')).toHaveLength(1);

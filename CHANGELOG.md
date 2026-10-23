@@ -8,6 +8,10 @@ needs an entry here first.
 
 ### Added
 
+- Physics on the generated tool models (#167 follow-up): the physics judges the model the scene draws (`resolveToolModel`, also a size rebuilt
+  for the item), the amber marks follow that model, a dimension edit re-seats the tool (`rehang`), and "Seat tools" (Physics section, palette
+  `physics.seat`) puts every hung tool inside its holder as one undo step (`seatAllTools`). Seating starts from the holder's own rim, so something
+  hanging above the slot is no floor; removal tries lifts the rasters call blocked and the tool's own axis for a tool resting tilted.
 - Tools on the wall are drawn as their generated realistic models ([docs/tools.md](docs/tools.md#tool-models-on-the-wall), #162): an immutable content-hashed tool model store
   (`/tools/assets/glb/*`, `/api/tools/assets/index|health`) with the bank's verify/repair/error-boundary guarantees, instanced PBR rendering with LOD, models rebuilt
   in a worker for typed sizes and class parameters (proportions and sizes held to real tools, `realism.ts`), hung tools seated with the model's own holding

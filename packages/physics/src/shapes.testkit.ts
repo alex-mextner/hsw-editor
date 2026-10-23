@@ -169,3 +169,15 @@ export function shelf(id: string, halfX: number, top: number, depth: number): So
     box([-halfX, top - 40, 0], [halfX, top, 4]),
   );
 }
+
+/** A box whose top is shifted by `shiftX` mm along x: a leaning wall (a parallelepiped, still a closed outward shell). */
+export function leaningBox(
+  min: readonly [number, number, number],
+  max: readonly [number, number, number],
+  shiftX: number,
+): MutableMesh {
+  const mesh = box(min, max);
+  // Vertices 2, 3, 6, 7 are the top face (y = max[1]).
+  for (const v of [2, 3, 6, 7]) mesh.positions[3 * v] = (mesh.positions[3 * v] ?? 0) + shiftX;
+  return mesh;
+}

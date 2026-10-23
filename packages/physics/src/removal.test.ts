@@ -2,7 +2,8 @@ import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import Module, { type ManifoldToplevel } from 'manifold-3d';
 import { SolidBody, type Placement, type ToolBody } from './body.ts';
 import { RemovalProbe } from './removal.ts';
-import { IDENTITY, barTool, box, shelf, slotBlock, solid } from './shapes.testkit.ts';
+import { rotationZ } from '@hsw-editor/compat';
+import { IDENTITY, barTool, box, leaningBox, shelf, slotBlock, solid } from './shapes.testkit.ts';
 
 let wasm: ManifoldToplevel;
 let probe: RemovalProbe;
@@ -127,5 +128,58 @@ describe('removal ergonomics', () => {
       neighbours: [far],
     });
     expect(report.verdict).toBe('free');
+  });
+
+  test('a tool resting tilted in a slot that leans with it comes out along its own axis, not straight up', () => {
+    // Two walls leaning 10 degrees (top shifted by tan(10) * 60), 22 mm apart horizontally; the bar leans the same way.
+    const shift = -Math.tan((10 * Math.PI) / 180) * 60;
+    const holder = solid(
+      'leaning',
+      leaningBox([-40, 0, 0], [-11, 60, 20], shift),
+      leaningBox([11, 0, 0], [40, 60, 20], shift),
+      box([-40, 0, 0], [40, 6, 20]),
+      // A front wall: nothing can be pulled forward, only the lift along the axis gets the bar out.
+      box([-40, 0, 20], [40, 400, 24]),
+    );
+    const placement: Placement = { rotation: rotationZ(10), position: [0, 8, 10] };
+    const report = probe.analyse({ tool: barTool(), placement, holder, neighbours: [] });
+    expect(report.verdict).toBe('free');
+    expect(report.path).toBe('lift');
+  });
+
+  test('a scrape of a few cubic millimetres in the way does not block, a real ledge does', () => {
+    // Both sit above the bar (it starts at y = 4..204) in the lift's way, clear of the start pose.
+    const holder = slotBlock('slot', { halfX: 11, z0: 4, z1: 16, height: 40, floorMm: 4 });
+    const sliver = solid('sliver', box([-10, 210, 4], [-9.95, 220, 14]));
+    const ledge = solid('ledge', box([-10, 210, 4], [-5, 220, 14]));
+    const scraped = probe.analyse({
+      tool: barTool(),
+      placement: at(0, 4, 10),
+      holder,
+      neighbours: [sliver],
+    });
+    expect(scraped.verdict).not.toBe('blocked');
+    const blocked = probe.analyse({
+      tool: barTool(),
+      placement: at(0, 4, 10),
+      holder,
+      neighbours: [ledge],
+    });
+    expect(blocked.verdict).toBe('blocked');
+  });
+
+  test('a lid higher up stops a lift that has nothing to do at the holder (tool boxed in by a tall neighbour)', () => {
+    // A 100 mm tool on a shelf; a neighbour in front is 150 mm tall (every pull is blocked) and a lid sits 120 mm above the
+    // tool's top. Leaving the holder needs no lift, but the tool cannot rise past the lid: it is trapped.
+    const shelfHolder = shelf('shelf', 100, 0, 40);
+    const front = solid('front', box([-40, 0, 36], [40, 150, 46]));
+    const lid = solid('lid', box([-40, 220, 0], [40, 230, 40]));
+    const report = probe.analyse({
+      tool: barTool('short', 100, 20, 10, 50),
+      placement: at(0, 0, 20),
+      holder: shelfHolder,
+      neighbours: [front, lid],
+    });
+    expect(report.verdict).toBe('blocked');
   });
 });

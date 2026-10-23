@@ -1,6 +1,7 @@
 import type { BankElement, Vec3 } from '@hsw-editor/bank';
 import type { Wall, WallItem } from '@hsw-editor/core';
 import { resolveModel } from '@/bank/models.ts';
+import { resolveToolModel } from '@/toolmodels/resolve.ts';
 import { itemBounds, placeholderBounds } from '../itemBounds.ts';
 
 /** What the amber marks of one tool are drawn on: its model when there is one, always with the stand-in box. */
@@ -16,9 +17,8 @@ export interface ZoneGeometry {
 }
 
 /**
- * The mesh the amber zones of a tool follow: its posed model, or the stand-in box the scene draws for tools without
- * one (the generated tool models arrive through `resolveModel`, so this is the single place that decides). The pose is
- * the item's own; null when the item has no extent at all.
+ * The mesh the amber zones of a tool follow: its posed generated model (`resolveToolModel`, what the scene draws), or the
+ * stand-in box for a tool without one. The pose is the item's own; null when the item has no extent at all.
  */
 export function physicsZoneGeometry(
   item: WallItem,
@@ -30,7 +30,10 @@ export function physicsZoneGeometry(
     itemBounds(item, wall, bank) ?? (item.kind === 'tool' ? placeholderBounds(item, wall) : null);
   if (!bounds) return null;
   return {
-    modelUrl: resolveModel(item, bank)?.lod0 ?? null,
+    // The model the scene draws, in its order: a bank element first, else a tool's generated model (light level).
+    modelUrl:
+      resolveModel(item, bank)?.lod0 ??
+      (item.kind === 'tool' ? (resolveToolModel(item, wall)?.lod1 ?? null) : null),
     dimsMm: bounds.dims,
     centreMm: bounds.centre,
     bankId: item.bankId,

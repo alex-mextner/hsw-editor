@@ -37,7 +37,10 @@ const sources = new Map<string, BodySource>([
   ['block', { kind: 'solid', url: 'u://block' }],
   ['bar', { kind: 'tool', url: 'u://bar' }],
 ]);
-const answer = (seq: number, missing: Extract<FromWorker, { type: 'result' }>['missing'] = []): FromWorker => ({
+const answer = (
+  seq: number,
+  missing: Extract<FromWorker, { type: 'result' }>['missing'] = [],
+): FromWorker => ({
   type: 'result',
   seq,
   report: REPORT,
@@ -48,7 +51,10 @@ const answer = (seq: number, missing: Extract<FromWorker, { type: 'result' }>['m
 function setup() {
   const worker = new FakeWorker();
   const errors: string[] = [];
-  const client = new PhysicsClient(() => worker, (m) => errors.push(m));
+  const client = new PhysicsClient(
+    () => worker,
+    (m) => errors.push(m),
+  );
   return { worker, errors, client };
 }
 
@@ -61,7 +67,12 @@ describe('PhysicsClient.check', () => {
     const second = client.check(scene(5), sources);
     worker.reply(answer(2));
     await second;
-    expect(worker.of('define').map((m) => m.key).sort()).toEqual(['bar', 'block']);
+    expect(
+      worker
+        .of('define')
+        .map((m) => m.key)
+        .sort(),
+    ).toEqual(['bar', 'block']);
     expect(worker.of('solve').map((m) => m.seq)).toEqual([1, 2]);
   });
 
@@ -104,7 +115,12 @@ describe('PhysicsClient.check', () => {
   test('a model that failed to download is defined again on the next check, a permanent gap is not', async () => {
     const { worker, client } = setup();
     const a = client.check(scene(0), sources);
-    worker.reply(answer(1, [{ key: 'bar', retry: true }, { key: 'block', retry: false }]));
+    worker.reply(
+      answer(1, [
+        { key: 'bar', retry: true },
+        { key: 'block', retry: false },
+      ]),
+    );
     await a;
     const b = client.check(scene(1), sources);
     worker.reply(answer(2));
@@ -134,7 +150,13 @@ describe('PhysicsClient.check', () => {
 const request: RankRequest = {
   tool: { id: 't', bodyKey: 'bar' },
   candidates: [
-    { holder: { id: 'h', bodyKey: 'block', pose: ORIGIN }, anchor: [0, 0, 0], halfWidthMm: 5, tipDown: false, compatScore: 1 },
+    {
+      holder: { id: 'h', bodyKey: 'block', pose: ORIGIN },
+      anchor: [0, 0, 0],
+      halfWidthMm: 5,
+      tipDown: false,
+      compatScore: 1,
+    },
   ],
   neighbours: [],
   removal: false,

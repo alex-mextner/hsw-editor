@@ -1,4 +1,4 @@
-import { Gauge, RefreshCw } from 'lucide-react';
+import { Gauge, MoveDown, RefreshCw } from 'lucide-react';
 import type { Wall } from '@hsw-editor/core';
 import { bankStore } from '@/bank/client.ts';
 import { Button } from '@/components/ui/button.tsx';
@@ -6,6 +6,7 @@ import { useI18n } from '@/i18n/index.ts';
 import { physicsStore, reportOf } from '@/physics/store.ts';
 import { useStore } from '@/state/react.ts';
 import { checkPhysics } from './checkPhysics.ts';
+import { seatingStore, seatPhysics } from './seatPhysics.ts';
 import { PhysicsReportList } from './PhysicsReportList.tsx';
 import { reportRows } from './reportRows.ts';
 
@@ -17,6 +18,7 @@ export function PhysicsSection({ wall }: { readonly wall: Wall }) {
   const report = reportOf(view);
   const rows = reportRows(report);
   const running = view.status === 'running';
+  const seating = useStore(seatingStore);
 
   const status =
     view.status === 'error'
@@ -38,6 +40,17 @@ export function PhysicsSection({ wall }: { readonly wall: Wall }) {
           <Gauge className="size-3.5" aria-hidden />
           {t('physics.panel.title')}
         </h3>
+        {rows.length > 0 ? (
+          <Button
+            variant="outline"
+            size="xs"
+            disabled={running || seating}
+            onClick={() => void seatPhysics()}
+          >
+            <MoveDown aria-hidden />
+            {t('physics.seat.button')}
+          </Button>
+        ) : null}
         <Button variant="outline" size="xs" disabled={running} onClick={() => void checkPhysics()}>
           <RefreshCw aria-hidden />
           {t(report === null ? 'physics.panel.checkFirst' : 'physics.panel.check')}
