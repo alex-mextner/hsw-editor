@@ -6,7 +6,7 @@ import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dir, '..');
-const projects = ['.', 'packages/core', 'packages/bank', 'apps/server', 'apps/web'];
+const projects = ['.', 'packages/core', 'packages/bank', 'packages/omp-protocol', 'apps/server', 'apps/web'];
 if (existsSync(resolve(root, 'vendor/state-lib/dist/index.d.ts'))) {
   projects.push('apps/web/tsconfig.statelib.json');
 } else {

@@ -7,6 +7,8 @@
     "start": "bun src/index.ts"
   },
   "dependencies": {
-    "@hsw-editor/core": "workspace:*"
+    "@hsw-editor/core": "workspace:*",
+    "@hsw-editor/omp-protocol": "workspace:*",
+    "zod": "^4.3.6"
   }
 }
