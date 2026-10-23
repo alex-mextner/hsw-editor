@@ -18,6 +18,11 @@ export interface HangPoint {
 export interface ToolInterface {
   /** Bank tool-class id (`screwdriver`, `tape-measure`, ...): the vocabulary of holder `fitsTool`. */
   toolClass: string;
+  /**
+   * Coarser classes the tool also fits (`chisel` -> `knife`), from the bank vocabulary's `broader`. A holder
+   * listing one of them takes the tool, ranked below a holder that lists `toolClass` itself.
+   */
+  broader?: readonly string[] | undefined;
   /** Extent along the principal axis from the butt (or the lowest point) to the working end. */
   lengthMm: number;
   hang: HangPoint | null;

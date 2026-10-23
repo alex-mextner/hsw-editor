@@ -1,11 +1,11 @@
 import MiniSearch from 'minisearch';
 import { BANK_CATEGORIES } from './categories.ts';
 import type { BankCategory, BankElement, ToolClass } from './schema.ts';
-import { TOOL_CLASSES } from './toolClasses.ts';
+import { finerToolClasses, TOOL_CLASSES, toolClassWords } from './toolClasses.ts';
 import { stemTerm, tokenize } from './text.ts';
 
 /** Bumped whenever the document shape or tokenisation changes; stored in the serialised index. */
-export const SEARCH_INDEX_VERSION = 3;
+export const SEARCH_INDEX_VERSION = 4;
 
 interface SearchDoc {
   id: string;
@@ -42,13 +42,16 @@ function toDoc(
   element: BankElement,
   categoryNames: ReadonlyMap<string, string>,
   toolClasses: ReadonlyMap<string, ToolClass>,
+  finerByBroader: ReadonlyMap<string, readonly ToolClass[]>,
 ): SearchDoc {
+  // A holder of a coarse class also holds the finer ones ("knife" rack: chisels), so their words match it too.
   const tools = element.toolClasses
-    .map((id) => {
-      const cls = toolClasses.get(id);
-      return cls
-        ? [cls.name.ru, cls.name.en, ...cls.synonyms.ru, ...cls.synonyms.en].join(' ')
-        : id;
+    .flatMap((id) => {
+      const own = toolClasses.get(id);
+      return [
+        ...(own ? toolClassWords(own) : [id]),
+        ...(finerByBroader.get(id) ?? []).flatMap(toolClassWords),
+      ];
     })
     .join(' ');
   return {
@@ -84,8 +87,9 @@ export function buildSearchIndex(
     vocabulary.categories.map((c) => [c.id, `${c.name.ru} ${c.name.en}`]),
   );
   const toolClasses = new Map(vocabulary.toolClasses.map((t) => [t.id, t]));
+  const finerByBroader = finerToolClasses(vocabulary.toolClasses);
   const index = new MiniSearch<SearchDoc>(SEARCH_OPTIONS);
-  index.addAll(elements.map((e) => toDoc(e, categoryNames, toolClasses)));
+  index.addAll(elements.map((e) => toDoc(e, categoryNames, toolClasses, finerByBroader)));
   return index;
 }
 

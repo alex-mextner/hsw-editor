@@ -66,7 +66,7 @@ export const chisel = defineToolClass({
   id: 'chisel',
   family: 'striking',
   name: L('Chisel', 'Стамеска'),
-  bankClass: 'knife',
+  bankClass: 'chisel',
   keywords: {
     en: ['chisel', 'wood chisel', 'bevel edge chisel', 'cold chisel', 'mortise chisel'],
     ru: ['стамеска', 'долото', 'зубило', 'плотницкая стамеска'],
@@ -369,7 +369,7 @@ export const punch = defineToolClass({
   id: 'punch',
   family: 'striking',
   name: L('Punch', 'Бородок'),
-  bankClass: 'screwdriver',
+  bankClass: 'punch',
   keywords: {
     en: ['punch', 'centre punch', 'center punch', 'pin punch', 'drift punch', 'drift'],
     ru: ['керн', 'бородок', 'выколотка', 'кернер'],

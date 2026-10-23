@@ -46,7 +46,7 @@ export const longNosePliers = defineToolClass({
   id: 'pliers-long-nose',
   family: 'pliers',
   name: L('Long-nose pliers', 'Длинногубцы'),
-  bankClass: 'pliers',
+  bankClass: 'long-nose-pliers',
   keywords: {
     en: ['long nose pliers', 'needle nose pliers', 'snipe nose pliers', 'radio pliers'],
     ru: ['длинногубцы', 'утконосы', 'тонкогубцы', 'плоскогубцы длинные'],

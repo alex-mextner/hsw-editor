@@ -71,6 +71,10 @@ needs an entry here first.
 - Photo mode, backdrop (#30): after calibration the photo is the viewport backdrop and the HSW board (white web with the cells open to the wall), items and invalid-zone stripes are drawn over it by a camera recovered from the calibration (`photoCamera`); photo opacity, hide-photo, before/after divider, and move/turn the board over the photo (one undoable `setCalibration` per drag).
 
 - Photo mode, editing on the photo (#30): the photo camera now projects the wall plane exactly through the calibration homography (no grid offset at the photo edges) and picks items correctly; dragging an item shows the snapped footprint (green fits, red does not) and ruler lines in mm to the board edges and nearest neighbours; typed dimensions are snapped to the parameter step, range and printer bed and the widget says what you asked for, what it became and why (`snapSize`); the agent `calibration` request accepts the `corners` mode; one calibration wizard per photo; `WallSync.resync` drops reads older than the session's wall.
+- Finer bank tool classes `chisel`, `punch`, `hacksaw`, `level`, `square`, `long-nose-pliers`, `locking-pliers`,
+  `water-pump-pliers`, `crimper`, `hex-key-set` with an optional `ToolClass.broader` (the coarser class). Holders of
+  the coarse class still fit, suggest and filter for them (`compatibility`, bank tool filter, holder suggestion,
+  `listElements({ fits })`, search, palette); an exact class match ranks above an equally fitting broader one.
 
 - Photo mode, export and tools (#30): PNG export of the photo with the HSW overlay at the chosen opacity and a banner (like the reference picture, ru/en); a 'find tools' button that runs the vision job `vision.photo_to_objects` and says plainly when the vision service is not available; photo commands in the command palette (export PNG, find tools, calibrate, hide/show photo, before/after divider).
 

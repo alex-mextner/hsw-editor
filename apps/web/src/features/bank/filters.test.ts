@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { expandToolClasses, finerToolClasses } from '@hsw-editor/bank';
 import {
   applyFilters,
   buildCategoryTree,
@@ -10,6 +11,7 @@ import {
   moveIndex,
   NO_FILTERS,
   rowStride,
+  selectableToolClasses,
   sizeBucket,
   type BankFilters,
   type FilterTarget,
@@ -209,5 +211,42 @@ describe('moveIndex', () => {
     expect(moveIndex(5, 'Home', 3, 10)).toBe(0);
     expect(moveIndex(5, 'End', 3, 10)).toBe(9);
     expect(moveIndex(0, 'End', 3, 0)).toBe(0);
+  });
+});
+
+describe('tool class filter with broader classes', () => {
+  const knifeBlock = element('knife-block', { toolClasses: ['knife'] });
+  const chiselRack = element('chisel-rack', { toolClasses: ['chisel'] });
+  const sawRack = element('saw-rack', { toolClasses: ['saw'] });
+  const all = [knifeBlock, chiselRack, sawRack];
+
+  test('without toolClassScope only the exact class matches', () => {
+    expect(applyFilters(all, filters({ toolClasses: ['chisel'] })).map((e) => e.id)).toEqual([
+      'chisel-rack',
+    ]);
+  });
+
+  test('with the expanded classes the holders of the coarser class stay in', () => {
+    const ids = applyFilters(all, filters({ toolClasses: ['chisel'] }), {
+      toolClassScope: expandToolClasses(['chisel']),
+    }).map((e) => e.id);
+    expect(ids).toEqual(['knife-block', 'chisel-rack']);
+  });
+});
+
+describe('selectable tool classes', () => {
+  const holders = [
+    element('knife-block', { toolClasses: ['knife'] }),
+    element('saw-rack', { toolClasses: ['saw', 'knife'] }),
+  ];
+
+  test('a used coarse class also offers its finer classes', () => {
+    const selectable = selectableToolClasses(holders, finerToolClasses([]));
+    expect([...selectable].sort()).toEqual(['chisel', 'hacksaw', 'knife', 'saw']);
+  });
+
+  test('a class nothing lists stays unavailable', () => {
+    expect(selectableToolClasses([], finerToolClasses([])).size).toBe(0);
+    expect(selectableToolClasses(holders, finerToolClasses([])).has('punch')).toBe(false);
   });
 });

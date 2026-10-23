@@ -11,6 +11,7 @@ import {
   type ToolFilterAction,
   type ToolFilterState,
 } from './toolFilter.ts';
+import type { HolderSpec, ToolInterface } from './types.ts';
 
 function run(state: ToolFilterState, ...actions: ToolFilterAction[]): ToolFilterState {
   return actions.reduce(reduceToolFilter, state);
@@ -176,5 +177,36 @@ describe('bank results ranked by fit for the selected tools', () => {
       byClass.every((holder) => holder.fitsTool.some((f) => f.toolClass === 'screwdriver')),
     ).toBe(true);
     expect(holdersForClasses(BANK_HOLDERS, [])).toHaveLength(BANK_HOLDERS.length);
+  });
+});
+
+describe('broader classes in the tool filter', () => {
+  const base = BANK_HOLDERS.find((h) => h.fitsTool.length > 0);
+  if (base === undefined) throw new Error('no holder in the seed');
+  const spec = (id: string, toolClass: string): HolderSpec => ({
+    ...base,
+    id,
+    fitsTool: [{ toolClass }],
+  });
+  const chisel: ToolInterface = {
+    toolClass: 'chisel',
+    broader: ['knife'],
+    lengthMm: 200,
+    hang: null,
+    maxSection: { w: 20, t: 10, r: 11 },
+    dims: {},
+  };
+
+  test('rankHoldersForTools serves a finer tool from a coarser holder, exact holders first', () => {
+    const ranked = rankHoldersForTools(
+      [spec('a-knife', 'knife'), spec('z-chisel', 'chisel'), spec('saw', 'saw')],
+      [chisel],
+    );
+    expect(ranked.map((r) => r.holder.id)).toEqual(['z-chisel', 'a-knife']);
+  });
+
+  test('without `broader` the coarse holder is dropped', () => {
+    const { broader: _omitted, ...plain } = chisel;
+    expect(rankHoldersForTools([spec('a-knife', 'knife')], [plain])).toEqual([]);
   });
 });

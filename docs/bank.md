@@ -40,6 +40,36 @@ default, step), `family` + `variantLabel` (size ladders / A-B-C variants of one 
 
 Variants of one design are separate elements sharing `family`; use `bank.familyOf(element)`.
 
+## Tool classes
+
+`TOOL_CLASSES` (`packages/bank/src/toolClasses.ts`) is the vocabulary of `toolClasses[]` / `fitsTool[].toolClass`: ru/en names plus ru/en
+synonyms (the recogniser maps detector labels through them; a phrase is listed under one class only). The classes an index declares win,
+the built-in classes it lacks are added (`toolClassVocabulary`), so a seed written before a class existed still resolves it; an index
+that declares none gets the built-in list.
+
+Finer ids carry `broader`, the coarse class they refine (never chained, `validateBankIndex` rejects an unknown target or a chain):
+
+| Finer class | `broader` |
+|---|---|
+| `chisel` | `knife` |
+| `punch` | `screwdriver` |
+| `hacksaw` | `saw` |
+| `level`, `square` | `ruler` |
+| `long-nose-pliers`, `locking-pliers`, `water-pump-pliers`, `crimper` | `pliers` |
+| `hex-key-set` | `hex-key` |
+
+A holder that lists only the coarse class still serves the finer tool:
+
+- `compatibility()` accepts a `ToolInterface.broader` entry and ranks it `SCORE_BROADER_PENALTY` below an exact one; `toolInterfaceOf`
+  fills `broader` from the vocabulary.
+- The bank tool filter, `listElements({ toolClass | fits })` and the holder suggestion expand a class through `acceptedToolClasses` /
+  `expandToolClasses`. Only the ranked paths (`holdersForToolClass`, the selection ordering of the bank browser) put exact holders first;
+  the filters keep index order.
+- A class an index declares without `broader` turns the built-in link off for that index. An index written before the finer classes (the
+  committed seed until it is re-exported with `bank:ingest --seed`) declares only the old ones: `broader` still resolves through the built-in
+  list, but pickers that list `index.toolClasses` offer only what the index declares.
+- Search documents of a coarse holder also carry the words of its finer classes (`finerToolClasses`), so "chisel" finds the knife rack.
+
 ## Data layer (`@hsw-editor/bank`, browser-safe)
 
 ```ts

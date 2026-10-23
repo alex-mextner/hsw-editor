@@ -126,7 +126,10 @@ function gripOf(style: MountStyle, tool: ToolInterface, holder: HolderSpec): Gri
   if (style === 'tray') return { point: [0, 0, -tool.maxSection.t / 2], workingEnd: 'up' };
   const pocket = holder.bboxMm.max.y - holder.bboxMm.min.y;
   const depth = Math.min(MAX_INSERT_MM, INSERT_FRACTION * length, 0.8 * pocket);
-  return TIP_DOWN_CLASSES.has(tool.toolClass)
+  const tipDown =
+    TIP_DOWN_CLASSES.has(tool.toolClass) ||
+    (tool.broader ?? []).some((id) => TIP_DOWN_CLASSES.has(id));
+  return tipDown
     ? { point: [0, length - depth, 0], workingEnd: 'down' }
     : { point: [0, depth, 0], workingEnd: 'up' };
 }

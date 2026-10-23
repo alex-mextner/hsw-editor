@@ -191,7 +191,7 @@ defineToolClass({
   id: 'square-try',
   family: 'measuring',
   name: L('Combination / try square', 'Угольник'),
-  bankClass: 'ruler',
+  bankClass: 'square',
   keywords: {
     en: [
       'combination square',
@@ -645,7 +645,7 @@ defineToolClass({
   id: 'spirit-level',
   family: 'measuring',
   name: L('Spirit level', 'Уровень'),
-  bankClass: 'ruler',
+  bankClass: 'level',
   keywords: {
     en: ['spirit level', 'bubble level', 'torpedo level', 'level', 'carpenter level'],
     ru: ['уровень', 'строительный уровень', 'пузырьковый уровень', 'ватерпас'],

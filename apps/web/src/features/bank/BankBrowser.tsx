@@ -1,7 +1,12 @@
 import { useMemo } from 'react';
 import { effectiveToolFilter, rankHoldersForTools } from '@hsw-editor/compat';
 import { PlusIcon, SlidersHorizontalIcon } from 'lucide-react';
-import type { BankElement, BankIndex } from '@hsw-editor/bank';
+import {
+  expandToolClasses,
+  finerToolClasses,
+  type BankElement,
+  type BankIndex,
+} from '@hsw-editor/bank';
 import { createBankSearch, type BankSearch } from '@/bank/search.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { IconButton } from '@/components/IconButton.tsx';
@@ -22,7 +27,7 @@ import {
   candidateElements,
   countByCategory,
   NO_FILTERS,
-  usedToolClasses,
+  selectableToolClasses,
 } from './filters.ts';
 import { patchBankPanel, type BankPanelState } from './panelState.ts';
 
@@ -64,23 +69,31 @@ export function BankBrowser({ index, byId, panel, onOpen, onAdd, onAddElement }:
     [panel.filters, effective.classes],
   );
 
+  const toolClassScope = useMemo(
+    () => expandToolClasses(effective.classes, index.toolClasses),
+    [effective.classes, index.toolClasses],
+  );
+
   const candidates = useMemo(() => {
     const ranked = query.trim() === '' ? null : searchFor(index).search(query);
     return candidateElements(index.elements, byId, ranked);
   }, [index, byId, query]);
   // Everything except the category: the tree shows what each category would yield from here.
   const scoped = useMemo(
-    () => applyFilters(candidates, filters, { ignoreCategory: true }),
-    [candidates, filters],
+    () => applyFilters(candidates, filters, { ignoreCategory: true, toolClassScope }),
+    [candidates, filters, toolClassScope],
   );
   const categoryCounts = useMemo(() => countByCategory(scoped), [scoped]);
-  const filtered = useMemo(() => applyFilters(scoped, filters), [scoped, filters]);
+  const filtered = useMemo(
+    () => applyFilters(scoped, filters, { toolClassScope }),
+    [scoped, filters, toolClassScope],
+  );
   // Selected tools: best fit first (an empty query keeps the index order otherwise).
   const results = useMemo(() => {
     if (!effective.resettable || query.trim() !== '' || wall === null) return filtered;
     const tools = toolFilter.selection.itemIds.flatMap((id) => {
       const item = wall.items.find((candidate) => candidate.id === id);
-      const tool = item === undefined ? undefined : toolInterfaceOf(item, wall);
+      const tool = item === undefined ? undefined : toolInterfaceOf(item, wall, index.toolClasses);
       return tool === undefined ? [] : [tool];
     });
     const rank = new Map(
@@ -89,8 +102,18 @@ export function BankBrowser({ index, byId, panel, onOpen, onAdd, onAddElement }:
     return [...filtered].sort(
       (a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity),
     );
-  }, [filtered, effective.resettable, query, wall, toolFilter.selection.itemIds]);
-  const toolClassIds = useMemo(() => usedToolClasses(index.elements), [index.elements]);
+  }, [
+    filtered,
+    effective.resettable,
+    query,
+    wall,
+    toolFilter.selection.itemIds,
+    index.toolClasses,
+  ]);
+  const toolClassIds = useMemo(
+    () => selectableToolClasses(index.elements, finerToolClasses(index.toolClasses)),
+    [index.elements, index.toolClasses],
+  );
 
   const activeFilters = activeFilterCount(filters);
   const reset = (): void => {

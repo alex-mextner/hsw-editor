@@ -42,6 +42,17 @@ const PRESET_DIMS: Readonly<Record<string, Dims3>> = {
   'spray-can': { x: 65, y: 65, z: 200 },
   toothbrush: { x: 20, y: 190, z: 15 },
   screws: { x: 60, y: 60, z: 30 },
+  // Finer classes: the default generated model's bounding box.
+  chisel: { x: 30, y: 225, z: 30 },
+  punch: { x: 9, y: 125, z: 9 },
+  hacksaw: { x: 174, y: 424, z: 28 },
+  level: { x: 62, y: 600, z: 27 },
+  square: { x: 100, y: 300, z: 24 },
+  'long-nose-pliers': { x: 56, y: 200, z: 15 },
+  'locking-pliers': { x: 57, y: 250, z: 17 },
+  'water-pump-pliers': { x: 75, y: 250, z: 17 },
+  crimper: { x: 55, y: 180, z: 17 },
+  'hex-key-set': { x: 77, y: 92, z: 34 },
 };
 
 const GENERIC: Dims3 = { x: 40, y: 150, z: 30 };

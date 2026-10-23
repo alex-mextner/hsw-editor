@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { compatibility } from './compatibility.ts';
+import { compatibility, SCORE_BROADER_PENALTY } from './compatibility.ts';
+import { roundTo } from './rotation.ts';
 import { BANK_HOLDERS, bankHolder, TOOLS } from './fixtures/testing.ts';
 import { BLOCKING_REASONS, type HolderSpec, type ToolInterface } from './types.ts';
 
@@ -166,5 +167,45 @@ describe('compatibility invariants over every bank element x tool class', () => 
         BANK_HOLDERS.map((holder) => compatibility(toolInterface, holder)),
       );
     }
+  });
+});
+
+describe('broader tool classes', () => {
+  const chisel: ToolInterface = { ...tool('screwdriver'), toolClass: 'chisel', broader: ['knife'] };
+  const entry = (toolClass: string): HolderSpec['fitsTool'][number] => ({ toolClass });
+  const holder = (...classes: string[]): HolderSpec => ({
+    ...bankHolder('refit-screwdriver-rail-3'),
+    fitsTool: classes.map(entry),
+  });
+
+  test('a holder listing only the coarser class still takes the finer tool', () => {
+    const result = compatibility(chisel, holder('knife'));
+    expect(result).toMatchObject({ ok: true, entryIndex: 0 });
+  });
+
+  test('without `broader` the coarser entry is still a class mismatch', () => {
+    const { broader: _omitted, ...plain } = chisel;
+    expect(compatibility(plain, holder('knife')).ok).toBe(false);
+  });
+
+  test('an exact entry outranks a broader one by the documented penalty', () => {
+    const exact = compatibility(chisel, holder('chisel'));
+    const coarse = compatibility(chisel, holder('knife'));
+    expect(exact.ok && coarse.ok).toBe(true);
+    expect(roundTo(exact.score - coarse.score, 4)).toBe(SCORE_BROADER_PENALTY);
+  });
+
+  test('a holder that names the class beats a coarse-only holder even when it holds other classes too', () => {
+    const coarseOnly = compatibility(chisel, holder('knife'));
+    const mixed = compatibility(chisel, holder('chisel', 'scissors', 'knife'));
+    expect(mixed.score).toBeGreaterThan(coarseOnly.score);
+  });
+
+  test('within one holder the exact entry wins over the broader one', () => {
+    expect(compatibility(chisel, holder('knife', 'chisel')).entryIndex).toBe(1);
+  });
+
+  test('a class that is neither the tool class nor listed in `broader` stays refused', () => {
+    expect(compatibility(chisel, holder('saw')).ok).toBe(false);
   });
 });

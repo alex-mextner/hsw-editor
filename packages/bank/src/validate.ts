@@ -121,6 +121,19 @@ export function validateBankIndex(raw: unknown): ValidationResult {
     if (withheld.has(u.id)) errors.push(`${u.id}: duplicate unavailable entry`);
     withheld.add(u.id);
   }
+  // The merged vocabulary, as every lookup sees it: a link through a built-in class is checked too.
+  const toolClassById = new Map(toolClassVocabulary(index.toolClasses).map((c) => [c.id, c]));
+  for (const toolClass of toolClassById.values()) {
+    if (toolClass.broader === undefined) continue;
+    const target = toolClassById.get(toolClass.broader);
+    if (target === undefined) {
+      errors.push(`tool class ${toolClass.id}: unknown broader class ${toolClass.broader}`);
+    } else if (target.broader !== undefined) {
+      errors.push(
+        `tool class ${toolClass.id}: broader class ${toolClass.broader} is itself refined (no chains)`,
+      );
+    }
+  }
   const categoryIds = new Set(index.categories.map((c) => c.id));
   for (const c of index.categories) {
     if (c.parent !== undefined && !categoryIds.has(c.parent))
