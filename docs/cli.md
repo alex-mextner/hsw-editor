@@ -41,6 +41,20 @@ hsw-editor wall show garage
 hsw-editor wall undo garage
 ```
 
+## Tools
+
+`hsw-editor tools ...` (needs the daemon; `import` needs the vision sidecar). See [tools.md](tools.md).
+
+| Command | Effect |
+| --- | --- |
+| `tools classes [ID]` | built-in tool classes; with an id: every parameter with its default and range, and the presets |
+| `tools list` | the user's tools: id, class, size, fit confidence, created, name |
+| `tools import <photo...> [--single] [--mm-per-px X \| --two-point X1,Y1,X2,Y2 --distance-mm D] [--class ID\|generic] [--name N] [--length-mm L] [--add]` | upload the photos as an import draft, run the analysis job, print the objects found with their top-3 classes, size and fit; `--add` adds every object to the library, without it the draft is left for the editor wizard. `--single`: all photos show ONE tool |
+| `tools show ID` | class, fit quality, dimensions and where they came from, colours, files |
+| `tools rm ID` | move the tool to `tools/.trash/` (recoverable) |
+
+All accept `--json`. Objects without a scale are listed with `needs scale` and are not added until the photo is calibrated.
+
 ## doctor
 
 `hsw-editor doctor [--json]` prints `ok`, `warn` or `FAIL` per check, with a `fix:` line for everything that is not ok. Only

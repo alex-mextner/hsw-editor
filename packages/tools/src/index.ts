@@ -10,11 +10,15 @@ export * from './glb.ts';
 export * from './build/rings.ts';
 export * from './build/primitives.ts';
 export * from './build/profile.ts';
-export {
-  render,
-  VIEWS,
-  type ViewName,
-  type RenderOptions,
-  type RenderResult,
-} from './render/raster.ts';
-
+export * from './custom/schema.ts';
+export * from './custom/draft.ts';
+export * from './custom/fit.ts';
+export * from './custom/create.ts';
+export * from './custom/colors.ts';
+export * from './custom/generic.ts';
+export * from './custom/rebuild.ts';
+export * from './custom/transform.ts';
+export * from './custom/errors.ts';
+export * from './custom/manual.ts';
+export * from './recognize/classes.ts';
+export * from './recognize/fuse.ts';

@@ -194,12 +194,21 @@ export interface ShadedMesh {
   indices: Uint32Array;
 }
 
-/**
- * Per-corner smooth normals: corner normals are the area-weighted mean of the face normals of the
- * adjacent faces within `creaseDeg` of the face itself; vertices are split where the surface is creased.
- */
 const shadeCache = new WeakMap<Mesh, Map<number, ShadedMesh>>();
+/** Normals closer than ~0.57 degrees share one split vertex. */
+const SPLIT_COS = 0.99995;
 
+interface SplitVertex {
+  nx: number;
+  ny: number;
+  nz: number;
+  index: number;
+}
+
+/**
+ * Smooth per-corner normals (see `computeShade`). Meshes are treated as immutable: the result is memoised per
+ * mesh object and crease angle and shared, so callers must not modify it.
+ */
 export function shade(mesh: Mesh, creaseDeg = 50): ShadedMesh {
   const cached = shadeCache.get(mesh)?.get(creaseDeg);
   if (cached) return cached;
@@ -210,6 +219,10 @@ export function shade(mesh: Mesh, creaseDeg = 50): ShadedMesh {
   return result;
 }
 
+/**
+ * Corner normals are the area-weighted mean of the face normals of the adjacent faces within `creaseDeg` of the
+ * face itself; vertices are split where the surface is creased.
+ */
 function computeShade(mesh: Mesh, creaseDeg: number): ShadedMesh {
   const tri = mesh.indices.length / 3;
   const pos = mesh.positions;
@@ -239,9 +252,8 @@ function computeShade(mesh: Mesh, creaseDeg: number): ShadedMesh {
   const normals: number[] = [];
   const indices: number[] = [];
   // per source vertex: the split vertices created so far (distinct smoothed normals)
-  const splits: { nx: number; ny: number; nz: number; index: number }[][] = Array.from(
-    { length: vertexCount(mesh) },
-    () => [],
+  const splits: (SplitVertex[] | undefined)[] = new Array<SplitVertex[] | undefined>(
+    vertexCount(mesh),
   );
   for (let t = 0; t < tri; t++) {
     const fl = Math.hypot(faceN[t * 3] ?? 0, faceN[t * 3 + 1] ?? 0, faceN[t * 3 + 2] ?? 0) || 1;
@@ -275,8 +287,8 @@ function computeShade(mesh: Mesh, creaseDeg: number): ShadedMesh {
       nx /= nl;
       ny /= nl;
       nz /= nl;
-      const list = splits[vi] as { nx: number; ny: number; nz: number; index: number }[];
-      let found = list.find((s) => s.nx * nx + s.ny * ny + s.nz * nz > 0.99995);
+      const list = (splits[vi] ??= []);
+      let found = list.find((s) => s.nx * nx + s.ny * ny + s.nz * nz > SPLIT_COS);
       if (!found) {
         found = { nx, ny, nz, index: positions.length / 3 };
         list.push(found);

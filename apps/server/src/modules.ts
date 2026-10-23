@@ -14,6 +14,7 @@ import type { Server, WebSocketHandler } from 'bun';
 import type { ServerConfig } from './config.ts';
 import type { JobRunner } from './jobs.ts';
 import type { SettingsStore } from './settings.ts';
+import { createToolsModule } from './tools/module.ts';
 import type { WallStore } from './store/wall-store.ts';
 
 export interface ServerDeps {
@@ -43,4 +44,4 @@ export interface ServerModule {
   readonly websocket?: WebSocketHandler<ModuleSocketData>;
 }
 
-export const modules: ServerModule[] = [bankModule, clientErrorsModule];
+export const modules: ServerModule[] = [bankModule, clientErrorsModule, createToolsModule()];

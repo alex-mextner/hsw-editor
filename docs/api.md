@@ -175,6 +175,40 @@ diagnosed after the fact. Module `apps/server/src/clientErrors.ts`, behind the s
 - Stored as JSONL in `<home>/logs/client-errors.jsonl` by a single serialized writer; at 5 MiB the file is renamed to
   `client-errors.jsonl.1` (one generation kept). `GET` reads the current file, then `.1` if it needs more, and skips torn lines
   (a crash mid-append is terminated with a newline before the next entry).
+## Tools
+
+Owned by `packages/tools` ([tools.md](tools.md)); mounted by `apps/server/src/tools/module.ts`. Data: `$HSW_EDITOR_HOME/tools/`.
+
+| Method & path | Body / query | Response |
+| --- | --- | --- |
+| `GET /api/tools/classes` | | `{ classes: ToolClassInfo[] }`: id, family, ru/en names, `bankClass`, keywords, parameter `schema` (num: min/max/def/step/unit, choice: options, color) and `presets` |
+| `GET /api/tools/classes/:id` | | one `ToolClassInfo` (404 `class_not_found`) |
+| `GET /api/tools/classes/:id/model.glb` | `?preset=<id>&p=<json of parameter values>&lod=0\|1` | binary glTF in mm (values are clamped to the schema); holding interface in the scene `extras` |
+| `GET /api/tools/classes/:id/holding` | same query | `{ params, holding, bboxMm }`: axis, hang point, zones, cross-section profile along the axis, max section, `dims` |
+| `GET /api/tools` | | `{ tools: ToolSummary[] }` (the user library, newest first) |
+| `POST /api/tools` | `{ classId, params?, name? }` | `201 { tool }`: a built-in class with chosen parameters saved to the library |
+| `GET /api/tools/:id` | | `{ tool }` (`CustomTool`, `packages/tools/src/custom/schema.ts`) |
+| `PATCH /api/tools/:id` | `{ name?, classId?, params?, partColors?, dimensionsMm?, notes? }` | `{ tool }`; class or real-dimension edits refit the stored profile, the rest rebuilds directly |
+| `DELETE /api/tools/:id` | | `{ ok, trashedTo }` (moved to `tools/.trash/`) |
+| `GET /api/tools/:id/model.glb`, `model-lod1.glb`, `thumb.webp`, `source/<file>` | | the files |
+
+Import (several photos of one tool, or photos with several tools) goes through a **draft** that the user reviews:
+
+| Method & path | Body / query | Response |
+| --- | --- | --- |
+| `POST /api/tools/drafts` | `multipart/form-data`: `photo` (1-20 files, JPEG/PNG/WebP/HEIC, 40 MB each, 128 MiB per request in total: the daemon's body limit, above which the server answers 413 before the route runs), `mode` (`single` = one tool in every photo, `multi` = default), `calibration` (JSON `{ mmPerPx }` for every photo, or `{ pointsPx: [[x,y],[x,y]], distanceMm }` measured on the first photo only, the others auto-detect; both fields of the pair are required; omitted = grid auto-detect) | `201 { draft }` (state `created`) |
+| `POST /api/jobs` | `{ kind: "tools.analyze", input: { draftId } }` | the vision sidecar segments, recognises, profiles and samples colours; every object is fitted and previewed; progress per photo; result `{ draftId, state, objects, needsScale }` |
+| `GET /api/tools/drafts/:id` | | `{ draft }`: photos, objects with `suggestions` (top classes, score), `classId`, `fit` (method, IoU, alternatives), `dimensionsMm`, `needsScale`, preview files, `status` |
+| `GET /api/tools/drafts/:id/files/<relative path>` | | crop, cut-out, mask, overlay, preview GLB / thumbnail (only paths listed in the draft) |
+| `PATCH /api/tools/drafts/:id/objects/:key` | `{ name?, status?: pending\|accepted\|discarded, classId?: string\|null, dimensionsMm?: { length?, width?, thickness? } }` | `{ draft }`; `classId: null` forces the generic loft; class and dimension edits refit |
+| `POST /api/tools/drafts/:id/group` | `{ keys: [...] }` | same tool in several photos: the best observation becomes the primary |
+| `POST /api/tools/drafts/:id/merge` | `{ keys: [...] }` | parts of one tool segmented apart (same photo); needs the sidecar edit ops |
+| `POST /api/tools/drafts/:id/split` | `{ key, n: 2..4 } \| { key, linePx }` | one mask covering several tools; needs the sidecar edit ops |
+| `POST /api/tools/drafts/:id/calibration` | `{ mmPerPx }` or `{ pointsPx, distanceMm }` | `{ draft }` back in state `created`: run `tools.analyze` again (tools already in the library stay marked). Refused (409) while the draft is being analysed |
+| `POST /api/tools/drafts/:id/commit` | `{ keys? }` (default: accepted objects) | `201 { tools, skipped: [{ key, reason }], draft }`; objects without a scale, unknown keys and objects already added are skipped with the reason; `409` unless the draft is `ready` (after a recalibration, analyse again first) |
+| `DELETE /api/tools/drafts/:id` | | `{ ok }` |
+
+Errors use the shape above; extra codes: `tool_not_found`, `class_not_found`, `draft_not_found` (404), `unsupported_media_type` (415), `invalid_request` (400, unknown class / preset, impossible edit), `conflict` (409, draft busy or already added), `vision_unavailable` (502: sidecar down, `HSW_VISION_URL`, default `http://127.0.0.1:8795`).
 
 ## Jobs
 
@@ -250,6 +284,8 @@ walls/<id>/photos/ models/  uploaded and generated assets (photos/derived/ for d
 walls/.trash/               deleted walls
 settings.json               per-user settings document (atomic write, mode 0600; a corrupt file is kept as settings.json.corrupt-<ts>)
 logs/client-errors.jsonl    client error reports (+ .1 after rotation at 5 MiB)
+tools/<id>/                 user tool library: tool.json, model.glb, model-lod1.glb, thumb.webp, source/ (see tools.md)
+tools/.drafts/<id>/         photo imports under review
 server.lock                 pid of the single writer
 ```
 

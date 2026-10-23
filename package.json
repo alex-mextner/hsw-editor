@@ -27,7 +27,9 @@
     "bank:adopt": "bun scripts/bank/adopt.ts",
     "bank:schema": "bun scripts/bank/schema.ts",
     "check": "bun run lint && bun run typecheck && bun scripts/bank/schema.ts --check && bun scripts/bank/verify.ts --seed && bun run test && bun run build",
-    "release": "bun scripts/release.ts"
+    "release": "bun scripts/release.ts",
+    "tools:sheet": "bun packages/tools/scripts/sheet.ts",
+    "tools:prototypes": "bun packages/tools/scripts/prototypes.ts"
   },
   "devDependencies": {
     "@types/bun": "1.4.2",

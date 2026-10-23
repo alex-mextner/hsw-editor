@@ -27,7 +27,9 @@ class Api:
         self.port = port
         self.base = f"http://{HOST}:{port}"
 
-    def request(self, method: str, path: str, body: Any = None) -> Any:
+    def request(
+        self, method: str, path: str, body: Any = None, timeout: float = TIMEOUT_S
+    ) -> Any:
         data = None if body is None else json.dumps(body).encode()
         req = urllib.request.Request(
             self.base + path,
@@ -36,7 +38,7 @@ class Api:
             headers={"content-type": "application/json", "accept": "application/json"},
         )
         try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT_S) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 raw = resp.read()
         except urllib.error.HTTPError as exc:
             raise self._http_error(exc.code, exc.read(), path) from None
@@ -48,7 +50,7 @@ class Api:
             ) from None
         except TimeoutError:
             raise NetworkError(
-                what=f"hsw-editor on {self.base} did not answer within {TIMEOUT_S:.0f}s",
+                what=f"hsw-editor on {self.base} did not answer within {timeout:.0f}s",
                 fix="hsw-editor status; hsw-editor restart",
             ) from None
         return json.loads(raw) if raw else None
