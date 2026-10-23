@@ -54,6 +54,7 @@ function object(key: string, patch: Partial<DraftObject> = {}): DraftObject {
     dimensionsMm: { length: 200, width: 30, thickness: 30 },
     needsScale: false,
     dimensionsEstimated: false,
+    dimensionAdjustments: [],
     images: {},
     preview: null,
     ...patch,
@@ -236,5 +237,91 @@ describe('ReviewStep', () => {
   test('a draft with no objects says nothing was found', async () => {
     mounted = await mount(review(draftOf([])));
     expect(mounted.container.querySelector('[data-testid="wizard-no-objects"]')).not.toBeNull();
+  });
+
+  describe('typed dimensions (issue 214)', () => {
+    async function typeInto(input: HTMLInputElement | undefined, value: string): Promise<void> {
+      if (!input) throw new Error('no input');
+      // React (on happy-dom) only reports a change on an input it saw focused; the prototype setter bypasses its value tracker
+      await act(async () => {
+        input.dispatchEvent(new FocusEvent('focusin', { bubbles: true }));
+      });
+      await act(async () => {
+        Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, value);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('keyup', { bubbles: true }));
+      });
+      await act(async () => {
+        input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        await settleRequests();
+      });
+    }
+    const dimInputs = (): HTMLInputElement[] => [
+      ...(mounted?.container.querySelectorAll<HTMLInputElement>('[data-testid="wizard-dims"] input') ?? []),
+    ];
+
+    test('a typed width is sent exactly as typed', async () => {
+      const seen: unknown[] = [];
+      installFetch((_url, init) => {
+        seen.push(JSON.parse(String(init?.body ?? 'null')));
+        return Response.json({ draft: draftOf([object('0:1', { userDimensions: { width: 80 } })]) });
+      });
+      mounted = await mount(review(draftOf([object('0:1')])));
+      await typeInto(dimInputs()[1], '80');
+      expect(seen).toEqual([{ dimensionsMm: { width: 80 } }]);
+      expect(mounted.container.querySelector('[data-testid="wizard-dim-error"]')).toBeNull();
+    });
+
+    test('an absurd size is refused inline and never sent, in both languages', async () => {
+      const seen: unknown[] = [];
+      installFetch((_url, init) => {
+        seen.push(JSON.parse(String(init?.body ?? 'null')));
+        return Response.json({ draft: draftOf([object('0:1')]) });
+      });
+      mounted = await mount(review(draftOf([object('0:1')])));
+      await typeInto(dimInputs()[0], '12086');
+      expect(seen).toEqual([]);
+      const error = mounted.container.querySelector('[data-testid="wizard-dim-error"]');
+      expect(error?.getAttribute('data-dim')).toBe('length');
+      expect(error?.textContent).toContain('1–3000 mm');
+      expect(dimInputs()[0]?.value).toBe('12086');
+
+      // typing again clears the message; a sane size goes through
+      await typeInto(dimInputs()[0], '120');
+      expect(mounted.container.querySelector('[data-testid="wizard-dim-error"]')).toBeNull();
+      expect(seen).toEqual([{ dimensionsMm: { length: 120 } }]);
+
+      await act(async () => localeStore.set('ru'));
+      await typeInto(dimInputs()[2], '0.05');
+      expect(mounted.container.querySelector('[data-testid="wizard-dim-error"]')?.textContent).toContain(
+        'от 0.1 до 3000 мм',
+      );
+      expect(seen).toHaveLength(1);
+    });
+
+    test('a size the class cannot hold shows what was asked, what the model has and why', async () => {
+      mounted = await mount(
+        review(
+          draftOf([
+            object('0:1', {
+              userDimensions: { width: 80 },
+              dimensionsMm: { length: 200, width: 46.3, thickness: 46.3 },
+              dimensionAdjustments: [
+                { key: 'width', requestedMm: 80, actualMm: 46.340740740740735, reason: 'class-range' },
+              ],
+            }),
+          ]),
+        ),
+      );
+      const line = mounted.container.querySelector('[data-testid="wizard-dim-adjusted"]');
+      expect(line?.getAttribute('data-dim')).toBe('width');
+      expect(line?.textContent).toContain('you asked for 80 mm, the model has 46.3 mm');
+      expect(line?.textContent).toContain('cannot be built that size');
+    });
+
+    test('no adjustment line when every typed size is kept', async () => {
+      mounted = await mount(review(draftOf([object('0:1', { userDimensions: { width: 30 } })])));
+      expect(mounted.container.querySelector('[data-testid="wizard-dim-adjusted"]')).toBeNull();
+    });
   });
 });

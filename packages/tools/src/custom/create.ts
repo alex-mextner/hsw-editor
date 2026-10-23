@@ -12,6 +12,7 @@ import { scaleMeshZ } from './transform.ts';
 import { colorsFromSegments, recolorModel } from './colors.ts';
 import {
   type ClassFit,
+  type DimensionTargets,
   fitClassToProfile,
   profileMaxWidth,
   rescaleProfile,
@@ -19,7 +20,14 @@ import {
 } from './fit.ts';
 import { ToolInputError } from './errors.ts';
 import { buildGenericLoft } from './generic.ts';
-import type { ColorSegment, CustomTool, ObservedProfile } from './schema.ts';
+import {
+  type ColorSegment,
+  type CustomTool,
+  type DimensionAdjustment,
+  type DimensionKey,
+  DimensionKeySchema,
+  type ObservedProfile,
+} from './schema.ts';
 
 export interface ClassCandidate {
   classId: string;
@@ -38,6 +46,8 @@ export interface ObjectObservation {
     thickness?: number | undefined;
   };
   dimensionSource: 'photo' | 'user' | 'estimated';
+  /** `dimensionsMm.length` is only the size the model already has (a refit), not one the user typed: it yields to a typed width. */
+  lengthHeld?: boolean;
   /** Sidecar kind hint: round objects get round generic sections. */
   profileKind?: string;
 }
@@ -62,6 +72,8 @@ export interface FittedObject {
   /** Only what was sampled from the photo colours (no explicit decision colours). */
   sampledPartColors: Record<string, string>;
   dimensionsMm: CustomTool['dimensionsMm'];
+  /** Typed sizes the model does not have exactly, with the reason (empty when every typed size is kept). */
+  dimensionAdjustments: DimensionAdjustment[];
   profile: ObservedProfile;
   model: ToolModel;
   modelLod1: ToolModel;
@@ -131,16 +143,73 @@ function thicknessOf(model: ToolModel): number {
   return sizeOf(model.bounds)[2];
 }
 
+/** What a typed size is compared with: below this the model "has" the size (the UI rounds to 0.1 mm). */
+const ADJUSTMENT_TOLERANCE_MM = 0.05;
+
+/** The length the user typed; an `estimated` length is a class-typical guess, not a typed size. */
+function typedLengthOf(obs: ObjectObservation): number | undefined {
+  return obs.dimensionSource === 'user' && !obs.lengthHeld ? obs.dimensionsMm?.length : undefined;
+}
+
+/**
+ * The overall model sizes the fit must reach: a typed width, and the length (typed, or the profile's own when only the
+ * width is typed, so changing the width does not move it).
+ */
+function dimensionTargets(
+  obs: ObjectObservation,
+  profile: ObservedProfile,
+): DimensionTargets | undefined {
+  const length = typedLengthOf(obs);
+  const width = obs.dimensionsMm?.width;
+  if (!width && !length) return undefined;
+  return {
+    lengthMm: length || obs.dimensionsMm?.length || profile.lengthMm,
+    lengthHeld: !length,
+    widthMm: width,
+  };
+}
+
+/**
+ * Typed sizes the model does not have, each with why. A class thickness only differs through the squash limit
+ * (`zScale`); a class length or width through its parameter ranges; a generic shape through its own limits (a
+ * thinnest wall, a bent centre line widening it): `limit` names which of the two applies.
+ */
+function adjustmentsOf(
+  obs: ObjectObservation,
+  actual: Record<DimensionKey, number>,
+  limit: 'class-range' | 'shape-limit',
+): DimensionAdjustment[] {
+  const asked: Record<DimensionKey, number | undefined> = {
+    length: typedLengthOf(obs),
+    width: obs.dimensionsMm?.width,
+    thickness: obs.dimensionsMm?.thickness,
+  };
+  return DimensionKeySchema.options.flatMap((key) => {
+    const requestedMm = asked[key];
+    if (!requestedMm || Math.abs(actual[key] - requestedMm) <= ADJUSTMENT_TOLERANCE_MM) return [];
+    return [
+      {
+        key,
+        requestedMm,
+        actualMm: actual[key],
+        reason: key === 'thickness' && limit === 'class-range' ? 'thickness-range' : limit,
+      },
+    ];
+  });
+}
+
 export function fitObject(obs: ObjectObservation, decision: DraftDecision = {}): FittedObject {
   const profile = scaledProfile(obs);
   const colors = contiguousSegments(obs.colors);
   const width = profileMaxWidth(profile);
+  const targets = dimensionTargets(obs, profile);
 
   const tryClass = (classId: string): ClassFit | null => {
     if (!hasToolClass(classId)) return null;
     return fitClassToProfile(classId, profile, {
       fixed: decision.fixed ?? {},
       start: decision.start ?? {},
+      ...(targets === undefined ? {} : { targets }),
     });
   };
 
@@ -195,6 +264,7 @@ export function fitObject(obs: ObjectObservation, decision: DraftDecision = {}):
       partColors,
       sampledPartColors,
       dimensionsMm: { ...dimensionsOf(model), source: obs.dimensionSource },
+      dimensionAdjustments: adjustmentsOf(obs, dimensionsOf(model), 'class-range'),
       profile,
       model,
       modelLod1,
@@ -225,6 +295,7 @@ export function fitObject(obs: ObjectObservation, decision: DraftDecision = {}):
     partColors,
     sampledPartColors: {},
     dimensionsMm: { ...dimensionsOf(model), source: obs.dimensionSource },
+    dimensionAdjustments: adjustmentsOf(obs, dimensionsOf(model), 'shape-limit'),
     profile,
     model,
     modelLod1,
