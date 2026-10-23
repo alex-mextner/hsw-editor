@@ -315,6 +315,66 @@ describe('import draft', () => {
     }
   });
 
+  test('typed sizes are kept exactly through the refit; ones the class cannot hold are reported with the reason (issue 214)', async () => {
+    const draft = await deps.drafts.create({
+      mode: 'multi',
+      calibration: { mmPerPx: 1.2 },
+      photos: [{ name: 'tools.png', bytes: PNG_1PX }],
+    });
+    await analyzeDraft(deps, draft.id);
+    const typed = await patchDraftObject(deps, draft.id, '0:1', {
+      dimensionsMm: { length: 100, width: 20 },
+    });
+    const kept = typed.objects.find((o) => o.key === '0:1');
+    expect(kept?.dimensionsMm?.length).toBeCloseTo(100, 1);
+    expect(kept?.dimensionsMm?.width).toBeCloseTo(20, 1);
+    expect(kept?.dimensionAdjustments).toEqual([]);
+
+    // a later edit of one size does not move the others
+    const widened = await patchDraftObject(deps, draft.id, '0:1', { dimensionsMm: { width: 25 } });
+    const second = widened.objects.find((o) => o.key === '0:1');
+    expect(second?.dimensionsMm?.length).toBeCloseTo(100, 1);
+    expect(second?.dimensionsMm?.width).toBeCloseTo(25, 1);
+
+    const tooWide = await patchDraftObject(deps, draft.id, '0:1', { dimensionsMm: { width: 80 } });
+    const snapped = tooWide.objects.find((o) => o.key === '0:1');
+    expect(snapped?.userDimensions?.width).toBe(80);
+    expect(snapped?.dimensionsMm?.width).toBeLessThan(80);
+    expect(snapped?.dimensionAdjustments).toEqual([
+      {
+        key: 'width',
+        requestedMm: 80,
+        actualMm: snapped?.dimensionsMm?.width ?? 0,
+        reason: 'class-range',
+      },
+    ]);
+    expect(snapped?.dimensionsMm?.length).toBeCloseTo(100, 1);
+  });
+
+  test('absurd sizes are refused before anything is stored', async () => {
+    const draft = await deps.drafts.create({
+      mode: 'multi',
+      calibration: { mmPerPx: 1.2 },
+      photos: [{ name: 'tools.png', bytes: PNG_1PX }],
+    });
+    await analyzeDraft(deps, draft.id);
+    for (const dimensionsMm of [
+      { length: 12086 },
+      { width: 0.4 },
+      { thickness: 0.05 },
+      { thickness: 3001 },
+      { length: 0 },
+    ]) {
+      await expect(patchDraftObject(deps, draft.id, '0:1', { dimensionsMm })).rejects.toThrow(
+        /must be between [\d.]+ and 3000 mm/,
+      );
+    }
+    expect((await deps.drafts.get(draft.id)).objects[0]?.userDimensions).toBeUndefined();
+    // a real thin tool (steel rule, 0.4 mm) is a sane thickness
+    const thin = await patchDraftObject(deps, draft.id, '0:1', { dimensionsMm: { thickness: 0.4 } });
+    expect(thin.objects[0]?.userDimensions).toEqual({ thickness: 0.4 });
+  });
+
   test('a recorded real photo shot at an angle, with no scale reference, gives fitted tools with flagged estimated sizes', async () => {
     // fixtures/oblique-carpet.json: the real sidecar's answer (no scale) for a perspective-warped carpet photo
     const recorded = JSON.parse(

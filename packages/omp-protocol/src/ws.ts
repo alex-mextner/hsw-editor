@@ -414,10 +414,13 @@ export const HSW_TOOL_NAMES = [
   'wall_apply',
   'wall_undo',
   'wall_bank_search',
+  'wall_tools_search',
+  'wall_add_tool',
   'wall_select',
   'wall_view',
   'wall_request_input',
   'wall_clean_background',
+  'wall_analyse_hang',
   'app_command',
 ] as const;
 export type HswToolName = (typeof HSW_TOOL_NAMES)[number];

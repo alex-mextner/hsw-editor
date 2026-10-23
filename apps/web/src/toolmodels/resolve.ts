@@ -15,7 +15,7 @@ import {
   type ToolDims,
 } from '@hsw-editor/tools/contract';
 import { paramsKey } from '@/bank/models.ts';
-import { BOX_PARAM_KEY_NAMES } from './holdingInterface.ts';
+import { BOX_PARAM_KEY_NAMES } from '@hsw-editor/compat';
 import { paramsDraftFor } from '@/widgets/draft.ts';
 import {
   ensureToolAssets,

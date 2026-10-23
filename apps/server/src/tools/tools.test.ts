@@ -219,6 +219,16 @@ describe('library and import', () => {
       },
     );
     expect(patched.status).toBe(200);
+    // an absurd typed size (12086 for 120) is refused, not fitted
+    const absurd = await fetch(
+      `${base}/api/tools/drafts/${draftId}/objects/${encodeURIComponent(obj?.key ?? '')}`,
+      {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ dimensionsMm: { length: 12086 } }),
+      },
+    );
+    expect(absurd.status).toBe(400);
     const commit = await fetch(`${base}/api/tools/drafts/${draftId}/commit`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
@@ -327,6 +337,14 @@ describe('review-found regressions', () => {
     expect(res.headers.get('content-type')).toContain('application/json');
     expect(await errorCode(res)).toBe('internal');
     expect(((await getJson('/api/tools')) as { tools: unknown[] }).tools.length).toBe(before);
+  });
+
+  test('absurd typed sizes are refused on a library tool too, a thin thickness is not', async () => {
+    const created = await post('/api/tools', { classId: 'screwdriver', name: { en: 'Dims' } });
+    const id = ((await created.json()) as { tool: { id: string } }).tool.id;
+    expect((await patch(`/api/tools/${id}`, { dimensionsMm: { length: 12086 } })).status).toBe(400);
+    expect((await patch(`/api/tools/${id}`, { dimensionsMm: { width: 0.4 } })).status).toBe(400);
+    expect((await patch(`/api/tools/${id}`, { dimensionsMm: { thickness: 0.4 } })).status).toBe(200);
   });
 
   test('concurrent PATCHes both land; DELETE racing PATCHes never resurrects the tool', async () => {

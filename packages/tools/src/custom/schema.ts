@@ -40,6 +40,37 @@ export type ColorSegment = z.infer<typeof ColorSegmentSchema>;
 /** `estimated`: the photo had no scale, so the length is the class-typical one (a flagged guess); `user`: typed by the user. */
 export const DimensionSourceSchema = z.enum(['photo', 'user', 'estimated']);
 
+export const DimensionKeySchema = z.enum(['length', 'width', 'thickness']);
+export type DimensionKey = z.infer<typeof DimensionKeySchema>;
+
+/**
+ * The sizes the user may type, mm: outside them the number is a slip (12086 for 120, 0.5 for a length), not a tool.
+ * A thickness may go below 1 mm: a steel rule is 0.4, a saw blade 0.6 thick.
+ */
+export const MIN_DIMENSION_MM: Record<DimensionKey, number> = {
+  length: 1,
+  width: 1,
+  thickness: 0.1,
+};
+export const MAX_DIMENSION_MM = 3000;
+/** A typed real dimension, mm; out-of-range values are refused, never clamped. */
+export function typedDimensionSchema(key: DimensionKey): z.ZodNumber {
+  return z.number().min(MIN_DIMENSION_MM[key]).max(MAX_DIMENSION_MM);
+}
+
+/**
+ * A typed dimension the model could not take exactly: what was asked, what the model has and why.
+ * `class-range`: the class's parameter ranges cannot reach it; `thickness-range`: the thickness squash limit did;
+ * `shape-limit`: the generic shape (no class) cannot be built that size.
+ */
+export const DimensionAdjustmentSchema = z.strictObject({
+  key: DimensionKeySchema,
+  requestedMm: z.number(),
+  actualMm: z.number(),
+  reason: z.enum(['class-range', 'thickness-range', 'shape-limit']),
+});
+export type DimensionAdjustment = z.infer<typeof DimensionAdjustmentSchema>;
+
 export const CustomToolSchema = z.strictObject({
   version: z.literal(1),
   id: ToolIdSchema,
@@ -131,9 +162,9 @@ export const CustomToolPatchSchema = z.strictObject({
   /** Real dimensions typed by the user; rescales the fit. */
   dimensionsMm: z
     .strictObject({
-      length: z.number().positive().optional(),
-      width: z.number().positive().optional(),
-      thickness: z.number().positive().optional(),
+      length: typedDimensionSchema('length').optional(),
+      width: typedDimensionSchema('width').optional(),
+      thickness: typedDimensionSchema('thickness').optional(),
     })
     .optional(),
   notes: z.string().max(2000).optional(),

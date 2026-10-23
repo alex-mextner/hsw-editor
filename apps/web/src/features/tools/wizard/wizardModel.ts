@@ -2,7 +2,13 @@
  * Pure helpers of the "Add from photo" wizard: the scale reference the user chose, what to show for an object
  * (top classes, merge/split/group possibilities) and how a failed analysis is classified. No React, no network.
  */
-import type { Draft, DraftObject } from '@hsw-editor/tools/contract';
+import {
+  type DimensionKey,
+  type Draft,
+  type DraftObject,
+  MAX_DIMENSION_MM,
+  MIN_DIMENSION_MM,
+} from '@hsw-editor/tools/contract';
 import type { CalibrationInput } from '../api.ts';
 
 export const MAX_PHOTOS = 20;
@@ -125,4 +131,21 @@ export function photoOf(
   object: Pick<DraftObject, 'photo'>,
 ): Draft['photos'][number] | undefined {
   return draft.photos.find((photo) => photo.index === object.photo);
+}
+
+/** What a typed dimension field holds: a size to send, nothing to send (empty), or a refusal with the reason. */
+export type TypedDimension =
+  | { readonly kind: 'ok'; readonly valueMm: number }
+  | { readonly kind: 'empty' }
+  | { readonly kind: 'invalid' }
+  | { readonly kind: 'range' };
+
+/** Reads a dimension field (comma or point decimals). Sizes outside the sane range of that dimension are refused, never clamped. */
+export function parseTypedDimension(raw: string, dimension: DimensionKey): TypedDimension {
+  const text = raw.trim().replace(',', '.');
+  if (text === '') return { kind: 'empty' };
+  const valueMm = Number(text);
+  if (!Number.isFinite(valueMm)) return { kind: 'invalid' };
+  if (valueMm < MIN_DIMENSION_MM[dimension] || valueMm > MAX_DIMENSION_MM) return { kind: 'range' };
+  return { kind: 'ok', valueMm };
 }

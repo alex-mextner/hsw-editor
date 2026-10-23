@@ -8,6 +8,7 @@ needs an entry here first.
 
 ### Added
 
+- The embedded agent can build a wall for the user's tools (#217): host tools `wall_tools_search` (the tool library by tag, class and text, with suggested holders and the library's tags) and `wall_add_tool` (a library tool added as its real model and hung on a compatible holder with the editor's own `@hsw-editor/compat` placement, one undo step), and a "building a wall for the user's tools" recipe in the system prompt that proceeds with defaults instead of asking. `wall_analyse_hang` is now auto-approved like the other host tools; `toolDraftOps` (the model ref + tool item of an added tool), `toolInterfaceFromHolding` and `measuredDimensions` moved to `@hsw-editor/compat` so the editor and the daemon share them. See [docs/omp.md](docs/omp.md#host-tools).
 - Photo segmentation is 3.4x faster by default (hsw-editor #10): `segment.quality` `fast` (sidecar default; `POST /segment` 8.3 s -> 2.4 s warm on the GPU) or `accurate` (the former default), per request and as the `vision.segmentQuality` setting (palette, ru/en;
   the daemon adds it to every stage request). `threed-vision` bumped for it (3d-cli #543); measurements and a real-photo timing test in [docs/vision.md](docs/vision.md#segmentation-speed-quality-fast--accurate).
 - Physics on the generated tool models (#167 follow-up): the physics judges the model the scene draws (`resolveToolModel`, also a size rebuilt
@@ -149,6 +150,10 @@ needs an entry here first.
 - "Calibrate the photo" (palette) did nothing with the photo hidden (eye off in the Photos list). It now opens the calibrate view on the shown photo, or on the wall's first photo when none is shown, and so does the pencil of a photo row (photo mode is entered the usual way, clearing a stale "photo hidden"); Cancel on an already calibrated photo leaves it shown. The command is disabled (`hasPhoto`) when the wall has no photo (#215).
 - `hsw-editor start|stop|restart|status` go through the systemd user unit while autostart is enabled for that port (#216), so no second pidfile daemon fights the unit for the port and `status` shows the unit's real state.
 - The web build writes `apps/web/dist/.build-ok` only after a successful build; `scripts/install.sh` and `hsw-editor doctor` require it, so a failed or partial build is rebuilt or reported (#216; rebuild once after updating: `bun run build`).
+||||||| parent of 875cf64 (tools: keep typed sizes exact, report class-range snaps, refuse absurd sizes (Refs #214))
+- Add-from-photo wizard keeps typed sizes (#214): a width of 80 mm no longer comes back as 73, 100 mm length as 99.8; typed length and width are held exactly by a
+  post-fit refinement of the class parameters, the wizard shows what you asked for, what the model has and why when a class cannot reach it, and sizes outside
+  1-3000 mm (thickness 0.1-3000; 12086 mm for 120) in the wizard and the tool page are refused inline (ru/en) and by the API instead of being fitted.
 - The committed bank seed declares the current `TOOL_CLASSES` (it kept the 27 classes that predate the finer ones), so the
   palette, tool picker and bank filter on a seed-served bank offer chisel, punch, hacksaw, long-nose/locking/water-pump
   pliers, crimper and hex-key-set; `exportSeed` writes the vocabulary from `TOOL_CLASSES` instead of the built root (#156).

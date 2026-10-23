@@ -23,7 +23,15 @@ import {
   DraftSchema,
 } from '../custom/draft.ts';
 import { type FittedObject, fitObject, typicalLengthMm } from '../custom/create.ts';
-import { type ColorSegment, type CustomTool, ObservedProfileSchema } from '../custom/schema.ts';
+import {
+  type ColorSegment,
+  type CustomTool,
+  DimensionKeySchema,
+  MAX_DIMENSION_MM,
+  MIN_DIMENSION_MM,
+  ObservedProfileSchema,
+  typedDimensionSchema,
+} from '../custom/schema.ts';
 import { MAX_TAGS, unionTags } from '../custom/tags.ts';
 import { exportGlb } from '../glb.ts';
 import { getToolClass, hasToolClass } from '../registry.ts';
@@ -376,6 +384,7 @@ function newObject(photoIndex: number, o: SidecarObject, key: string): DraftObje
     dimensionsMm: null,
     needsScale: !o.profile && !o.profilePx,
     dimensionsEstimated: false,
+    dimensionAdjustments: [],
     ...((o.profile ?? o.profilePx) && !observation
       ? {
           error:
@@ -426,6 +435,7 @@ export async function refitObject(
   draft: Draft,
   obj: DraftObject,
 ): Promise<FittedObject | null> {
+  obj.dimensionAdjustments = [];
   if (!obj.observation) {
     obj.fit = null;
     obj.dimensionsMm = null;
@@ -470,7 +480,12 @@ export async function refitObject(
     return made;
   };
   let fitted = await fitAt(sizing.dimensionsMm, sizing.source, decision);
-  if (sizing.estimated && fitted.classId !== null && fitted.classId !== pool[0]?.classId && !obj.classOverridden) {
+  if (
+    sizing.estimated &&
+    fitted.classId !== null &&
+    fitted.classId !== pool[0]?.classId &&
+    !obj.classOverridden
+  ) {
     // the silhouette preferred another candidate than the top suggestion: that class, at its own typical length, is the
     // estimate (the class is pinned so the second fit cannot flip back to the first one)
     const chosen = fitted.classId;
@@ -478,7 +493,10 @@ export async function refitObject(
     if (sizing.dimensionsMm !== null) {
       // a pinned class has no alternatives of its own: the comparison shown is the one that chose it
       const alternatives = fitted.alternatives;
-      fitted = { ...(await fitAt(sizing.dimensionsMm, sizing.source, { classId: chosen })), alternatives };
+      fitted = {
+        ...(await fitAt(sizing.dimensionsMm, sizing.source, { classId: chosen })),
+        alternatives,
+      };
     }
   }
   if (sizing.estimated && fitted.classId === null) {
@@ -497,6 +515,7 @@ export async function refitObject(
     confidence: fitted.fit.confidence,
     alternatives: fitted.alternatives,
   };
+  obj.dimensionAdjustments = fitted.dimensionAdjustments;
   obj.dimensionsMm = {
     length: fitted.dimensionsMm.length,
     width: fitted.dimensionsMm.width,
@@ -635,6 +654,15 @@ export async function patchDraftObject(
   if (patch.classId !== undefined && patch.classId !== null && !hasToolClass(patch.classId)) {
     throw new DraftError('invalid', `unknown class ${patch.classId}`);
   }
+  for (const dimension of DimensionKeySchema.options) {
+    const value = patch.dimensionsMm?.[dimension];
+    if (value !== undefined && !typedDimensionSchema(dimension).safeParse(value).success) {
+      throw new DraftError(
+        'invalid',
+        `${dimension} must be between ${MIN_DIMENSION_MM[dimension]} and ${MAX_DIMENSION_MM} mm`,
+      );
+    }
+  }
   const { draft } = await deps.drafts.update(draftId, async (d) => {
     assertReviewable(d, 'edit objects');
     const obj = find(d, key);
@@ -666,7 +694,9 @@ function groupInPlace(draft: Draft, keys: readonly string[]): DraftObject {
     // a measured profile (mm) always beats one in pixels (the bonus exceeds any suggestion score, <= 1); a pixel one still
     // beats an object with no usable profile at all
     (o.observation ? 1 : 0) +
-    (o.observation && !o.observation.profileInPixels ? 1.01 + o.observation.profile.lengthMm / 1e6 : 0) +
+    (o.observation && !o.observation.profileInPixels
+      ? 1.01 + o.observation.profile.lengthMm / 1e6
+      : 0) +
     (o.suggestions[0]?.score ?? 0);
   const primary = members.reduce((a, b) => (score(b) > score(a) ? b : a));
   for (const m of members) {
@@ -937,7 +967,8 @@ export async function commitDraft(
       if (!fitted) {
         result.skipped.push({
           key: obj.key,
-          reason: 'no size: the photo has no scale and nothing is known about this object; pick a class or type a real length',
+          reason:
+            'no size: the photo has no scale and nothing is known about this object; pick a class or type a real length',
         });
         continue;
       }

@@ -12,6 +12,7 @@ import {
   planRemoveHolder,
   planRotateHolder,
   type Reason,
+  toolDraftOps,
 } from '@hsw-editor/compat';
 import {
   applyOp,
@@ -45,7 +46,7 @@ import {
 import type { ToolClass } from '@hsw-editor/bank';
 import { offsetCell } from './footprint.ts';
 import type { ToolDragPayload } from '@/scene/toolDrop.ts';
-import { presetDims, toolDraftOps, toolPresetOps } from './toolPresets.ts';
+import { presetDims, toolPresetOps } from './toolPresets.ts';
 import { sessionStore, submitOps } from './session.ts';
 
 export function currentWall(): Wall | null {
