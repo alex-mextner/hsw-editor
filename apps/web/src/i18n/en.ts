@@ -1,6 +1,7 @@
 import { assetsEn } from './catalog/assets.ts';
 import { bankEn } from './catalog/bank.ts';
 import { compareEn } from './catalog/compare.ts';
+import { ompEn } from './catalog/omp.ts';
 import { shellEn } from './catalog/shell.ts';
 import { viewportEn } from './catalog/viewport.ts';
 import { widgetsEn } from './catalog/widgets.ts';
@@ -11,6 +12,7 @@ import { widgetsEn } from './catalog/widgets.ts';
  */
 export const en = {
   ...shellEn,
+  ...ompEn,
   ...viewportEn,
   ...bankEn,
   ...widgetsEn,

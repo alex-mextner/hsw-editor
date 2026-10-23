@@ -60,7 +60,7 @@ export default defineConfig(({ mode }) => {
       // The daemon serves the API and the bank assets; both are proxied in dev.
       proxy: {
         '/api/bank': proxyTo(env['HSW_BANK_TARGET'] ?? env['HSW_API_TARGET'] ?? DAEMON),
-        '/api': proxyTo(env['HSW_API_TARGET'] ?? DAEMON),
+        '/api': { ...proxyTo(env['HSW_API_TARGET'] ?? DAEMON), ws: true },
         '/bank': proxyTo(env['HSW_BANK_TARGET'] ?? env['HSW_API_TARGET'] ?? DAEMON),
       },
     },

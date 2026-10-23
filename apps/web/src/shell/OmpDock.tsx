@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Bot, X } from 'lucide-react';
 import { IconButton } from '@/components/IconButton.tsx';
+import { OmpPanel } from '@/features/omp/OmpPanel.tsx';
 import { useT } from '@/i18n/index.ts';
 import { layoutStore } from '@/state/layout.ts';
 import { useStore } from '@/state/react.ts';
@@ -31,7 +32,7 @@ export function OmpDock({ children }: { readonly children?: ReactNode }) {
         </IconButton>
       </div>
       <div data-slot="omp-dock-body" className="min-h-0 flex-1 overflow-hidden">
-        {children ?? <p className="p-4 text-xs text-muted-foreground">{t('omp.unavailable')}</p>}
+        {children ?? <OmpPanel />}
       </div>
     </aside>
   );
