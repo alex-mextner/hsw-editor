@@ -1,5 +1,6 @@
 import { assetsEn } from './catalog/assets.ts';
 import { bankEn } from './catalog/bank.ts';
+import { commandsEn } from './catalog/commands.ts';
 import { compareEn } from './catalog/compare.ts';
 import { ompEn } from './catalog/omp.ts';
 import { invalidZonesEn } from './catalog/invalidZones.ts';
@@ -20,4 +21,5 @@ export const en = {
   ...compareEn,
   ...assetsEn,
   ...invalidZonesEn,
+  ...commandsEn,
 } as const;

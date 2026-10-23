@@ -390,7 +390,8 @@ class OmpController {
           this.#scheduleRefresh();
           void this.refreshSessions();
         }
-        if (frame.messageCount !== undefined || this.#view.conversation.needsResync) void this.#resync();
+        if (frame.messageCount !== undefined || this.#view.conversation.needsResync)
+          void this.#resync();
         return;
       default:
         this.#reduce(frame);

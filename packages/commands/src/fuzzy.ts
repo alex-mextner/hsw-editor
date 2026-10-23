@@ -20,8 +20,17 @@ export const BONUS_EXACT = 40;
 const BONUS_PREFIX = 20;
 const LENGTH_PENALTY = 0.25;
 const TYPO_PENALTY = 25;
-const MIN_TYPO_TOKEN_LENGTH = 4;
+const MIN_TYPO_TOKEN_LENGTH = 5;
+/** Extra characters a compact match may span beyond the token itself. */
+const COMPACT_SLACK = 1;
 const TYPO_MIN_FIELD_WEIGHT = 0.5;
+/**
+ * Fields longer than this (descriptions) only match whole-word prefixes: a scattered subsequence
+ * of t, e, m, a across a sentence is noise, not a hit for the query "tema".
+ */
+const LONG_FIELD_LENGTH = 28;
+/** Titles (weight 1, or 0.95 for the other language) are never restricted; descriptions and keywords are. */
+const TITLE_MIN_WEIGHT = 0.9;
 const LAYOUT_PENALTY = 8;
 const TRANSLIT_PENALTY = 12;
 
@@ -163,12 +172,33 @@ function prepare(field: SearchField): PreparedField {
   return { folded, bonus: boundaryBonuses(original, folded), weight: field.weight };
 }
 
+/** `token` as the start of a word of a long field; the earliest boundary occurrence wins. */
+function scoreWordPrefix(token: readonly string[], field: PreparedField): TokenMatch | null {
+  for (let start = 0; start + token.length <= field.folded.length; start += 1) {
+    if ((field.bonus[start] ?? 0) < BONUS_BOUNDARY) continue;
+    if (!token.every((ch, offset) => field.folded[start + offset] === ch)) continue;
+    const positions = token.map((_, offset) => start + offset);
+    const score =
+      token.length * SCORE_MATCH +
+      FIRST_CHAR_MULTIPLIER * (field.bonus[start] ?? 0) +
+      (token.length - 1) * BONUS_CONSECUTIVE;
+    return { score, positions };
+  }
+  return null;
+}
+
 function wholeFieldBonus(token: readonly string[], field: PreparedField): number {
   if (token.length === field.folded.length && token.every((ch, i) => ch === field.folded[i])) {
     return BONUS_EXACT;
   }
   if (token.every((ch, i) => ch === field.folded[i])) return BONUS_PREFIX;
   return 0;
+}
+
+function isCompact(positions: readonly number[], length: number): boolean {
+  const first = positions[0] ?? 0;
+  const last = positions[positions.length - 1] ?? 0;
+  return last - first + 1 <= length + COMPACT_SLACK;
 }
 
 interface FieldMatch {
@@ -181,11 +211,18 @@ interface FieldMatch {
 function matchTokenInFields(
   token: readonly string[],
   fields: readonly PreparedField[],
+  compact = false,
 ): FieldMatch | null {
   let best: FieldMatch | null = null;
   for (const [index, field] of fields.entries()) {
-    const found = scoreToken(token, field.folded, field.bonus);
+    const found =
+      field.folded.length > LONG_FIELD_LENGTH && field.weight < TITLE_MIN_WEIGHT
+        ? scoreWordPrefix(token, field)
+        : scoreToken(token, field.folded, field.bonus);
     if (found === null) continue;
+    // Rewritten readings (other layout, transliteration, a dropped letter) are guesses: accept them
+    // only as a tight run, never scattered over a title.
+    if (compact && !isCompact(found.positions, token.length)) continue;
     const lengthPenalty = (field.folded.length - token.length) * LENGTH_PENALTY;
     const weighted = (found.score + wholeFieldBonus(token, field) - lengthPenalty) * field.weight;
     if (best === null || weighted > best.score) {
@@ -207,7 +244,7 @@ function matchTokenTolerant(
   let best: FieldMatch | null = null;
   for (let skip = 0; skip < token.length; skip += 1) {
     const reduced = token.filter((_, index) => index !== skip);
-    const found = matchTokenInFields(reduced, strong);
+    const found = matchTokenInFields(reduced, strong, true);
     if (found !== null && (best === null || found.score > best.score)) best = found;
   }
   return best === null ? null : { ...best, score: best.score - TYPO_PENALTY };
@@ -220,7 +257,9 @@ function scoreVariant(variant: QueryVariant, fields: readonly PreparedField[]): 
   const positions = new Set<number>();
   for (const token of tokens) {
     const chars = Array.from(token);
-    const found = matchTokenInFields(chars, fields) ?? matchTokenTolerant(chars, fields);
+    const found =
+      matchTokenInFields(chars, fields, variant.kind !== 'original') ??
+      matchTokenTolerant(chars, fields);
     if (found === null) return null;
     total += found.score;
     if (found.field === 0) for (const position of found.positions) positions.add(position);

@@ -11,6 +11,7 @@ import {
   PanelLeft,
   PanelRight,
   Redo2,
+  Search,
   Sun,
   Undo2,
 } from 'lucide-react';
@@ -28,7 +29,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.tsx';
 import { Button } from '@/components/ui/button.tsx';
-import { paletteOpenStore } from '@/commands/registry.ts';
+import { openPalette, useShortcutLabel } from '@/commands/app.ts';
 import { LOCALES, localeStore, useI18n, type Locale } from '@/i18n/index.ts';
 import { layoutStore, togglePanel } from '@/state/layout.ts';
 import { patchEditor } from '@/state/editor.ts';
@@ -47,6 +48,14 @@ export function TopBar() {
   const theme = useStore(themeStore);
   const session = useStore(sessionStore);
   const fileInput = useRef<HTMLInputElement>(null);
+  const keys = {
+    bank: useShortcutLabel('panel.bank'),
+    undo: useShortcutLabel('edit.undo'),
+    redo: useShortcutLabel('edit.redo'),
+    agent: useShortcutLabel('panel.omp'),
+    inspector: useShortcutLabel('panel.inspector'),
+    palette: useShortcutLabel('app.palette'),
+  };
   const wallId = session?.wallId ?? null;
   const ready = session?.status === 'ready' || session?.status === 'offline';
 
@@ -68,7 +77,7 @@ export function TopBar() {
     <>
       <IconButton
         label={t('panel.bank')}
-        shortcut="B"
+        shortcut={keys.bank}
         pressed={layout.leftOpen}
         onClick={() => togglePanel('leftOpen')}
       >
@@ -83,7 +92,7 @@ export function TopBar() {
       <div className="mx-1 h-5 w-px bg-border max-sm:hidden" />
       <IconButton
         label={t('action.undo')}
-        shortcut="Ctrl+Z"
+        shortcut={keys.undo}
         disabled={!session?.canUndo}
         onClick={undoEdit}
       >
@@ -91,7 +100,7 @@ export function TopBar() {
       </IconButton>
       <IconButton
         label={t('action.redo')}
-        shortcut="Ctrl+Shift+Z"
+        shortcut={keys.redo}
         disabled={!session?.canRedo}
         onClick={redoEdit}
       >
@@ -144,17 +153,22 @@ export function TopBar() {
         variant="outline"
         size="sm"
         className="gap-1.5 text-muted-foreground max-md:hidden"
-        onClick={() => paletteOpenStore.set(true)}
+        onClick={() => openPalette()}
         aria-label={t('palette.title')}
       >
         <Command />
         <span>{t('palette.open')}</span>
-        <kbd className="font-mono text-[10px]">Ctrl K</kbd>
+        {keys.palette ? <kbd className="font-mono text-[10px]">{keys.palette}</kbd> : null}
       </Button>
 
+      <div className="md:hidden">
+        <IconButton label={t('palette.openButton')} onClick={() => openPalette()}>
+          <Search />
+        </IconButton>
+      </div>
       <IconButton
         label={t('panel.omp')}
-        shortcut="A"
+        shortcut={keys.agent}
         pressed={layout.ompOpen}
         onClick={() => togglePanel('ompOpen')}
       >
@@ -163,7 +177,7 @@ export function TopBar() {
       <OverflowMenu onImport={() => fileInput.current?.click()} wallId={wallId} ready={ready} />
       <IconButton
         label={t('panel.inspector')}
-        shortcut="I"
+        shortcut={keys.inspector}
         pressed={layout.rightOpen}
         onClick={() => togglePanel('rightOpen')}
       >
@@ -239,7 +253,7 @@ function OverflowMenu({
             {theme === 'dark' ? <Sun /> : <Moon />}
             {theme === 'dark' ? t('theme.light') : t('theme.dark')}
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => paletteOpenStore.set(true)}>
+          <DropdownMenuItem onClick={() => openPalette()}>
             <Command /> {t('palette.open')}
           </DropdownMenuItem>
         </DropdownMenuContent>

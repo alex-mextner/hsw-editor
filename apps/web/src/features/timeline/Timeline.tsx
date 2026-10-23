@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Bot, Redo2, Terminal, Undo2, User } from 'lucide-react';
 import { api } from '@/api/http.ts';
 import type { ChangeEntry } from '@/api/schemas.ts';
+import { useShortcutLabel } from '@/commands/app.ts';
 import { IconButton } from '@/components/IconButton.tsx';
 import { useI18n } from '@/i18n/index.ts';
 import { cn } from '@/lib/cn.ts';
@@ -19,6 +20,8 @@ export function Timeline() {
   const [entries, setEntries] = useState<readonly ChangeEntry[]>([]);
   const list = useRef<HTMLOListElement>(null);
   const wallId = session?.wallId;
+  const undoKey = useShortcutLabel('edit.undo');
+  const redoKey = useShortcutLabel('edit.redo');
   const rev = session?.confirmedRev ?? 0;
 
   useEffect(() => {
@@ -65,7 +68,7 @@ export function Timeline() {
       <div className="flex h-9 shrink-0 items-center gap-1 border-b border-border px-2">
         <IconButton
           label={t('action.undo')}
-          shortcut="Ctrl+Z"
+          shortcut={undoKey}
           disabled={!session?.canUndo}
           onClick={undoEdit}
         >
@@ -73,7 +76,7 @@ export function Timeline() {
         </IconButton>
         <IconButton
           label={t('action.redo')}
-          shortcut="Ctrl+Shift+Z"
+          shortcut={redoKey}
           disabled={!session?.canRedo}
           onClick={redoEdit}
         >

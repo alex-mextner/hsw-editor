@@ -13,6 +13,7 @@ import {
 import type { BankElement } from '@hsw-editor/bank';
 import type { Wall, WallItem } from '@hsw-editor/core';
 import { bankStore } from '@/bank/client.ts';
+import { useShortcutLabel } from '@/commands/app.ts';
 import { IconButton } from '@/components/IconButton.tsx';
 import { Badge } from '@/components/ui/badge.tsx';
 import { Input } from '@/components/ui/input.tsx';
@@ -160,11 +161,18 @@ function SourceBadge({ item }: { readonly item: WallItem }) {
 function ItemActions({ items }: { readonly items: readonly WallItem[] }) {
   const { t } = useI18n();
   const allLocked = items.every((item) => item.locked);
+  const keys = {
+    rotateBack: useShortcutLabel('edit.rotateBack'),
+    rotate: useShortcutLabel('edit.rotate'),
+    duplicate: useShortcutLabel('edit.duplicate'),
+    lock: useShortcutLabel('edit.lock'),
+    remove: useShortcutLabel('edit.delete'),
+  };
   return (
     <div className="flex items-center gap-0.5">
       <IconButton
         label={t('action.rotateLeft')}
-        shortcut="Shift+R"
+        shortcut={keys.rotateBack}
         disabled={allLocked}
         onClick={() => rotateSelection(-1)}
       >
@@ -172,18 +180,22 @@ function ItemActions({ items }: { readonly items: readonly WallItem[] }) {
       </IconButton>
       <IconButton
         label={t('action.rotateRight')}
-        shortcut="R"
+        shortcut={keys.rotate}
         disabled={allLocked}
         onClick={() => rotateSelection(1)}
       >
         <RotateCw />
       </IconButton>
-      <IconButton label={t('action.duplicate')} shortcut="Ctrl+D" onClick={duplicateSelection}>
+      <IconButton
+        label={t('action.duplicate')}
+        shortcut={keys.duplicate}
+        onClick={duplicateSelection}
+      >
         <Copy />
       </IconButton>
       <IconButton
         label={allLocked ? t('action.unlock') : t('action.lock')}
-        shortcut="L"
+        shortcut={keys.lock}
         pressed={allLocked}
         onClick={toggleLockSelection}
       >
@@ -192,7 +204,7 @@ function ItemActions({ items }: { readonly items: readonly WallItem[] }) {
       <div className="flex-1" />
       <IconButton
         label={t('action.delete')}
-        shortcut="Del"
+        shortcut={keys.remove}
         disabled={allLocked}
         onClick={deleteSelection}
       >

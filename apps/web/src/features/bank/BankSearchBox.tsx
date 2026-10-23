@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { SearchIcon, XIcon } from 'lucide-react';
-import { isTypingTarget } from '@/commands/registry.ts';
+import { isTypingTarget } from '@/commands/typing.ts';
 import { Input } from '@/components/ui/input.tsx';
 import { Kbd } from '@/components/Kbd.tsx';
 import { useT } from '@/i18n/index.ts';

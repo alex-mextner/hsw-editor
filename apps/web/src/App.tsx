@@ -1,11 +1,15 @@
 import { useEffect } from 'react';
-import { CommandPalette } from '@/commands/CommandPalette.tsx';
-import { registerEditorCommands } from '@/commands/editorCommands.ts';
-import { useShortcuts } from '@/commands/useShortcuts.ts';
+import { startAiSession } from '@/commands/aiSession.ts';
+import { startCommandCenter } from '@/commands/app.ts';
+import { useGlobalKeys } from '@/commands/useGlobalKeys.ts';
 import { TooltipProvider } from '@/components/ui/tooltip.tsx';
+import { CommandPalette } from '@/features/commandPalette/CommandPalette.tsx';
+import { CheatSheet } from '@/features/keybindings/CheatSheet.tsx';
+import { KeybindingEditor } from '@/features/keybindings/KeybindingEditor.tsx';
+import { PendingChordHint } from '@/features/keybindings/PendingChordHint.tsx';
 import { ConflictDialog } from '@/features/notices/ConflictDialog.tsx';
-import { UpdateToast } from '@/features/notices/UpdateToast.tsx';
 import { Toaster } from '@/features/notices/Toaster.tsx';
+import { UpdateToast } from '@/features/notices/UpdateToast.tsx';
 import { LeftPanel } from '@/features/palette/LeftPanel.tsx';
 import { Inspector } from '@/features/inspector/Inspector.tsx';
 import { Timeline } from '@/features/timeline/Timeline.tsx';
@@ -16,8 +20,9 @@ import { OmpDock } from '@/shell/OmpDock.tsx';
 import { Shell } from '@/shell/Shell.tsx';
 
 export function App() {
-  useShortcuts();
-  useEffect(() => registerEditorCommands(), []);
+  useGlobalKeys();
+  useEffect(() => startCommandCenter(), []);
+  useEffect(() => startAiSession(), []);
   return (
     <TooltipProvider delay={300}>
       <Shell
@@ -30,6 +35,9 @@ export function App() {
         <ViewportArea />
       </Shell>
       <CommandPalette />
+      <KeybindingEditor />
+      <CheatSheet />
+      <PendingChordHint />
       <NewWallDialog />
       <Toaster />
       <UpdateToast />
