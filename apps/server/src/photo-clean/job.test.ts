@@ -1,6 +1,6 @@
 /** The photo.clean job against an in-memory wall and a fake draw backend: real pixels, real sharp, no daemon. */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { type DrawBackendId, type DrawRequest, type DrawResult } from '@hsw-editor/draw';
@@ -414,6 +414,38 @@ describe('photo.clean', () => {
       variantId: ai?.id,
     });
     expect(walls.wall.photos.find((photo) => photo.cleanOf)?.id).toBe(ai?.id);
+  });
+
+  test('a basic refresh over an AI variant makes a new basic one, as asked', async () => {
+    const { run, walls } = await setup();
+    await run();
+    expect(walls.wall.photos.find((photo) => photo.cleanOf)?.backend).toBe('omp');
+    const result = await run('basic', true);
+    expect(result).toMatchObject({ status: 'ok', method: 'basic', ai: 'not-asked' });
+    expect(
+      walls.wall.photos.filter((photo) => photo.cleanOf).map((photo) => photo.backend),
+    ).toEqual(['basic']);
+  });
+
+  test('a nudge of the board while the model works does not throw its answer away', async () => {
+    const { run, walls, draw } = await setup();
+    // 3.0 -> 3.01 mm/px moves the footprint corners by a pixel or two: inside the material drift.
+    draw.during = () => walls.setScale(3.01);
+    const result = await run();
+    expect(result).toMatchObject({ status: 'ok', method: 'ai', ai: 'done' });
+  });
+
+  test('a failed backend leaves its failure files, the big working copies are gone either way', async () => {
+    const { run, draw } = await setup();
+    draw.mode = 'login';
+    draw.during = () => {
+      mkdirSync(join(home, 'photo-clean', 'job1', 'out'), { recursive: true });
+      writeFileSync(join(home, 'photo-clean', 'job1', 'out', 'screenshot.png'), 'x');
+    };
+    await run();
+    expect(existsSync(join(home, 'photo-clean', 'job1', 'out', 'screenshot.png'))).toBe(true);
+    expect(existsSync(join(home, 'photo-clean', 'job1', 'photo.png'))).toBe(false);
+    expect(existsSync(join(home, 'photo-clean', 'job1', 'mask.png'))).toBe(false);
   });
 
   test('the working files of an AI run are removed afterwards', async () => {

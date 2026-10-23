@@ -120,7 +120,7 @@ async function storeVariant(
   try {
     const { wall } = await ctx.walls.get(wallId);
     const original = wall.photos.find((photo) => photo.id === originalId);
-    if (original === undefined || currentFootprint(wall, original) !== footprint) {
+    if (original === undefined || movedSince(wall, original, footprint)) {
       await ctx.walls.removeAsset(wallId, file);
       return null;
     }
@@ -153,14 +153,14 @@ async function storeVariant(
   }
 }
 
-/** The signature of the board's footprint on `photo` as the wall has it now; null without a usable calibration. */
-function currentFootprint(wall: Wall, photo: Photo): string | null {
-  if (photo.calibration === undefined) return null;
+/** True when the board's footprint on `photo` is not (within the material drift) the one `footprint` describes. */
+function movedSince(wall: Wall, photo: Photo, footprint: string): boolean {
+  if (photo.calibration === undefined) return true;
   const image = { width: photo.width, height: photo.height };
   const extent = boardExtent(wall.board);
   const map = photoMapFromCalibration(photo.calibration, image, extent);
   const polygon = map === null ? null : boardFootprintPx(map, extent, CLEAN_MARGIN_MM);
-  return polygon === null ? null : footprintSignature(polygon, image);
+  return polygon === null || footprintDrift(footprint, polygon, image) > materialDrift(image);
 }
 
 function failureState(code: string): AiState {
@@ -303,7 +303,8 @@ export async function runPhotoClean(
 
   // An AI variant for this footprint is never traded for the basic one by a refresh: it stays until the model's new
   // answer replaces it, so a logged-out or out-of-quota backend cannot make the picture worse.
-  let variant: Photo | undefined = matches && existing?.backend !== 'basic' ? existing : undefined;
+  let variant: Photo | undefined =
+    wantsAi && matches && existing?.backend !== 'basic' ? existing : undefined;
   if (variant === undefined) {
     ctx.progress({ fraction: 0.2, message: 'cleaning the wall (basic)…' });
     const filled = fillWall(source.data, source.width, source.height, 3, mask);
@@ -328,8 +329,10 @@ export async function runPhotoClean(
 
   ctx.progress({ fraction: 0.5, message: 'asking the image model…' });
   const workDir = join(ctx.home, 'photo-clean', ctx.id);
+  let kept = false;
   try {
     const outcome = await aiClean(deps, ctx, source, mask, workDir);
+    kept = outcome.state !== 'done' && outcome.state !== 'rejected';
     if (outcome.state === 'done' && outcome.pixels !== undefined && outcome.backend !== undefined) {
       const upgraded = await storeVariant(
         ctx,
@@ -350,8 +353,13 @@ export async function runPhotoClean(
       ...(outcome.message === undefined ? {} : { aiMessage: outcome.message }),
     };
   } finally {
-    // The full-size copies and the model's answers are working files; the variant carries what is kept.
-    await rm(workDir, { recursive: true, force: true });
+    // The full-size copies are working files; the variant carries what is kept. A backend that failed may have left
+    // a screenshot of what it saw in `out/`: that stays for whoever investigates, the rest goes.
+    await Promise.all([
+      rm(join(workDir, 'photo.png'), { force: true }),
+      rm(join(workDir, 'mask.png'), { force: true }),
+    ]);
+    if (!kept) await rm(workDir, { recursive: true, force: true });
   }
 }
 
