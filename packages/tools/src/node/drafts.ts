@@ -679,6 +679,26 @@ export async function splitDraftObject(
   return draft;
 }
 
+/** An object the segmentation missed (a thin or low-contrast tool): SAM2 cuts it out of a click or a box on the photo. */
+export async function addDraftObject(
+  deps: DraftDeps,
+  draftId: string,
+  photo: number,
+  prompt: { pointPx: [number, number] } | { boxXywh: [number, number, number, number] },
+  signal?: AbortSignal,
+): Promise<Draft> {
+  const { draft } = await deps.drafts.update(draftId, async (d) => {
+    assertReviewable(d, 'add objects');
+    if (!d.photos.some((p) => p.index === photo)) {
+      throw new DraftError('not_found', `no photo ${photo} in draft ${draftId}`);
+    }
+    const outDir = join(deps.drafts.dir(draftId), 'vision', String(photo));
+    const added = await deps.vision.addObject(outDir, prompt, signal);
+    d.objects.push(await adoptEdited(deps, d, photo, added, []));
+  });
+  return draft;
+}
+
 // --- commit ---------------------------------------------------------------------------------------------------
 
 export interface CommitResult {

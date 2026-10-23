@@ -58,6 +58,12 @@ class ScriptedClient implements VisionClient {
   async photoToObjects(): Promise<never> {
     throw new Error('not used');
   }
+  async post(): Promise<never> {
+    throw new Error('not used');
+  }
+  async postStream(): Promise<never> {
+    throw new Error('not used');
+  }
   async status(): Promise<never> {
     throw new Error('not used');
   }

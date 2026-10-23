@@ -24,11 +24,16 @@ import {
 import { z } from 'zod';
 import { defaultJobRegistry, registerJob, type JobRegistry } from '../jobs.ts';
 import type { ServerModule } from '../modules.ts';
+import type { VisionClient } from '../vision/client.ts';
+import { visionClient as sharedVisionClient } from '../vision/shared.ts';
 import { handleToolsRequest } from './routes.ts';
+import { ManagedVisionTransport } from './vision-transport.ts';
 
 export interface ToolsModuleOptions {
   /** Test seam: a vision sidecar stand-in. */
   vision?: VisionPort;
+  /** Test seam: another managed client than the daemon's one (own environment and state file). */
+  visionClient?: VisionClient;
   /** Job registry the `tools.analyze` job is registered in (the daemon's default one). */
   jobRegistry?: JobRegistry;
 }
@@ -44,7 +49,7 @@ async function writeCategories(dir: string): Promise<string> {
   return file;
 }
 
-async function openDeps(home: string, vision: VisionPort | undefined): Promise<DraftDeps> {
+async function openDeps(home: string, vision: VisionPort): Promise<DraftDeps> {
   const tools = new ToolStore(join(home, 'tools'));
   const drafts = new DraftStore(join(home, 'tools', '.drafts'));
   await mkdir(drafts.root, { recursive: true });
@@ -53,7 +58,7 @@ async function openDeps(home: string, vision: VisionPort | undefined): Promise<D
   return {
     tools,
     drafts,
-    vision: vision ?? new HttpVisionPort(process.env['HSW_VISION_URL'] ?? 'http://127.0.0.1:8795'),
+    vision,
     index: await loadPrototypeIndex(
       protoDir,
       listToolClasses().map((c) => c.id),
@@ -63,6 +68,9 @@ async function openDeps(home: string, vision: VisionPort | undefined): Promise<D
 }
 
 export function createToolsModule(options: ToolsModuleOptions = {}): ServerModule {
+  const vision =
+    options.vision ??
+    new HttpVisionPort(new ManagedVisionTransport(options.visionClient ?? sharedVisionClient));
   const opened = new Map<string, Promise<DraftDeps>>();
   /** Data directory of the daemon this module is mounted in (jobs carry no config; set by the first request). */
   let lastHome: string | null = null;
@@ -70,7 +78,7 @@ export function createToolsModule(options: ToolsModuleOptions = {}): ServerModul
   const depsFor = (home: string): Promise<DraftDeps> => {
     let deps = opened.get(home);
     if (!deps) {
-      deps = openDeps(home, options.vision);
+      deps = openDeps(home, vision);
       opened.set(home, deps);
       deps.catch(() => opened.delete(home));
     }
@@ -105,6 +113,16 @@ export function createToolsModule(options: ToolsModuleOptions = {}): ServerModul
       lastHome = deps.config.home;
       const url = new URL(request.url);
       if (url.pathname !== '/api/tools' && !url.pathname.startsWith('/api/tools/')) return null;
+      if (url.pathname === '/api/tools/vision') {
+        // answers even when the tool store cannot be opened: it only asks the sidecar (never starts it)
+        if (request.method !== 'GET') {
+          return Response.json(
+            { error: { code: 'method_not_allowed', message: 'GET only' } },
+            { status: 405 },
+          );
+        }
+        return vision.status().then((status) => Response.json(status));
+      }
       return depsFor(deps.config.home).then((d) =>
         handleToolsRequest(request, d, deps.config.home),
       );

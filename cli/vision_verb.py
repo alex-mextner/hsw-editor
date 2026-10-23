@@ -27,9 +27,9 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PROJECT = REPO_ROOT / "services" / "vision"
-VERBS = ("setup", "status", "fetch-models", "doctor", "photo-to-wall", "photo-to-objects", "embed", "serve")
+VERBS = ("setup", "status", "fetch-models", "doctor", "photo-to-wall", "photo-to-objects", "objects", "embed", "serve")
 #: Verbs that run torch or download models: they use the heavy-run wrapper.
-HEAVY_VERBS = ("fetch-models", "photo-to-wall", "photo-to-objects", "embed")
+HEAVY_VERBS = ("fetch-models", "photo-to-wall", "photo-to-objects", "objects", "embed")
 DEFAULT_PORT = 8795  # `hsw_vision.config.DEFAULT_LOOPBACK_PORT`: where `hsw-editor doctor` looks when no state file exists
 HEAVY_LOCK = "/tmp/3d-cli-heavy.lock"  # noqa: S108 - the workstation-wide lock path from AGENTS.md
 EXIT_USAGE = 2

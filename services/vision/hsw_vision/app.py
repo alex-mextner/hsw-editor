@@ -1,6 +1,6 @@
 """hsw-vision HTTP API (FastAPI). Loopback only: every request's Host header must be loopback.
 
-`GET /health`, `GET /models/status`, `POST /calibrate|/segment|/recognise|/fit|/multiview` (JSON), and
+`GET /health`, `GET /models/status`, `POST /calibrate|/segment|/recognise|/fit|/multiview` and `POST /objects/merge|split|reprofile|add` (JSON), and
 `POST /photo-to-wall` and `POST /photo-to-objects` which stream NDJSON events (`stage`, `progress`, `object`, `request_view`, then one final
 `result` or `error` line). Stage errors are `{"error": {code, message, fix?, details?}}` with the HTTP status of the
 error class (`models_missing` = 424 naming `hsw-editor vision fetch-models`).
@@ -21,19 +21,24 @@ from fastapi.responses import JSONResponse, StreamingResponse
 
 from hsw_vision import __version__
 from hsw_vision import objects as objects_pipeline
+from hsw_vision import objects_edit
 from hsw_vision import photo_to_wall as wall_pipeline
 from hsw_vision.config import VisionConfig
 from hsw_vision.confidence import assess, fit_confidence
 from hsw_vision.errors import VisionServiceError, error_json_for
 from hsw_vision.schemas import (
+    AddObjectRequest,
     CalibrateRequest,
     FitRequest,
+    MergeObjectsRequest,
     MultiviewRequest,
     PhotoRequest,
     PhotoToObjectsRequest,
     PhotoToWallRequest,
     RecogniseRequest,
+    ReprofileObjectsRequest,
     SegmentRequest,
+    SplitObjectRequest,
 )
 from hsw_vision.service import VisionService
 from hsw_vision.stages import fit as stage_fit
@@ -195,6 +200,24 @@ def create_app(
     def photo_to_objects(req: PhotoToObjectsRequest) -> StreamingResponse:
         svc = get_service()
         return StreamingResponse(_ndjson(svc, req, objects_pipeline.run, "photo-to-objects"), media_type="application/x-ndjson")
+
+    @app.post("/objects/merge")
+    def objects_merge(req: MergeObjectsRequest) -> dict[str, Any]:
+        return objects_edit.merge_objects(get_service(), req.out_dir, req.ids)
+
+    @app.post("/objects/split")
+    def objects_split(req: SplitObjectRequest) -> dict[str, Any]:
+        return objects_edit.split_object(get_service(), req.out_dir, req.id, line_px=req.line_px, n=req.n)
+
+    @app.post("/objects/reprofile")
+    def objects_reprofile(req: ReprofileObjectsRequest) -> dict[str, Any]:
+        return objects_edit.reprofile_objects(
+            get_service(), req.out_dir, ids=req.ids, fixed_dims=req.fixed_dims, calibrate=req.calibrate
+        )
+
+    @app.post("/objects/add")
+    def objects_add(req: AddObjectRequest) -> dict[str, Any]:
+        return objects_edit.add_object(get_service(), req.out_dir, point_px=req.point_px, box_xywh=req.box_xywh)
 
     return app
 

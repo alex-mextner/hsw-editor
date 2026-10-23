@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { HttpVisionPort, VisionRequestError } from './vision-port.ts';
+import { FetchVisionTransport, HttpVisionPort, VisionRequestError } from './vision-port.ts';
 
 const servers: { stop(force?: boolean): unknown }[] = [];
 afterEach(async () => {
@@ -29,9 +29,9 @@ describe('HttpVisionPort', () => {
           `${JSON.stringify({ event: 'stage', name: 'segment' })}\n${JSON.stringify({ event: 'result', result: { status: 'ok', objects: [] } })}`,
         ),
     );
-    const result = await new HttpVisionPort(url).photoToObjects({
+    const result = await new HttpVisionPort(new FetchVisionTransport(url)).photoToObjects({
       ...REQUEST,
-      onEvent: (e) => events.push(e.event),
+      onEvent: (e) => events.push(e.event ?? ''),
     });
     expect(result.status).toBe('ok');
     expect(events).toEqual(['stage']);
@@ -45,7 +45,7 @@ describe('HttpVisionPort', () => {
         `${JSON.stringify({ event: 'result', result: { status: 'ok', objects: [] } })}\n`,
       );
     });
-    await new HttpVisionPort(url).photoToObjects(REQUEST);
+    await new HttpVisionPort(new FetchVisionTransport(url)).photoToObjects(REQUEST);
     expect(seen).toMatchObject({
       image_path: '/tmp/x.jpg',
       out_dir: '/tmp/out',
@@ -62,7 +62,9 @@ describe('HttpVisionPort', () => {
           { status: 424, headers: { 'content-type': 'application/x-ndjson' } },
         ),
     );
-    const failure = await new HttpVisionPort(url).photoToObjects(REQUEST).catch((e: unknown) => e);
+    const failure = await new HttpVisionPort(new FetchVisionTransport(url))
+      .photoToObjects(REQUEST)
+      .catch((e: unknown) => e);
     expect(failure).toBeInstanceOf(VisionRequestError);
     expect((failure as VisionRequestError).code).toBe('models_missing');
     expect((failure as VisionRequestError).message).toContain('fetch-models');
@@ -70,7 +72,7 @@ describe('HttpVisionPort', () => {
 
   test('rejects a malformed edit reply instead of crashing later', async () => {
     const url = sidecar(() => Response.json({ nope: true }));
-    const failure = await new HttpVisionPort(url)
+    const failure = await new HttpVisionPort(new FetchVisionTransport(url))
       .mergeObjects('/tmp/out', [1, 2])
       .catch((e: unknown) => e);
     expect(failure).toBeInstanceOf(VisionRequestError);

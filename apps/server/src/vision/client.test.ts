@@ -89,6 +89,9 @@ function sidecar(
     }
     if (url.pathname === '/photo-to-objects' && options.photoToObjects !== undefined)
       return options.photoToObjects();
+    if (url.pathname === '/objects/merge') {
+      return request.json().then((body) => Response.json({ echoed: body }));
+    }
     if (url.pathname === '/missing') {
       return Response.json(
         {
@@ -263,7 +266,50 @@ describe('requests', () => {
   });
 });
 
+describe('generic routes', () => {
+  test('post returns the JSON of a non-stage route and postStream the unvalidated final result', async () => {
+    const server = sidecar({
+      photoToObjects: () =>
+        ndjson([
+          JSON.stringify({ event: 'stage', stage: 'segment' }),
+          JSON.stringify({ event: 'result', result: { anything: [1, 2] } }),
+        ]),
+    });
+    const client = tcpClient(server);
+    expect(await client.post('/objects/merge', { ids: [1, 2] })).toEqual({
+      echoed: { ids: [1, 2] },
+    });
+    const events: string[] = [];
+    const result = await client.postStream('/photo-to-objects', {}, (e) =>
+      events.push(e.event ?? ''),
+    );
+    expect(result).toEqual({ anything: [1, 2] });
+    expect(events).toEqual(['stage']);
+  });
+});
+
 describe('endpoint resolution and lifecycle', () => {
+  test('status says whether the next request could start the sidecar (venv present, no external URL)', async () => {
+    const venv = join(root, 'venv');
+    mkdirSync(join(venv, 'bin'), { recursive: true });
+    writeFileSync(join(venv, 'bin', 'python'), '');
+    const options = { repoRoot: root, stateFile: join(root, 'none.json') };
+    expect(await new HttpVisionClient({ ...options, env: {}, venv }).status()).toMatchObject({
+      running: false,
+      startable: true,
+    });
+    expect(
+      await new HttpVisionClient({ ...options, env: {}, venv: join(root, 'absent') }).status(),
+    ).toMatchObject({ running: false, startable: false });
+    expect(
+      await new HttpVisionClient({
+        ...options,
+        env: { HSW_VISION_URL: 'http://127.0.0.1:9' },
+        venv,
+      }).status(),
+    ).toMatchObject({ running: false, startable: false }); // an external sidecar that is down is not started by us
+  });
+
   test('a sidecar found through the state file on a unix socket is used without spawning', async () => {
     const socket = join(root, 'v.sock');
     sidecar({ unix: socket });
@@ -293,6 +339,7 @@ describe('endpoint resolution and lifecycle', () => {
       running: false,
       managed: false,
       endpoint: null,
+      startable: false,
       health: null,
       models: null,
     });

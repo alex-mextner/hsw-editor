@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, ClassVar, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
 
 class Strict(BaseModel):
@@ -13,6 +13,8 @@ class Strict(BaseModel):
 
 
 Point = tuple[float, float]
+#: The dimensions a user can fix (millimetres): what the fit stage understands.
+FIXED_DIMENSIONS = ("length", "width", "thickness")
 
 
 class CalibrateParams(Strict):
@@ -135,3 +137,58 @@ class PhotoToObjectsRequest(PhotoRequest):
     colours: bool = True
     #: Also put each CLIP crop embedding (512 floats) in the object record; they are always written to `embeddings.npy`.
     inline_embeddings: bool = False
+
+
+class ObjectsEditRequest(Strict):
+    """An edit of a finished `photo_to_objects` result directory (`objects.json` + files): no photo-wide re-run."""
+
+    out_dir: Path
+
+
+class MergeObjectsRequest(ObjectsEditRequest):
+    ids: list[int] = Field(min_length=2, max_length=20)
+
+
+class SplitObjectRequest(ObjectsEditRequest):
+    """Split one object's mask: by a straight line through two photo pixels, or into `n` parts that follow its necks."""
+
+    id: int
+    line_px: tuple[Point, Point] | None = None
+    n: int | None = Field(default=None, ge=2, le=8)
+
+    @model_validator(mode="after")
+    def _exactly_one_way(self) -> SplitObjectRequest:
+        if (self.line_px is None) == (self.n is None):
+            raise ValueError("give exactly one of line_px (two photo pixels) and n (number of parts)")
+        return self
+
+
+class ReprofileObjectsRequest(ObjectsEditRequest):
+    """Fit again with other fixed dimensions (per object id, mm) and/or another scale. A new `calibrate` changes every
+    object's millimetres, so it re-fits all live objects; `fixed_dims[id] = null` clears that object's constraints."""
+
+    ids: list[int] | None = None
+    fixed_dims: dict[Annotated[str, StringConstraints(pattern=r"^\d+$")], dict[str, float] | None] = Field(default_factory=dict)
+    calibrate: CalibrateParams | None = None
+
+    @field_validator("fixed_dims")
+    @classmethod
+    def _known_positive_dims(cls, value: dict[str, dict[str, float] | None]) -> dict[str, dict[str, float] | None]:
+        for ident, dims in value.items():
+            for name, mm in (dims or {}).items():
+                if name not in FIXED_DIMENSIONS or not mm > 0:
+                    raise ValueError(f"object {ident}: {name}={mm}; use {', '.join(FIXED_DIMENSIONS)} with positive millimetres")
+        return value
+
+
+class AddObjectRequest(ObjectsEditRequest):
+    """Segment one more object from a SAM2 prompt: a click or a box, in photo pixels."""
+
+    point_px: Point | None = None
+    box_xywh: tuple[float, float, Annotated[float, Field(gt=0)], Annotated[float, Field(gt=0)]] | None = None
+
+    @model_validator(mode="after")
+    def _exactly_one_prompt(self) -> AddObjectRequest:
+        if (self.point_px is None) == (self.box_xywh is None):
+            raise ValueError("give exactly one of point_px and box_xywh")
+        return self

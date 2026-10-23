@@ -3,6 +3,7 @@
   serve                       run the HTTP sidecar (loopback 127.0.0.1:8795, or --socket PATH)
   photo-to-wall IMAGE --out DIR   photo -> wall proposal, no server (evidence runs, `hsw-editor vision photo-to-wall`)
   photo-to-objects IMAGE --out DIR   photo -> per-object masks, crops, classes, fitted models, colours (objects.json)
+  objects merge|split|reprofile|add OUT_DIR ...   edit a finished photo-to-objects result without re-segmenting the photo
   embed IMAGE... --out DIR       CLIP embeddings (512 floats, L2-normalised) of whole images or their single object
   models status|fetch [NAME...]   what is on disk / explicit download (the only place that downloads)
   doctor                      models present/missing, GPU free VRAM, ORT CUDA state, heavy imports
@@ -23,6 +24,7 @@ from typing import Any
 
 from hsw_vision.config import FETCH_MODELS_HINT, SETUP_HINT, VisionConfig
 from hsw_vision.errors import EXIT_BAD_INPUT, EXIT_FAILED, BadRequest, VisionServiceError, translate_library_error
+from hsw_vision.schemas import FIXED_DIMENSIONS
 
 
 def parse_two_point(text: str) -> tuple[float, float, float, float]:
@@ -58,6 +60,32 @@ def build_parser() -> argparse.ArgumentParser:
     p2o.add_argument("--topk", type=int, default=5, help="class candidates per object")
     p2o.add_argument("--no-colours", action="store_true", help="skip per-part colour sampling")
     p2o.add_argument("--extra-photo", action="append", type=Path, default=[], help="another viewpoint of the same objects (repeatable)")
+
+    objects = subs.add_parser("objects", help="edit a finished photo-to-objects result directory (prints the reply JSON)")
+    osub = objects.add_subparsers(dest="objects_cmd", required=True)
+    merge = osub.add_parser("merge", help="the union of the objects becomes one new object")
+    merge.add_argument("out", type=Path)
+    merge.add_argument("ids", nargs="+", type=int)
+    split = osub.add_parser("split", help="one object becomes several: by a line or into N parts")
+    split.add_argument("out", type=Path)
+    split.add_argument("id", type=int)
+    way = split.add_mutually_exclusive_group(required=True)
+    way.add_argument("--line", type=parse_two_point, metavar="X1,Y1,X2,Y2", help="cut along the line through two photo pixels")
+    way.add_argument("-n", type=int, metavar="N", help="N parts that follow the object's necks")
+    reprofile = osub.add_parser("reprofile", help="fit again with fixed dimensions and/or another scale")
+    reprofile.add_argument("out", type=Path)
+    reprofile.add_argument("--id", dest="ids", type=int, action="append", help="only this object (repeatable)")
+    reprofile.add_argument("--dim", action="append", default=[], metavar="ID:length=MM[,width=MM,thickness=MM]", help="fixed dimensions of one object ('ID:none' clears)")
+    reprofile.add_argument("--two-point", type=parse_two_point, metavar="X1,Y1,X2,Y2")
+    reprofile.add_argument("--distance", type=float, metavar="MM")
+    reprofile.add_argument("--mm-per-px", type=float)
+    add = osub.add_parser("add", help="segment one more object from a click or a box (SAM2)")
+    add.add_argument("out", type=Path)
+    prompt = add.add_mutually_exclusive_group(required=True)
+    prompt.add_argument("--point", metavar="X,Y", help="a photo pixel on the object")
+    prompt.add_argument("--box", metavar="X,Y,W,H", help="a box around the object, photo pixels")
+    for sub in (merge, split, reprofile, add):
+        sub.add_argument("--device", choices=("auto", "cpu", "cuda"), default=None)
 
     embed = subs.add_parser("embed", help="CLIP image embeddings (embeddings.npy + embeddings.json)")
     embed.add_argument("images", nargs="+", type=Path)
@@ -210,6 +238,67 @@ def cmd_photo_to_objects(args: argparse.Namespace, config: VisionConfig) -> int:
     else:
         print(objects_summary(result, args.out))
     return EXIT_BAD_INPUT if result["status"] == "no_scale" else 0
+
+
+def parse_fixed_dims(items: list[str]) -> dict[str, dict[str, float] | None]:
+    """`--dim 7:length=160,width=20` -> {"7": {"length": 160, "width": 20}}; `--dim 7:none` -> {"7": None}."""
+    out: dict[str, dict[str, float] | None] = {}
+    for item in items:
+        ident, _, spec = item.partition(":")
+        if not ident.strip().isdigit() or not spec:
+            raise BadRequest(f"--dim {item!r}: expected ID:length=MM[,width=MM,thickness=MM] or ID:none")
+        if spec == "none":
+            out[ident.strip()] = None
+            continue
+        dims: dict[str, float] = {}
+        for pair in spec.split(","):
+            key, _, value = pair.partition("=")
+            try:
+                dims[key.strip()] = float(value)
+            except ValueError:
+                raise BadRequest(f"--dim {item!r}: {pair!r} is not name=number") from None
+            if key.strip() not in FIXED_DIMENSIONS or dims[key.strip()] <= 0:
+                raise BadRequest(f"--dim {item!r}: use {', '.join(FIXED_DIMENSIONS)} with positive millimetres")
+        out[ident.strip()] = dims
+    return out
+
+
+def parse_prompt(
+    point: str | None, box: str | None
+) -> tuple[tuple[float, float] | None, tuple[float, float, float, float] | None]:
+    """`--point X,Y` / `--box X,Y,W,H` -> the `add` prompt (exactly one is given)."""
+    text, want = (point, 2) if point is not None else (box or "", 4)
+    try:
+        nums = [float(v) for v in text.split(",")]
+    except ValueError:
+        raise BadRequest("--point X,Y / --box X,Y,W,H take numbers") from None
+    if len(nums) != want:
+        raise BadRequest("--point takes X,Y and --box takes X,Y,W,H")
+    return ((nums[0], nums[1]), None) if point is not None else (None, (nums[0], nums[1], nums[2], nums[3]))
+
+
+def cmd_objects(args: argparse.Namespace, config: VisionConfig) -> int:
+    from hsw_vision import objects_edit
+    from hsw_vision.service import VisionService
+
+    if args.device:
+        config = dataclasses.replace(config, device=args.device)
+    service = VisionService.create(config)
+    if args.objects_cmd == "merge":
+        reply = objects_edit.merge_objects(service, args.out, args.ids)
+    elif args.objects_cmd == "split":
+        line = None if args.line is None else ((args.line[0], args.line[1]), (args.line[2], args.line[3]))
+        reply = objects_edit.split_object(service, args.out, args.id, line_px=line, n=args.n)
+    elif args.objects_cmd == "reprofile":
+        reply = objects_edit.reprofile_objects(
+            service, args.out, ids=args.ids, fixed_dims=parse_fixed_dims(args.dim),
+            calibrate=calibration_params(args) if (args.two_point or args.mm_per_px) else None,
+        )  # fmt: skip
+    else:
+        point_px, box_xywh = parse_prompt(args.point, args.box)
+        reply = objects_edit.add_object(service, args.out, point_px=point_px, box_xywh=box_xywh)
+    print(json.dumps(reply, default=str))
+    return 0
 
 
 def cmd_embed(args: argparse.Namespace, config: VisionConfig) -> int:
@@ -390,6 +479,8 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_photo_to_wall(args, config)
         if args.cmd == "photo-to-objects":
             return cmd_photo_to_objects(args, config)
+        if args.cmd == "objects":
+            return cmd_objects(args, config)
         if args.cmd == "embed":
             return cmd_embed(args, config)
         if args.cmd == "models":

@@ -21,6 +21,7 @@ import re
 import shutil
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -44,6 +45,7 @@ from hsw_vision.proposal import MIN_RECOGNITION_PROB, dimensions_mm
 from hsw_vision.schemas import PhotoToObjectsRequest
 from hsw_vision.service import Emit, Image, VisionService, _noop, library_version, segmentation_digest
 from hsw_vision.stages import embed as stage_embed
+from hsw_vision.stages import recognise as stage_recognise
 from hsw_vision.stages import shape as stage_shape
 
 RESULT_VERSION = 1
@@ -137,57 +139,24 @@ def run(
     clock.done("segment", instances=len(segmentation["instances"]), selected=len(objects_in))
     clock.check_cancel("photo-to-objects")
 
-    clock.start("recognise")
-    recognition = service.recognise(img, segmentation, [i["id"] for i in objects_in], req.bank_index, req.topk, req.categories)
-    clock.done("recognise")
-    clock.check_cancel("photo-to-objects")
-
-    fitted = (
-        fit_objects(service, req, img, calibration, segmentation, objects_in, recognition, extras, clock, raise_when_all_fail=False)
-        if scaled
-        else Fitted()
-    )
-    by_id = {obj["instance_id"]: obj for obj in fitted.items}
-    failed = {f["instanceId"]: f["error"] for f in fitted.failures}
-
-    colours_on = req.colours and service.stages.colours_available()
-    mm_per_px = float(calibration["mm_per_px"]) if scaled else None
-    min_conf = req.min_confidence if req.min_confidence is not None else config.min_confidence
-    clock.start("export", total=len(objects_in))
-    masks = service.masks(img, segmentation, only=[i["id"] for i in objects_in])
-    with service.run_lock:
-        embeddings = service.stages.embed_objects(service.manager, img.rgb, [masks[i["id"]] for i in objects_in])
-    if len(embeddings):
-        save_npy(out_dir / EMBEDDINGS_FILE, embeddings)
-    records: list[dict[str, Any]] = []
-    for row, inst in enumerate(objects_in):
-        clock.check_cancel("export")
-        obj = by_id.get(inst["id"])
-        records.append(
-            _record(
-                service, req, img, segmentation, out_dir, inst, masks[inst["id"]], recognition, obj, failed.get(inst["id"]),
-                scaled, colours_on, min_conf, mm_per_px, embeddings[row] if len(embeddings) else None, row,
-            )
-        )
-    overlay = _write_overlays(service, img, segmentation, out_dir, objects_in, masks, by_id, calibration if scaled else None)
-    clock.done("export", objects=len(records))
+    analysis = analyse(service, req, img, out_dir, calibration, segmentation, objects_in, extras, clock)
+    records, fitted, masks = analysis.records, analysis.fitted, analysis.masks
+    if len(analysis.embeddings):
+        save_npy(out_dir / EMBEDDINGS_FILE, analysis.embeddings)
+    clock.start("overlay")
+    overlay = write_overlays(service, img, segmentation, out_dir, objects_in, masks, analysis.by_id, calibration if scaled else None)
+    clock.done("overlay")
+    colours_on = analysis.colours_on
 
     result: dict[str, Any] = {
         "version": RESULT_VERSION,
         "status": STATUS_OK if scaled else STATUS_NO_SCALE,
         "image": {"path": str(img.path), "sha256": img.sha256, "w": img.size[0], "h": img.size[1]},
         "outDir": str(out_dir),
+        "request": stored_request(req),
         "calibration": calibration,
         "objects": records,
-        "summary": {
-            "found": len(segmentation["instances"]),
-            "analysed": len(records),
-            "recognised": sum(1 for r in records if r["class"]["toolClass"]),
-            "fitted": sum(1 for r in records if r["fit"] is not None),
-            "failed": sum(1 for r in records if r["status"] == STATUS_FIT_FAILED),
-            "needsViews": sum(1 for r in records if r["needsView"]),
-            "needsConfirmation": sum(1 for r in records if r["status"] == STATUS_NEEDS_CONFIRMATION),
-        },
+        "summary": summarise(records, len(segmentation["instances"])),
         "segmentation": {
             "method": segmentation.get("method"),
             "device": segmentation.get("device"),
@@ -211,6 +180,133 @@ def run(
         result["message"] = calibration.get("message")
     write_json(out_dir / "objects.json", result)
     return result
+
+
+@dataclass
+class Analysis:
+    """What recognise -> fit -> export produced for a list of instances (`photo_to_objects` and the edit ops share it)."""
+
+    records: list[dict[str, Any]]
+    embeddings: np.ndarray
+    masks: dict[int, np.ndarray]
+    fitted: Fitted
+    by_id: dict[int, dict[str, Any]]
+    colours_on: bool
+
+
+def analyse(
+    service: VisionService,
+    req: PhotoToObjectsRequest,
+    img: Image,
+    out_dir: Path,
+    calibration: dict[str, Any],
+    segmentation: dict[str, Any],
+    objects_in: list[dict[str, Any]],
+    extras: list[tuple[Path, np.ndarray]],
+    clock: StageClock,
+    *,
+    classes: list[dict[str, Any]] | None = None,
+    row_offset: int = 0,
+    reuse: dict[int, dict[str, Any]] | None = None,
+) -> Analysis:
+    """Recognise, fit (with a scale) and export one record per instance of `segmentation` listed in `objects_in`; masks,
+    crops, cut-outs and models are written under `out_dir`. `row_offset` is the first `embeddings.npy` row these records
+    take (the caller writes the returned rows); `classes` replaces the request's class vocabulary (edits reuse the stored
+    one). `reuse` maps an instance id to its previous record: its class and embedding are carried over instead of being
+    recomputed (a re-fit with another scale or other fixed dimensions does not change what the object looks like)."""
+    config = service.config
+    scaled = bool(calibration.get("ok"))
+    ids = [i["id"] for i in objects_in]
+    clock.start("recognise")
+    if reuse is None:
+        recognition = service.recognise(img, segmentation, ids, req.bank_index, req.topk, req.categories, classes=classes)
+    else:
+        recognition = recognition_of_records(reuse)
+    clock.done("recognise")
+    clock.check_cancel("photo-to-objects")
+
+    fitted = (
+        fit_objects(service, req, img, calibration, segmentation, objects_in, recognition, extras, clock, raise_when_all_fail=False)
+        if scaled
+        else Fitted()
+    )
+    by_id = {obj["instance_id"]: obj for obj in fitted.items}
+    failed = {f["instanceId"]: f["error"] for f in fitted.failures}
+
+    colours_on = req.colours and service.stages.colours_available()
+    mm_per_px = float(calibration["mm_per_px"]) if scaled else None
+    min_conf = req.min_confidence if req.min_confidence is not None else config.min_confidence
+    clock.start("export", total=len(objects_in))
+    masks = service.masks(img, segmentation, only=ids)
+    if reuse is None:
+        with service.run_lock:
+            embeddings = service.stages.embed_objects(service.manager, img.rgb, [masks[i] for i in ids])
+    else:
+        embeddings = np.zeros((0, stage_embed.DIM), np.float32)
+    records: list[dict[str, Any]] = []
+    for row, inst in enumerate(objects_in):
+        clock.check_cancel("export")
+        record = _record(
+            service, req, img, segmentation, out_dir, inst, masks[inst["id"]], recognition, by_id.get(inst["id"]),
+            failed.get(inst["id"]), scaled, colours_on, min_conf, mm_per_px,
+            embeddings[row] if len(embeddings) else None, row_offset + row,
+        )  # fmt: skip
+        if reuse is not None:
+            record["class"], record["embedding"] = reuse[inst["id"]]["class"], reuse[inst["id"]].get("embedding")
+        records.append(record)
+    clock.done("export", objects=len(records))
+    return Analysis(records, embeddings, masks, fitted, by_id, colours_on)
+
+
+def recognition_of_records(records: dict[int, dict[str, Any]]) -> dict[str, Any]:
+    """The recognise-stage result that produced these records' `class` (top-k order, `prob`, `ai`): what a re-fit feeds the
+    fit and confidence code instead of recognising the object again."""
+    objects: dict[str, dict[str, Any]] = {}
+    for ident, record in records.items():
+        klass = record["class"]
+        top = (klass.get("topk") or [{}])[0]
+        objects[str(ident)] = {
+            "tool_class": top.get("toolClass"),
+            "label": klass.get("label"),
+            "score": klass.get("score"),
+            "prob": klass.get("prob"),
+            "topk": [{"tool_class": c.get("toolClass"), "label": c.get("label"), "score": c.get("score")} for c in klass.get("topk", [])],
+            "bank_topk": klass.get("bankTopk", []),
+            "calibrated": klass.get("calibrated"),
+            **({"ai": klass["ai"]} if klass.get("ai") else {}),
+        }
+    return {"classes": [], "objects": objects}
+
+
+#: `status` of a record that an edit replaced by other records (`mergedInto` / `splitInto` name them).
+STATUS_MERGED = "merged"
+STATUS_SPLIT = "split"
+SUPERSEDED = (STATUS_MERGED, STATUS_SPLIT)
+
+
+def summarise(records: list[dict[str, Any]], found: int) -> dict[str, int]:
+    """`summary` of a result: counts over the live records (those an edit replaced do not count)."""
+    live = [r for r in records if r["status"] not in SUPERSEDED]
+    return {
+        "found": found,
+        "analysed": len(live),
+        "recognised": sum(1 for r in live if r["class"]["toolClass"]),
+        "fitted": sum(1 for r in live if r["fit"] is not None),
+        "failed": sum(1 for r in live if r["status"] == STATUS_FIT_FAILED),
+        "needsViews": sum(1 for r in live if r["needsView"]),
+        "needsConfirmation": sum(1 for r in live if r["status"] == STATUS_NEEDS_CONFIRMATION),
+    }
+
+
+#: Request fields that say where a result lives, not how it was computed: not stored in `objects.json`.
+STORED_REQUEST_EXCLUDE = {"image_path", "out_dir", "work_dir", "refresh", "bank_index"}
+
+
+def stored_request(req: PhotoToObjectsRequest) -> dict[str, Any]:
+    """The parameters of a run plus its resolved class vocabulary (`classes`): what the edit ops (`objects_edit`) need
+    to analyse a new object exactly as the run analysed the others."""
+    classes = stage_recognise.resolve_classes(req.bank_index, req.categories)
+    return {**req.model_dump(mode="json", exclude=STORED_REQUEST_EXCLUDE), "classes": classes}
 
 
 def _colours_note(req: PhotoToObjectsRequest, on: bool) -> dict[str, Any]:
@@ -285,6 +381,8 @@ def _record(
         "id": int(inst["id"]),
         "bboxXywh": inst["bbox_xywh"],
         "areaPx": inst["area_px"],
+        "source": inst.get("source"),
+        "stability": inst.get("stability"),
         "polygon": inst.get("polygon"),
         "bgProb": inst.get("bg_prob"),
         "mask": mask_rel,
@@ -343,7 +441,7 @@ def _write_cutout(rgb: np.ndarray, mask: np.ndarray, box: tuple[int, int, int, i
     cv2.imwrite(str(path), bgra)
 
 
-def _write_overlays(
+def write_overlays(
     service: VisionService,
     img: Image,
     segmentation: dict[str, Any],

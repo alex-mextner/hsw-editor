@@ -8,12 +8,15 @@ import '../classes/index.ts';
 import {
   type DraftDeps,
   DraftStore,
+  addDraftObject,
   analyzeDraft,
   commitDraft,
   groupDraftObjects,
+  mergeDraftObjects,
   patchDraftObject,
   recalibrateDraft,
   sniffPhotoExtension,
+  splitDraftObject,
 } from './drafts.ts';
 import { ToolStore } from './store.ts';
 import type {
@@ -80,23 +83,51 @@ class FakeVision implements VisionPort {
     }
     return { status: 'ok', calibration: { method: 'manual', mm_per_px: 1.2 }, objects };
   }
-  async mergeObjects(): Promise<SidecarObject> {
-    throw new Error('unused');
+  /** Edit ops: each answers with new objects (ids 10+) and writes their files like the sidecar does. */
+  edits: string[] = [];
+  private nextId = 10;
+  private async fresh(outDir: string, preset: string): Promise<SidecarObject> {
+    const o = sidecarObject(this.nextId++, preset);
+    for (const rel of [o.cropOriented, o.cutoutOriented, o.mask])
+      if (rel) await writeFile(join(outDir, rel), PNG_1PX);
+    return o;
   }
-  async splitObject(): Promise<SidecarObject[]> {
-    throw new Error('unused');
+  async mergeObjects(outDir: string, ids: readonly number[]): Promise<SidecarObject> {
+    this.edits.push(`merge ${ids.join(',')}`);
+    return this.fresh(outDir, 'torx-cushion');
+  }
+  async splitObject(
+    outDir: string,
+    id: number,
+    how: { linePx: [[number, number], [number, number]] } | { n: number },
+  ): Promise<SidecarObject[]> {
+    this.edits.push(`split ${id} ${'n' in how ? how.n : 'line'}`);
+    const n = 'n' in how ? how.n : 2;
+    return Promise.all(
+      Array.from({ length: n }, (_, i) =>
+        this.fresh(outDir, i % 2 ? 'precision-slotted' : 'torx-cushion'),
+      ),
+    );
+  }
+  async addObject(outDir: string): Promise<SidecarObject> {
+    this.edits.push('add');
+    return this.fresh(outDir, 'hex-octagonal');
+  }
+  async status(): Promise<{ available: boolean }> {
+    return { available: true };
   }
 }
 
 let root = '';
 let deps: DraftDeps;
+const vision = new FakeVision();
 
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), 'hsw-drafts-'));
   deps = {
     drafts: new DraftStore(join(root, 'tools', '.drafts')),
     tools: new ToolStore(join(root, 'tools')),
-    vision: new FakeVision(),
+    vision,
     index: null,
     categoriesPath: join(root, 'classes.json'),
   };
@@ -162,6 +193,49 @@ describe('import draft', () => {
     ).toBe(1);
     // committing again adds nothing
     expect((await commitDraft(deps, draft.id, ['0:1'])).tools).toEqual([]);
+  });
+
+  test('merge replaces the parts by one fitted object, split by one per part, add appends one', async () => {
+    const draft = await deps.drafts.create({
+      mode: 'multi',
+      calibration: { mmPerPx: 1.2 },
+      photos: [{ name: 'tools.png', bytes: PNG_1PX }],
+    });
+    await analyzeDraft(deps, draft.id);
+    await patchDraftObject(deps, draft.id, '0:1', { tags: ['hammer-parts'] });
+
+    const merged = await mergeDraftObjects(deps, draft.id, ['0:1', '0:2']);
+    expect(vision.edits.at(-1)).toBe('merge 1,2');
+    const byKey = (d: typeof merged, key: string) => d.objects.find((o) => o.key === key);
+    expect(byKey(merged, '0:1')?.status).toBe('discarded');
+    expect(byKey(merged, '0:2')?.status).toBe('discarded');
+    const union = merged.objects.at(-1);
+    expect(union?.status).toBe('pending');
+    expect(union?.fit).not.toBeNull();
+    expect(union?.tags).toEqual(['hammer-parts']); // the parts' tags carry over
+    expect(union?.preview).not.toBeNull();
+
+    const split = await splitDraftObject(deps, draft.id, union?.key ?? '', { n: 3 });
+    expect(vision.edits.at(-1)).toBe(`split ${union?.objectId} 3`);
+    expect(byKey(split, union?.key ?? '')?.status).toBe('discarded');
+    const parts = split.objects.slice(-3);
+    expect(new Set(parts.map((p) => p.key)).size).toBe(3);
+    expect(parts.every((p) => p.status === 'pending' && p.fit !== null)).toBe(true);
+
+    const added = await addDraftObject(deps, draft.id, 0, { pointPx: [120, 80] });
+    expect(vision.edits.at(-1)).toBe('add');
+    expect(added.objects.length).toBe(split.objects.length + 1);
+    expect(added.objects.at(-1)?.status).toBe('pending');
+    await expect(addDraftObject(deps, draft.id, 7, { pointPx: [1, 1] })).rejects.toThrow(
+      'no photo 7',
+    );
+    // edits never touch an object that is already in the library
+    const kept = parts[2]?.key ?? '';
+    await patchDraftObject(deps, draft.id, kept, { status: 'accepted' });
+    expect((await commitDraft(deps, draft.id, [kept])).tools.length).toBe(1);
+    await expect(mergeDraftObjects(deps, draft.id, [kept, parts[0]?.key ?? ''])).rejects.toThrow(
+      'already in the library',
+    );
   });
 
   test('class override refits with the chosen class and generic loft is possible', async () => {
