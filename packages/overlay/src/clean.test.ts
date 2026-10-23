@@ -13,6 +13,9 @@ import {
   footprintDrift,
   footprintSignature,
   materialDrift,
+  matchGrain,
+  reportPatch,
+  transferDetail,
   maskArea,
   rasterisePolygon,
 } from './clean.ts';
@@ -56,7 +59,7 @@ describe('footprintSignature / footprintDrift', () => {
 
   test('the signature reads back as zero drift, and a small nudge stays below the material limit', () => {
     const signature = footprintSignature(square, image);
-    expect(signature).toBe('1400x1000:100,100;500,100;500,400;100,400');
+    expect(signature).toBe('1400x1000@12:100,100;500,100;500,400;100,400');
     expect(footprintDrift(signature, square, image)).toBe(0);
     const nudged = square.map(([x, y]) => [x + 4, y - 3] as [number, number]);
     expect(footprintDrift(signature, nudged, image)).toBeCloseTo(5, 5);
@@ -75,6 +78,10 @@ describe('footprintSignature / footprintDrift', () => {
     expect(footprintDrift(signature, square.slice(0, 3), image)).toBe(Infinity);
     expect(footprintDrift('nonsense', square, image)).toBe(Infinity);
     expect(footprintDrift('1400x1000:a,b;c,d;e,f;g,h', square, image)).toBe(Infinity);
+    // A variant made with another margin (the old 30 mm one) is another footprint.
+    expect(footprintDrift('1400x1000@30:100,100;500,100;500,400;100,400', square, image)).toBe(
+      Infinity,
+    );
   });
 });
 
@@ -243,5 +250,129 @@ describe('fillWall', () => {
     const mask = new Uint8Array(40 * 30).fill(1);
     const filled = fillWall(data, 40, 30, 3, mask);
     expect(filled.every((value) => value >= 0 && value <= 255)).toBe(true);
+  });
+});
+
+describe('transferDetail', () => {
+  const w = 300;
+  const h = 200;
+  const area = rasterisePolygon(
+    [
+      [80, 50],
+      [220, 50],
+      [220, 150],
+      [80, 150],
+    ],
+    w,
+    h,
+  );
+  const wall = (value: (x: number, y: number) => number): Uint8Array => {
+    const data = new Uint8Array(w * h * 3);
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1)
+        data.fill(Math.round(value(x, y)), (y * w + x) * 3, (y * w + x) * 3 + 3);
+    }
+    return data;
+  };
+  const at = (data: Uint8Array, x: number, y: number): number => data[(y * w + x) * 3] ?? -1;
+
+  test('a flat patch of another colour becomes the wall: no tint, no band at the seam', () => {
+    const reference = wall((x) => 200 + x / 30);
+    const edited = new Uint8Array(reference);
+    for (let i = 0; i < w * h; i += 1) if (area[i]) edited.fill(240, i * 3, i * 3 + 3);
+    const out = transferDetail(edited, reference, area, w, h, 10);
+    for (const [x, y] of [
+      [82, 52],
+      [150, 100],
+      [218, 148],
+      [85, 100],
+    ] as const) {
+      expect(Math.abs(at(out, x, y) - at(reference, x, y))).toBeLessThan(2);
+    }
+  });
+
+  test("the fine structure the model painted rides on the wall's colour", () => {
+    const reference = wall((x) => 200 + x / 30);
+    const edited = new Uint8Array(reference);
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        if (area[y * w + x])
+          edited.fill(240 + ((x + y) % 2 === 0 ? 6 : -6), (y * w + x) * 3, (y * w + x) * 3 + 3);
+      }
+    }
+    const out = transferDetail(edited, reference, area, w, h, 10);
+    const a = at(out, 150, 100);
+    const b = at(out, 151, 100);
+    expect(Math.abs(a - b)).toBeGreaterThan(8);
+    expect(Math.abs((a + b) / 2 - at(reference, 150, 100))).toBeLessThan(3);
+  });
+});
+
+describe('reportPatch / matchGrain', () => {
+  const w = 400;
+  const h = 300;
+  const area = rasterisePolygon(
+    [
+      [120, 80],
+      [280, 80],
+      [280, 220],
+      [120, 220],
+    ],
+    w,
+    h,
+  );
+
+  function grainyWall(): Uint8Array {
+    const data = new Uint8Array(w * h * 3);
+    let state = 11;
+    for (let i = 0; i < data.length; i += 1) {
+      state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+      data[i] = Math.round(210 + (state / 4294967296 - 0.5) * 8);
+    }
+    return data;
+  }
+
+  function paint(data: Uint8Array, [r, g, b]: [number, number, number]): Uint8Array {
+    const out = new Uint8Array(data);
+    for (let i = 0; i < w * h; i += 1) {
+      if (!area[i]) continue;
+      out[i * 3] = r;
+      out[i * 3 + 1] = g;
+      out[i * 3 + 2] = b;
+    }
+    return out;
+  }
+
+  test('a flat patch in the wall colour is close in colour and has no grain', () => {
+    const wall = grainyWall();
+    const report = reportPatch(paint(wall, [210, 210, 210]), wall, wall, w, h, area);
+    expect(report.colourOff).toBeLessThan(4);
+    // Only the seam pixels (a flat patch next to grainy wall) read above zero.
+    expect(report.patchGrain).toBeLessThan(0.05);
+    expect(report.wallGrain).toBeGreaterThan(1.5);
+  });
+
+  test('a flat white patch is far off in colour', () => {
+    const wall = grainyWall();
+    expect(
+      reportPatch(paint(wall, [255, 255, 255]), wall, wall, w, h, area).colourOff,
+    ).toBeGreaterThan(30);
+  });
+
+  test('matchGrain gives a flat patch the grain of the wall, only inside the mask', () => {
+    const wall = grainyWall();
+    const flat = paint(wall, [210, 210, 210]);
+    const before = reportPatch(flat, wall, wall, w, h, area);
+    const grained = matchGrain(flat, w, h, area, before.patchGrain, before.wallGrain, 3);
+    const after = reportPatch(grained, wall, wall, w, h, area);
+    expect(Math.abs(after.patchGrain - before.wallGrain)).toBeLessThan(before.wallGrain * 0.15);
+    // Outside the mask nothing moved.
+    for (let i = 0; i < w * h; i += 97) if (!area[i]) expect(grained[i * 3]).toBe(flat[i * 3]);
+  });
+
+  test('a patch that is already as grainy as the wall is left alone', () => {
+    const wall = grainyWall();
+    const report = reportPatch(wall, wall, wall, w, h, area);
+    expect(matchGrain(wall, w, h, area, report.patchGrain, report.wallGrain, 3)).toEqual(wall);
   });
 });

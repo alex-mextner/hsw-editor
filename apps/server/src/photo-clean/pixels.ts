@@ -78,18 +78,22 @@ export function placeOnCanvas(width: number, height: number): Placement {
   };
 }
 
-/** `pixels` scaled into its place on a mid-grey canvas, as a PNG. */
+/**
+ * `pixels` scaled into its place on a canvas of `background` colour, as a PNG. Always three channels: a one-channel
+ * raw input does not composite onto an RGB canvas in sharp (it comes out as stripes), so masks are expanded to grey RGB
+ * by `greyPixels` first.
+ */
 export async function canvasPng(
-  pixels: Pixels | { width: number; height: number; data: Uint8Array; channels: 1 | 3 },
+  pixels: Pixels,
   placement: Placement,
+  background: { r: number; g: number; b: number } = { r: 128, g: 128, b: 128 },
 ): Promise<Uint8Array> {
-  const channels = 'channels' in pixels ? pixels.channels : 3;
   const resized = await sharp(pixels.data, {
-    raw: { width: pixels.width, height: pixels.height, channels },
+    raw: { width: pixels.width, height: pixels.height, channels: 3 },
   })
     .resize(placement.width, placement.height, { fit: 'fill' })
+    .raw()
     .toBuffer();
-  const background = channels === 1 ? { r: 0, g: 0, b: 0 } : { r: 128, g: 128, b: 128 };
   const buffer = await sharp({
     create: {
       width: placement.canvasWidth,
@@ -101,14 +105,27 @@ export async function canvasPng(
     .composite([
       {
         input: resized,
-        raw: { width: placement.width, height: placement.height, channels },
+        raw: { width: placement.width, height: placement.height, channels: 3 },
         left: placement.x,
         top: placement.y,
       },
     ])
+    .removeAlpha()
     .png()
     .toBuffer();
   return new Uint8Array(buffer);
+}
+
+/** A one-byte-per-pixel mask (0 / non-zero) as grey RGB pixels: white where set, black elsewhere. */
+export function maskPixels(mask: Uint8Array, width: number, height: number): Pixels {
+  const data = new Uint8Array(width * height * 3);
+  for (let i = 0; i < width * height; i += 1) {
+    const value = mask[i] ? 255 : 0;
+    data[i * 3] = value;
+    data[i * 3 + 1] = value;
+    data[i * 3 + 2] = value;
+  }
+  return { width, height, data };
 }
 
 /** The model's answer cropped back to the photo's own frame and size. */

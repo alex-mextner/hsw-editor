@@ -9,8 +9,8 @@ import type { BoardExtent } from './calibration.ts';
 import type { ImageSize, PhotoMap } from './photo-map.ts';
 import type { Vec2 } from './matrix.ts';
 
-/** Default margin around the board footprint that is cleaned too, mm of wall: covers the board edge and its shadow. */
-export const CLEAN_MARGIN_MM = 30;
+/** Margin around the board footprint that is cleaned too, mm of wall: just the board edge and its soft shadow. */
+export const CLEAN_MARGIN_MM = 12;
 
 /** Photo-px polygon of the board (plus `marginMm` of wall on every side), lower-left first; null off the wall plane. */
 export function boardFootprintPx(
@@ -33,9 +33,13 @@ export function boardFootprintPx(
   return out;
 }
 
-/** A footprint as text, kept with the cleaned photo: `1152x1536:240,340;620,336;...` (whole photo pixels). */
-export function footprintSignature(polygon: readonly Vec2[], image: ImageSize): string {
-  return `${image.width}x${image.height}:${polygon.map(([x, y]) => `${Math.round(x)},${Math.round(y)}`).join(';')}`;
+/** A footprint as text, kept with the cleaned photo: `1152x1536@12:240,340;620,336;...` (photo size, margin mm, pixels). */
+export function footprintSignature(
+  polygon: readonly Vec2[],
+  image: ImageSize,
+  marginMm: number = CLEAN_MARGIN_MM,
+): string {
+  return `${image.width}x${image.height}@${marginMm}:${polygon.map(([x, y]) => `${Math.round(x)},${Math.round(y)}`).join(';')}`;
 }
 
 /**
@@ -48,7 +52,9 @@ export function footprintDrift(
   image: ImageSize,
 ): number {
   const [size, points] = signature.split(':');
-  if (size !== `${image.width}x${image.height}` || points === undefined) return Infinity;
+  // The size and the margin the footprint was made with: a variant cleaned with another margin is another footprint.
+  if (size !== `${image.width}x${image.height}@${CLEAN_MARGIN_MM}` || points === undefined)
+    return Infinity;
   const corners = points.split(';').map((pair) => pair.split(',').map(Number));
   if (corners.length !== polygon.length) return Infinity;
   let worst = 0;
@@ -530,6 +536,173 @@ export function fillWall(
         const original = data[i * channels + c] ?? 0;
         out[i * channels + c] = original * (1 - a) + value * a;
       }
+    }
+  }
+  return out;
+}
+
+// ---- texture and colour of an edited patch -------------------------------------------------------
+
+/** Grain above this many levels is not wall grain (an edge got into the sample); it is also the most noise ever added. */
+const MAX_GRAIN = 4;
+
+/** Pixels within this many px of the mask (outside it) are "the wall around the area". */
+const NEAR_PX = 28;
+
+/** Grain: mean absolute difference of the green channel to its 3x3 mean over the sampled pixels of `select` (levels). */
+function highPassSigma(
+  data: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+  channels: number,
+  select: (i: number) => boolean,
+): number {
+  const samples: number[] = [];
+  const stride = Math.max(1, Math.floor(Math.sqrt((width * height) / 30000)));
+  for (let y = 1; y < height - 1; y += stride) {
+    for (let x = 1; x < width - 1; x += stride) {
+      const i = y * width + x;
+      if (!select(i)) continue;
+      let around = 0;
+      for (let dy = -1; dy <= 1; dy += 1) {
+        for (let dx = -1; dx <= 1; dx += 1)
+          around += data[((y + dy) * width + x + dx) * channels + 1] ?? 0;
+      }
+      samples.push(Math.abs((data[i * channels + 1] ?? 0) - around / 9));
+    }
+  }
+  // Median, not mean: an edge or a cable in the sample must not pass for grain. For gaussian noise mean|x| = 1.183 * median|x|.
+  return Math.min(MAX_GRAIN, 1.183 * median(samples));
+}
+
+/** Which pixels are outside the mask but within `NEAR_PX` of it (the wall the patch has to meet). */
+function nearWall(mask: Uint8Array, width: number, height: number): Uint8Array {
+  const source = new Float32Array(width * height);
+  for (let i = 0; i < source.length; i += 1) source[i] = mask[i] ? 1 : 0;
+  const blurred = boxBlur(source, width, height, NEAR_PX);
+  const near = new Uint8Array(width * height);
+  for (let i = 0; i < near.length; i += 1) near[i] = !mask[i] && (blurred[i] ?? 0) > 0.004 ? 1 : 0;
+  return near;
+}
+
+export interface PatchReport {
+  /** Mean absolute colour difference (levels, over the channels) between the patch and the reference fill, inside the mask. */
+  readonly colourOff: number;
+  /** Grain of the wall around the mask: mean |pixel - 3x3 mean|, levels. */
+  readonly wallGrain: number;
+  /** Grain of the patch interior, levels. */
+  readonly patchGrain: number;
+}
+
+/**
+ * How a three-channel `edited` photo compares with `reference` (the basic fill, a wall estimate) inside `mask`, and how
+ * grainy the wall around and the patch are. A model that paints a flat white, or a wall of another colour, shows as a
+ * large `colourOff`; one that paints a too-clean patch shows as `patchGrain` well under `wallGrain`.
+ */
+export function reportPatch(
+  edited: Uint8Array | Uint8ClampedArray,
+  reference: Uint8Array | Uint8ClampedArray,
+  original: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+  mask: Uint8Array,
+): PatchReport {
+  let sum = 0;
+  let count = 0;
+  const stride = Math.max(1, Math.floor(Math.sqrt((width * height) / 40000)));
+  for (let y = 0; y < height; y += stride) {
+    for (let x = 0; x < width; x += stride) {
+      const i = y * width + x;
+      if (!mask[i]) continue;
+      for (let c = 0; c < 3; c += 1) {
+        sum += Math.abs((edited[i * 3 + c] ?? 0) - (reference[i * 3 + c] ?? 0));
+        count += 1;
+      }
+    }
+  }
+  const near = nearWall(mask, width, height);
+  return {
+    colourOff: count === 0 ? 0 : sum / count,
+    wallGrain: highPassSigma(original, width, height, 3, (i) => near[i] === 1),
+    patchGrain: highPassSigma(edited, width, height, 3, (i) => mask[i] === 1),
+  };
+}
+
+/**
+ * Adds grain to the masked area of a three-channel photo until it is as grainy as `targetGrain` (levels): a patch that
+ * is smoother than the wall around it reads as a flat pasted rectangle. Returns a new array.
+ */
+export function matchGrain(
+  data: Uint8Array,
+  width: number,
+  height: number,
+  mask: Uint8Array,
+  patchGrain: number,
+  targetGrain: number,
+  seed = 1,
+): Uint8Array {
+  // Grain is measured as a mean |pixel - 3x3 mean|; white noise of std s reads 0.752 * s on that scale.
+  const missing = Math.sqrt(Math.max(0, targetGrain ** 2 - patchGrain ** 2)) / 0.752;
+  const out = new Uint8Array(data);
+  if (missing < 0.2) return out;
+  const random = lcg(seed);
+  for (let i = 0; i < width * height; i += 1) {
+    if (!mask[i]) continue;
+    const noise = gaussian(random) * missing;
+    for (let c = 0; c < 3; c += 1) {
+      out[i * 3 + c] = Math.max(0, Math.min(255, Math.round((data[i * 3 + c] ?? 0) + noise)));
+    }
+  }
+  return out;
+}
+
+/**
+ * The model's detail on the wall's own light: `reference` (the basic fill, the wall around the area continued) supplies
+ * the colour and the slow brightness gradient, `edited` only the fine structure on top of ITS OWN average inside the
+ * mask. A model that paints a flat colour, a slightly different white, or a gradient of its own therefore cannot leave a
+ * visible patch: what it adds beyond the wall is detail, never a new tint. The average is taken over the mask only
+ * (normalised blur), so the step between the patch and the untouched wall does not turn into a band at the seam.
+ * `radiusPx` is the size of "slow". Returns a new array; outside the mask it is `edited` unchanged.
+ */
+export function transferDetail(
+  edited: Uint8Array | Uint8ClampedArray,
+  reference: Uint8Array | Uint8ClampedArray,
+  mask: Uint8Array,
+  width: number,
+  height: number,
+  radiusPx: number,
+): Uint8Array {
+  const out = new Uint8Array(width * height * 3);
+  const radius = Math.max(1, Math.round(radiusPx));
+  const blur = (plane: Float32Array): Float32Array =>
+    boxBlur(boxBlur(plane, width, height, radius), width, height, radius);
+  const inside = new Float32Array(width * height);
+  for (let i = 0; i < inside.length; i += 1) inside[i] = mask[i] ? 1 : 0;
+  const weight = blur(inside);
+  for (let c = 0; c < 3; c += 1) {
+    const e = new Float32Array(width * height);
+    const eInside = new Float32Array(width * height);
+    const r = new Float32Array(width * height);
+    for (let i = 0; i < e.length; i += 1) {
+      e[i] = edited[i * 3 + c] ?? 0;
+      eInside[i] = mask[i] ? (e[i] ?? 0) : 0;
+      r[i] = reference[i * 3 + c] ?? 0;
+    }
+    const rInside = new Float32Array(width * height);
+    for (let i = 0; i < rInside.length; i += 1) rInside[i] = mask[i] ? (r[i] ?? 0) : 0;
+    const eLow = blur(eInside);
+    const rLow = blur(rInside);
+    for (let i = 0; i < e.length; i += 1) {
+      // Outside the mask the photo is not touched at all (the feather at the seam blends edited and original there).
+      if (!mask[i]) {
+        out[i * 3 + c] = e[i] ?? 0;
+        continue;
+      }
+      // Inside, both averages are taken over the mask only: the wall fill supplies the light, never the objects
+      // standing beside the area, and the model's own step against the untouched wall never becomes a band.
+      const w = Math.max(weight[i] ?? 0, 1e-6);
+      const value = (rLow[i] ?? 0) / w + (e[i] ?? 0) - (eLow[i] ?? 0) / w;
+      out[i * 3 + c] = Math.max(0, Math.min(255, Math.round(value)));
     }
   }
   return out;

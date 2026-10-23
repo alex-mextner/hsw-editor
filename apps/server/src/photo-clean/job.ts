@@ -4,7 +4,7 @@
  * `draw` is ready, the model's edit replaces it. The original photo is never touched: a variant is a second photo of
  * the wall (`cleanOf`, `view: 'clean'`), added and replaced with ordinary, undoable ops.
  */
-import { mkdir, rm } from 'node:fs/promises';
+import { mkdir, readdir, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type DrawBackendId, type DrawRequest, type DrawResult } from '@hsw-editor/draw';
 import { type Actor, type Photo, type Wall, newId } from '@hsw-editor/core';
@@ -13,6 +13,9 @@ import {
   boardExtent,
   boardFootprintPx,
   fillWall,
+  matchGrain,
+  reportPatch,
+  transferDetail,
   footprintDrift,
   footprintSignature,
   materialDrift,
@@ -26,6 +29,7 @@ import {
   type Pixels,
   canvasPng,
   encodeJpeg,
+  maskPixels,
   placeOnCanvas,
   readPixels,
   uncanvas,
@@ -33,6 +37,13 @@ import {
 
 export const PHOTO_CLEAN_KIND = 'photo.clean';
 export const CLEAN_ACTOR: Actor = { kind: 'agent', name: 'photo-clean' };
+
+/**
+ * The model's wall must be roughly the colour of the wall: more than this many levels (mean over the area) away from
+ * the basic fill - which IS the wall around the area, continued - is a flat white or another wall, and is dropped. What
+ * passes still only lends its detail: the colour and the slow light stay the wall's (`transferDetail`).
+ */
+export const MAX_COLOUR_OFF = 24;
 
 /** The model must leave the unmasked part alone: a mean per-channel difference above this means it redrew the photo. */
 export const MAX_OUTSIDE_DRIFT = 14;
@@ -183,6 +194,7 @@ async function aiClean(
   ctx: JobContext,
   original: Pixels,
   mask: Uint8Array,
+  reference: Uint8Array,
   workDir: string,
 ): Promise<AiOutcome> {
   if (deps.draw === null) return { state: 'disabled', message: 'image backends are not set up' };
@@ -193,15 +205,14 @@ async function aiClean(
   await mkdir(workDir, { recursive: true });
   const photoPath = join(workDir, 'photo.png');
   const maskPath = join(workDir, 'mask.png');
-  const maskBytes = new Uint8Array(mask.length);
-  for (let i = 0; i < mask.length; i += 1) maskBytes[i] = mask[i] ? 255 : 0;
   await Bun.write(photoPath, await canvasPng(original, placement));
   await Bun.write(
     maskPath,
-    await canvasPng(
-      { width: original.width, height: original.height, data: maskBytes, channels: 1 },
-      placement,
-    ),
+    await canvasPng(maskPixels(mask, original.width, original.height), placement, {
+      r: 0,
+      g: 0,
+      b: 0,
+    }),
   );
   const request: DrawRequest = {
     version: 1,
@@ -233,10 +244,54 @@ async function aiClean(
           message: `the model redrew the photo (off by ${drift.toFixed(0)} levels outside the area)`,
         };
       }
+      // The patch has to BE the wall: its colour is checked against the basic fill (the surrounding wall continued),
+      // and a patch smoother than the wall around it gets the wall's grain, so it never reads as a flat rectangle.
+      const report = reportPatch(
+        edited.data,
+        reference,
+        original.data,
+        original.width,
+        original.height,
+        mask,
+      );
+      if (report.colourOff > MAX_COLOUR_OFF) {
+        return {
+          state: 'rejected',
+          message: `the model's wall does not match the wall around it (off by ${report.colourOff.toFixed(0)} levels)`,
+        };
+      }
+      // Colour and slow light come from the basic fill, the model contributes the detail; then the patch gets the
+      // grain of the wall if it is smoother than it, so nothing reads as a flat pasted rectangle.
+      const detailRadius = Math.max(8, 0.03 * Math.max(original.width, original.height));
+      const blended = transferDetail(
+        edited.data,
+        reference,
+        mask,
+        original.width,
+        original.height,
+        detailRadius,
+      );
+      const patchGrain = reportPatch(
+        blended,
+        reference,
+        original.data,
+        original.width,
+        original.height,
+        mask,
+      ).patchGrain;
+      const grained = matchGrain(
+        blended,
+        original.width,
+        original.height,
+        mask,
+        patchGrain,
+        report.wallGrain,
+        7,
+      );
       const featherPx = Math.max(2, 0.004 * Math.max(original.width, original.height));
       const data = compositeEdited(
         original.data,
-        edited.data,
+        grained,
         original.width,
         original.height,
         mask,
@@ -303,20 +358,18 @@ export async function runPhotoClean(
 
   // An AI variant for this footprint is never traded for the basic one by a refresh: it stays until the model's new
   // answer replaces it, so a logged-out or out-of-quota backend cannot make the picture worse.
+  // The basic fill: the variant itself, and the yardstick the model's wall is held against.
+  const filled = fillWall(source.data, source.width, source.height, 3, mask);
+  const reference = new Uint8Array(filled.buffer, filled.byteOffset, filled.length);
   let variant: Photo | undefined =
     wantsAi && matches && existing?.backend !== 'basic' ? existing : undefined;
   if (variant === undefined) {
     ctx.progress({ fraction: 0.2, message: 'cleaning the wall (basic)…' });
-    const filled = fillWall(source.data, source.width, source.height, 3, mask);
     const stored = await storeVariant(
       ctx,
       input.wallId,
       original.id,
-      {
-        width: source.width,
-        height: source.height,
-        data: new Uint8Array(filled.buffer, filled.byteOffset, filled.length),
-      },
+      { width: source.width, height: source.height, data: reference },
       'basic',
       signature,
     );
@@ -329,10 +382,9 @@ export async function runPhotoClean(
 
   ctx.progress({ fraction: 0.5, message: 'asking the image model…' });
   const workDir = join(ctx.home, 'photo-clean', ctx.id);
-  let kept = false;
+  await pruneWorkDirs(join(ctx.home, 'photo-clean'));
   try {
-    const outcome = await aiClean(deps, ctx, source, mask, workDir);
-    kept = outcome.state !== 'done' && outcome.state !== 'rejected';
+    const outcome = await aiClean(deps, ctx, source, mask, reference, workDir);
     if (outcome.state === 'done' && outcome.pixels !== undefined && outcome.backend !== undefined) {
       const upgraded = await storeVariant(
         ctx,
@@ -353,13 +405,38 @@ export async function runPhotoClean(
       ...(outcome.message === undefined ? {} : { aiMessage: outcome.message }),
     };
   } finally {
-    // The full-size copies are working files; the variant carries what is kept. A backend that failed may have left
-    // a screenshot of what it saw in `out/`: that stays for whoever investigates, the rest goes.
-    await Promise.all([
-      rm(join(workDir, 'photo.png'), { force: true }),
-      rm(join(workDir, 'mask.png'), { force: true }),
-    ]);
-    if (!kept) await rm(workDir, { recursive: true, force: true });
+    // Whatever happens (a thrown error included) the full-size working copies go; only what a backend left to be
+    // investigated (its failure screenshots) stays, and a directory with nothing in it does not.
+    await tidyWorkDir(workDir);
+  }
+}
+
+/** Failure files a backend writes next to its answer (`chatgpt-browser-failure-*.png`): worth keeping to investigate. */
+const KEEP_PATTERN = /failure/i;
+/** Kept failure directories older than this are pruned. */
+const KEEP_FOR_MS = 7 * 24 * 3600 * 1000;
+
+async function tidyWorkDir(workDir: string): Promise<void> {
+  // Best effort, and never the reason a job fails: the variant is already stored (or the real error is on its way).
+  const gone = (path: string): Promise<void> =>
+    rm(path, { recursive: true, force: true }).catch(() => undefined);
+  await Promise.all([gone(join(workDir, 'photo.png')), gone(join(workDir, 'mask.png'))]);
+  const out = join(workDir, 'out');
+  const names = await readdir(out).catch(() => [] as string[]);
+  await Promise.all(
+    names.filter((name) => !KEEP_PATTERN.test(name)).map((name) => gone(join(out, name))),
+  );
+  if (names.every((name) => !KEEP_PATTERN.test(name))) await gone(workDir);
+}
+
+/** Removes kept failure directories older than `KEEP_FOR_MS`; best effort. */
+export async function pruneWorkDirs(root: string, now = Date.now()): Promise<void> {
+  for (const name of await readdir(root).catch(() => [] as string[])) {
+    const dir = join(root, name);
+    const info = await stat(dir).catch(() => null);
+    if (info !== null && now - info.mtimeMs > KEEP_FOR_MS) {
+      await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    }
   }
 }
 
