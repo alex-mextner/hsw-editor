@@ -11,6 +11,7 @@ import {
 const BASE = {
   selectionCount: 0,
   hasWall: true,
+  hasPhoto: true,
   canUndo: false,
   canRedo: false,
   clipboard: false,
@@ -114,5 +115,14 @@ describe('probeFocus', () => {
       'canvas',
     );
     expect(focusRegion(probeFocus(false, false, null))).toBe('canvas');
+  });
+});
+
+describe('hasPhoto', () => {
+  test('gates the calibrate command: off with no photo on the wall', () => {
+    const on = deriveContext({ ...BASE, hasPhoto: true });
+    const off = deriveContext({ ...BASE, hasPhoto: false });
+    expect(matchesWhen('hasWall && hasPhoto', on)).toBe(true);
+    expect(matchesWhen('hasWall && hasPhoto', off)).toBe(false);
   });
 });

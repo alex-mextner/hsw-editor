@@ -35,6 +35,8 @@ export function focusRegion(probe: FocusProbe): FocusRegion {
 export interface ContextInput {
   readonly selectionCount: number;
   readonly hasWall: boolean;
+  /** The wall has a photo (shown or not) that can be calibrated. */
+  readonly hasPhoto: boolean;
   readonly canUndo: boolean;
   readonly canRedo: boolean;
   /** Items were copied and Paste has something to place. */
@@ -57,6 +59,7 @@ export function deriveContext(input: ContextInput): Context {
     ...input.settings,
     selection: input.selectionCount > 0,
     hasWall: input.hasWall,
+    hasPhoto: input.hasPhoto,
     canUndo: input.canUndo,
     canRedo: input.canRedo,
     clipboard: input.clipboard,
