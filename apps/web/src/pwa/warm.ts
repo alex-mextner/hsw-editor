@@ -35,7 +35,7 @@ export interface WallSnapshot {
 
 /** Every URL the Tools panel reads, built by the panel's own route table so the two cannot drift apart. */
 export function libraryWarmUrls(library: LibrarySnapshot, origin: string): string[] {
-  const paths = [toolRoutes.list, toolRoutes.classes];
+  const paths: string[] = [toolRoutes.list, toolRoutes.classes];
   for (const cls of library.classes) paths.push(toolRoutes.classThumb(cls.id));
   for (const tool of library.tools) {
     paths.push(
