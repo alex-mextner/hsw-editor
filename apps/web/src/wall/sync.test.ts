@@ -365,3 +365,21 @@ describe('offline mirror and queue', () => {
     sync.dispose();
   });
 });
+
+describe('demo API (read-only)', () => {
+  test('an edit is refused with the demo notice, leaves the wall as it was and does not go offline', async () => {
+    const { demoApi } = await import('@/demo/demoApi.ts');
+    const sync = new WallSync('demo', demoApi, ME);
+    await sync.load();
+    const before = sync.getSnapshot().wall?.rev;
+    expect(before).toBeGreaterThan(0);
+    sync.submit([{ type: 'rename', name: 'Mine' }]);
+    await sync.idle();
+    const state = sync.getSnapshot();
+    expect(state.notice?.code).toBe('demo_read_only');
+    expect(state.pending).toBe(0);
+    expect(state.status).toBe('ready');
+    expect(state.wall?.rev).toBe(before);
+    sync.dispose();
+  });
+});

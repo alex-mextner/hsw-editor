@@ -73,6 +73,16 @@ on activation. Deleting a cache behind the registry's back is repaired by `recon
 `bun test apps/web/src/pwa` covers routing, the storable-response rules, strategies, LRU/pinning/quota, the downloader, the update and
 install controllers against fakes. The worker itself is verified in real Chromium (proof notes in the PR).
 
+## GitHub Pages demo (hsw.mextner.com)
+
+The Pages workflow builds with `VITE_HSW_DEMO=1` (`apps/web/src/demo/mode.ts`). There is no daemon: the committed seed bank
+(`packages/bank/seed`) is copied into `dist` at the URLs the daemon serves (`/api/bank/index`, `/api/bank/search-index`,
+`/bank/assets/...`, by the `demoSeedBank` plugin in `vite.config.ts`), so the bank browser, the service worker caches and the offline
+behaviour above work unchanged. One bundled wall (`demo/demoApi.ts`, six seed elements) opens read-only on the first visit: `listWalls`/`getWall` are
+served locally, every edit, undo and wall creation is refused with the notice "This is a read-only demo", and the wall, health, event-stream,
+history and client-error requests are never made. Features that need a daemon (photo upload, vision jobs, bank variant builds) still try
+their `/api` call and fail like an unreachable daemon. After one visit the demo reloads offline.
+
 ## Known limits
 
 - Stale-while-revalidate: the first page load after a bank rebuild still gets the previous index; the fresh copy shows on the next load or

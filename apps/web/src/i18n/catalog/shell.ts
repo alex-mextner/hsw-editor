@@ -215,6 +215,7 @@ export const shellEn = {
   'pwa.updateLater': 'Later',
   'pwa.updateFailed': 'Could not save the offline state: {reason}',
   'pwa.offlineReady': 'Ready to work offline.',
+  'demo.readOnly': 'This is a read-only demo. Run the daemon (hsw-editor start) to edit walls.',
   'conflict.title': 'Your offline edits clash with changes made meanwhile',
   'conflict.count.one': '{count} of your edits touches something that changed on the daemon.',
   'conflict.count.other': '{count} of your edits touch something that changed on the daemon.',
@@ -453,6 +454,8 @@ export const shellRu: FeatureRu<typeof shellEn> = {
   'pwa.updateLater': 'Позже',
   'pwa.updateFailed': 'Не удалось сохранить офлайн-состояние: {reason}',
   'pwa.offlineReady': 'Готово к работе без сети.',
+  'demo.readOnly':
+    'Это демо только для просмотра. Запустите демон (hsw-editor start), чтобы править стены.',
   'conflict.title': 'Ваши офлайн-правки конфликтуют с изменениями за это время',
   'conflict.count.one': '{count} ваша правка затрагивает то, что изменилось на демоне.',
   'conflict.count.few': '{count} ваши правки затрагивают то, что изменилось на демоне.',

@@ -6,6 +6,8 @@ import { HistoryEntrySchema, type WallSummary } from '@/api/schemas.ts';
 import { currentWallId } from '@/state/current-wall.ts';
 import { patchEditor, setSelection } from '@/state/editor.ts';
 import { clearRequests, handleRequestEvent, loadOpenRequests } from '@/widgets/requests.ts';
+import { DEMO } from '@/demo/mode.ts';
+import { DEMO_WALL_ID, demoApi } from '@/demo/demoApi.ts';
 import { createLiveSource, type LiveLink } from '@/offline/live.ts';
 import { connection, wallMirror } from '@/offline/runtime.ts';
 import type { Strategy } from '@/offline/reconcile.ts';
@@ -75,14 +77,24 @@ function connectEvents(target: WallSync): LiveLink {
 /** Opens `wallId`: loads it, subscribes to live events, mirrors the sync state into `sessionStore`. */
 export function openWall(wallId: string): void {
   closeWall();
-  const next = new WallSync(wallId, api, HUMAN, Date.now, {
-    load: (id) => wallMirror.get(id),
-    save: (record) => void wallMirror.put(record).catch(() => undefined),
-  });
+  // The demo wall is bundled: nothing to mirror, nothing to replay.
+  const next = new WallSync(
+    wallId,
+    DEMO ? demoApi : api,
+    HUMAN,
+    Date.now,
+    DEMO
+      ? null
+      : {
+          load: (id) => wallMirror.get(id),
+          save: (record) => void wallMirror.put(record).catch(() => undefined),
+        },
+  );
   sync = next;
   detach = next.subscribe(() => sessionStore.set(next.getSnapshot()));
   sessionStore.set(next.getSnapshot());
-  link = connectEvents(next);
+  // The demo has no daemon: no event stream either.
+  link = DEMO ? null : connectEvents(next);
   void next.load();
 }
 
@@ -119,7 +131,7 @@ export function resolveConflict(strategy: Strategy): void {
 
 export async function refreshWalls(): Promise<void> {
   try {
-    wallListStore.set({ status: 'ready', walls: await api.listWalls() });
+    wallListStore.set({ status: 'ready', walls: await (DEMO ? demoApi : api).listWalls() });
   } catch {
     // Daemon unreachable: list the walls this device has mirrored (with their queued edits).
     const mirrored = await wallMirror.list().catch(() => []);
@@ -133,7 +145,7 @@ export async function refreshWalls(): Promise<void> {
 
 /** Creates a wall on the server and opens it. */
 export async function createAndOpenWall(name: string, board?: Wall['board']): Promise<Wall> {
-  const wall = await api.createWall({ name, ...(board ? { board } : {}) });
+  const wall = await (DEMO ? demoApi : api).createWall({ name, ...(board ? { board } : {}) });
   currentWallId.set(wall.id);
   await refreshWalls();
   return wall;
@@ -148,6 +160,8 @@ export function initSession(): void {
     if (id === null) closeWall();
     else if (sync?.wallId !== id) openWall(id);
   });
+  // First visit to the demo lands on its one bundled wall instead of an empty home screen.
+  if (DEMO && currentWallId.get() === null) currentWallId.set(DEMO_WALL_ID);
   const initial = currentWallId.get();
   if (initial !== null) openWall(initial);
   void refreshWalls();

@@ -3,6 +3,7 @@
  * app shares. Where IndexedDB is unavailable (private mode, old browsers) the mirror is in memory, so the editor works the
  * same but forgets the queue on reload.
  */
+import { DEMO } from '@/demo/mode.ts';
 import { reachability } from '@/api/http.ts';
 import { ConnectionMonitor } from './connection.ts';
 import { idbStore, offlineDbProvider } from './idb.ts';
@@ -18,6 +19,7 @@ export const wallMirror = new WallMirror(
 
 /** `GET /api/health` answers while the daemon is up, with a short timeout so a hung daemon counts as down. */
 async function probeDaemon(): Promise<boolean> {
+  if (DEMO) return true; // no daemon exists: nothing to probe, the demo is never "offline" for that reason
   try {
     const response = await fetch('/api/health', {
       cache: 'no-store',
