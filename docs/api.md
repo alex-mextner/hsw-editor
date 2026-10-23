@@ -106,7 +106,7 @@ linear stack across all actors: it applies the stored inverse of the newest not-
 - `GET /api/walls/:id/models/:modelId/file` — the model file.
 - Model references without a file (found online, bank candidates) are plain `addModelRef` / `updateModelRef` ops.
 - A **cleaned variant** of a wall photo is a second `Photo` of the same wall: `view: "clean"`, `origin: "generated"`, `cleanOf: <original id>`,
-  `backend: "basic" | "omp" | "chatgpt-browser"`, `cleanFootprint` (the board footprint it was made for, `1152x1536:x,y;x,y;x,y;x,y`,
+  `backend: "basic" | "omp" | "chatgpt-browser"`, `cleanFootprint` (the board footprint it was made for, `1152x1536@12:x,y;x,y;x,y;x,y` (photo size, margin in mm, corner pixels),
   `footprintSignature` of `@hsw-editor/overlay`). The file lives in `photos/derived/clean-*.jpg` and is served like any photo. It has no
   calibration of its own (the original's applies), the original is never changed, and a clean is an ordinary `addPhoto` (+ `removePhoto`
   of the variant it replaces) batch, so undo/redo work. Clients list originals only (`cleanOf` absent).
