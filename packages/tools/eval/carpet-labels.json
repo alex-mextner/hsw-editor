@@ -1,0 +1,51 @@
+{
+  "photo": "tools-on-carpet-2026-10-21 (HSW docs/photos)",
+  "note": "33 hand-labelled crops of the VisionSpike run: `index` = row in the spike's pipe_masks.npy; `label` = the spike label; `accept` = tool-library class ids counted as correct (the spike's synonym rule: a bit-set crop may also be a drill-bit case or hex key set).",
+  "crops": [
+    { "index": 22, "label": "cordless drill", "accept": ["cordless-drill"] },
+    { "index": 2, "label": "box", "accept": ["storage-box"] },
+    { "index": 91, "label": "box", "accept": ["storage-box"] },
+    { "index": 20, "label": "multimeter", "accept": ["multimeter"] },
+    { "index": 8, "label": "tape measure", "accept": ["tape-measure"] },
+    { "index": 82, "label": "caliper", "accept": ["caliper"] },
+    { "index": 81, "label": "box", "accept": ["storage-box"] },
+    { "index": 45, "label": "drill bit case", "accept": ["drill-bit-case", "bit-case"] },
+    { "index": 76, "label": "cordless drill", "accept": ["cordless-drill"] },
+    { "index": 70, "label": "screwdriver", "accept": ["screwdriver"] },
+    { "index": 54, "label": "cordless drill", "accept": ["cordless-drill"] },
+    { "index": 94, "label": "wire stripper", "accept": ["crimper-stripper"] },
+    { "index": 79, "label": "wire stripper", "accept": ["crimper-stripper"] },
+    { "index": 40, "label": "screwdriver", "accept": ["screwdriver"] },
+    { "index": 17, "label": "bit set", "accept": ["bit-case", "drill-bit-case", "hex-key-set"] },
+    { "index": 9, "label": "bit set", "accept": ["bit-case", "drill-bit-case", "hex-key-set"] },
+    { "index": 30, "label": "bit set", "accept": ["bit-case", "drill-bit-case", "hex-key-set"] },
+    { "index": 4, "label": "bit set", "accept": ["bit-case", "drill-bit-case", "hex-key-set"] },
+    { "index": 10, "label": "hex key set", "accept": ["hex-key-set", "bit-case"] },
+    {
+      "index": 87,
+      "label": "pliers",
+      "accept": ["pliers-combination", "pliers-long-nose", "side-cutters", "crimper-stripper"]
+    },
+    {
+      "index": 67,
+      "label": "pliers",
+      "accept": ["pliers-combination", "pliers-long-nose", "side-cutters", "crimper-stripper"]
+    },
+    {
+      "index": 46,
+      "label": "pliers",
+      "accept": ["pliers-combination", "pliers-long-nose", "side-cutters", "crimper-stripper"]
+    },
+    { "index": 31, "label": "box", "accept": ["storage-box"] },
+    { "index": 21, "label": "roll of tape", "accept": ["tape-roll"] },
+    { "index": 34, "label": "roll of tape", "accept": ["tape-roll"] },
+    { "index": 69, "label": "roll of tape", "accept": ["tape-roll"] },
+    { "index": 28, "label": "roll of tape", "accept": ["tape-roll"] },
+    { "index": 50, "label": "roll of tape", "accept": ["tape-roll"] },
+    { "index": 72, "label": "roll of tape", "accept": ["tape-roll"] },
+    { "index": 16, "label": "roll of tape", "accept": ["tape-roll"] },
+    { "index": 24, "label": "power supply", "accept": ["charger"] },
+    { "index": 80, "label": "tin snips", "accept": ["tin-snips"] },
+    { "index": 26, "label": "hammer", "accept": ["hammer"] }
+  ]
+}

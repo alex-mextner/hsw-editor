@@ -299,6 +299,12 @@ def dispatch(args: argparse.Namespace) -> int:
     return handlers[args.verb](args)
 
 
+if LIBS_OK:
+    import tools_verb  # noqa: E402
+
+    register_verb("tools", tools_verb.run, tools_verb.configure)
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
