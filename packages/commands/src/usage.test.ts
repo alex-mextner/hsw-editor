@@ -80,4 +80,24 @@ describe('frecency', () => {
     expect(parseUsage('junk')).toEqual({});
     expect(parseUsage(undefined)).toEqual({});
   });
+
+  test('parseUsage drops only the bad entries and keeps the good ones', () => {
+    const good = { count: 2, lastUsed: 5 };
+    expect(
+      parseUsage({
+        good,
+        negative: { count: -1, lastUsed: 5 },
+        fractional: { count: 1.5, lastUsed: 5 },
+        missing: { count: 1 },
+        text: 'junk',
+        nothing: null,
+      }),
+    ).toEqual({ good });
+  });
+
+  test('parseUsage rejects non-object documents', () => {
+    expect(parseUsage(['x'])).toEqual({});
+    expect(parseUsage(null)).toEqual({});
+    expect(parseUsage(7)).toEqual({});
+  });
 });
