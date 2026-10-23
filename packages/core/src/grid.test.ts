@@ -110,12 +110,13 @@ describe('rotateCellOffset', () => {
   });
 
   test('a board with a tall row pitch still finds the nearest neighbour column', () => {
-    const tall = { ...board, colPitchMm: 10, rowPitchMm: 100 };
-    // rotating (0, +2 half-rows) = 100 mm up by 90 degrees lands at rx = -10 (one column left), ry = 0
-    expect(rotateCellOffset(tall, { dCol: 0, dRow2: 2 }, 90)).toEqual({ dCol: -10, dRow2: 0 });
-    // a point at (rx 0, ry 1): nearest lattice cell is a column away, 10 mm, not 50 mm
-    const r = rotateCellOffset(tall, { dCol: 1, dRow2: 1 }, 0);
-    expect(r).toEqual({ dCol: 1, dRow2: 1 });
+    // (0, +2 half-rows) = 30 mm up; turned by 90 degrees it lands exactly 30 mm left = 3 columns, an odd column whose
+    // half-rows are all 15 mm off (rowPitch 30), while the even columns on either side are only 10 mm away.
+    const tall = { ...board, colPitchMm: 10, rowPitchMm: 30 };
+    const r = rotateCellOffset(tall, { dCol: 0, dRow2: 2 }, 90);
+    expect(Math.abs(r.dRow2 - r.dCol) % 2).toBe(0);
+    const miss = Math.hypot((r.dCol + 3) * tall.colPitchMm, (r.dRow2 * tall.rowPitchMm) / 2);
+    expect(miss).toBeLessThanOrEqual(10 + 1e-9);
   });
 
   test('an arbitrary angle still yields a valid lattice offset', () => {
