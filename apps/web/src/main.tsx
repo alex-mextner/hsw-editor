@@ -4,6 +4,7 @@ import { App } from './App.tsx';
 import { installGlobalErrorLogging } from './api/clientErrors.ts';
 import { watchAssetNotices } from './bank/assetNotices.ts';
 import { refreshBank, startBankAutoRefresh } from './bank/client.ts';
+import { refreshToolLibrary } from './features/tools/store.ts';
 import { AppErrorBoundary } from './shell/AppErrorBoundary.tsx';
 import './pwa/instance.ts';
 import './state/theme.ts';
@@ -13,6 +14,8 @@ import './styles.css';
 installGlobalErrorLogging();
 initSession();
 void refreshBank();
+// The tool library is needed by palette commands (`tools.add`) before the Tools tab is ever opened.
+void refreshToolLibrary();
 startBankAutoRefresh();
 watchAssetNotices();
 

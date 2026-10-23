@@ -7,6 +7,7 @@ import { ompEn } from './catalog/omp.ts';
 import { invalidZonesEn } from './catalog/invalidZones.ts';
 import { photoEn } from './catalog/photo.ts';
 import { shellEn } from './catalog/shell.ts';
+import { toolsEn } from './catalog/tools.ts';
 import { viewportEn } from './catalog/viewport.ts';
 import { widgetsEn } from './catalog/widgets.ts';
 
@@ -25,5 +26,6 @@ export const en = {
   ...assetsEn,
   ...invalidZonesEn,
   ...commandsEn,
+  ...toolsEn,
   ...photoEn,
 } as const;

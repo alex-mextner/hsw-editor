@@ -85,6 +85,8 @@ export async function fetchJson(path: string, init?: RequestInit): Promise<unkno
   try {
     response = await fetch(path, init);
   } catch (error) {
+    // A request the caller cancelled says nothing about the daemon.
+    if (init?.signal?.aborted) throw error;
     reachability.onUnreachable();
     throw new NetworkError(error);
   }

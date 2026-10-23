@@ -26,6 +26,8 @@ export interface ToolDragPayload {
   readonly dimsMm?: Dims3;
   /** Named dimension overrides (`shaftDiameter`, ...) the compatibility maths compares against mounts. */
   readonly params?: Readonly<Record<string, number>>;
+  /** Id of the user's library tool being dragged (absent for a built-in class). */
+  readonly customToolId?: string;
 }
 
 /** Tool currently dragged from the panel (dataTransfer contents are unreadable during dragover). */
@@ -67,10 +69,12 @@ export function isToolDrag(event: DragEvent): boolean {
 function draftFor(payload: ToolDragPayload, at: Vec2): Draft {
   if (draft?.payload === payload) return draft;
   const dims = payload.dimsMm ?? presetDims(payload.toolClass);
-  const { item, ops } = toolDraftOps(payload.toolClass, payload.label, at, dims);
-  const withParams: WallItem = payload.params ? { ...item, params: { ...payload.params } } : item;
+  const { item, ops } = toolDraftOps(payload.toolClass, payload.label, at, dims, {
+    ...(payload.params ? { params: payload.params } : {}),
+    ...(payload.customToolId === undefined ? {} : { customToolId: payload.customToolId }),
+  });
   const setup = ops.filter((op) => op.type === 'addModelRef');
-  draft = { payload, item: withParams, setup };
+  draft = { payload, item, setup };
   return draft;
 }
 

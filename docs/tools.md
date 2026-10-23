@@ -104,3 +104,34 @@ every object; progress per photo over the standard job SSE.
 `scripts/eval-recognition.ts` reports top-1 / top-3 on the labelled carpet crops (`eval/carpet-labels.json`). Numbers are in
 the PR that introduced the fusion. Without the prototype files the sidecar's text scores are used. The optional AI hook is
 the sidecar's `ai_assist` (off by default, hard cases only).
+
+## UI: Tool Library and Add from photo
+
+Ticket [#46](https://github.com/alex-mextner/hsw-editor/issues/46). Code: `apps/web/src/features/tools/` (the Tools tab
+of the left panel; commands in `apps/web/src/commands`).
+
+- **Panel**: built-in classes and the user's tools in one list, grouped by type (the class family) with counts and
+  collapsible groups, ru/en search over names, keywords, family and tags (`ё` = `е`, prefixes, typos), tag chips and
+  a "my tools only" toggle for the user's tools (the "Mine" badge). Thumbnails are the server-rendered
+  `GET /api/tools/classes/:id/thumb.webp` / `GET /api/tools/:id/thumb.webp`; a missing one shows a tinted fallback glyph.
+  Search text, tags and collapsed groups survive reloads.
+- **On the wall**: a click puts the tool in front of the middle of the viewport; a drag uses the `ToolDragPayload`
+  of `scene/toolDrop.ts` (class = the tool's `bankClass`, box, measured `holdingDims` as `params`, `customToolId` for a
+  user tool, recorded in the model ref as `source.by = "tool:<id>"`), so mount glow, refusal and hanging are the same
+  as for tools already on the wall. Selecting tool items filters the bank (`toolFilterStore`, #57).
+- **Suggested holders** (inspector, tool selected): bank holders ranked by `compatibility()` of `@hsw-editor/compat`
+  (class, measured dimensions against the mount ranges), with fit score and thumbnail; one click adds the holder and
+  hangs the tool on it.
+- **Detail page** (info button on a card): orbit 3D preview of the generated model, class parameters and presets
+  (live preview; "Save to my library" stores a customised class as a user tool), real dimensions and colours per part of
+  a user tool (refit through `PATCH /api/tools/:id`), materials of the parts read from the GLB, and the holding
+  interface drawn along the axis (width and thickness silhouettes, zones, hang point, widest section, measured dims).
+- **Add from photo** (wizard): photos (several tools per photo, or one tool in several photos) + scale reference (the
+  honeycomb grid, two points with a real distance, or a known mm/px) -> `POST /api/tools/drafts`, job `tools.analyze`
+  -> review grid (crop, top-3 classes with confidence and a manual override, name, accept / discard, merge, same-tool
+  group, split, real dimensions, live 3D preview of the fitted model, comparison with the built-in candidates by
+  silhouette IoU) -> `commit` into the user library with tags. Without the vision sidecar (`GET /api/tools/vision`
+  says so, or the job fails with `vision_unavailable`) the wizard shows "The vision service is not available" and
+  nothing is analysed or invented.
+- **Commands**: `tools.library.show` (`g t`), `tools.library.search {query}`, `tools.fromPhoto`, `tools.add {id}`
+  (`class:<id>`, `tool:<id>` or a bare id).

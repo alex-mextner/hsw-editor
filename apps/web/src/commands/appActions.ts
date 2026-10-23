@@ -14,6 +14,9 @@ import type { HistoryEntry } from '@hsw-editor/core';
 import { localeStore, t } from '@/i18n/index.ts';
 import { currentWallId } from '@/state/current-wall.ts';
 import { editorStore, fitView, patchEditor, setSelection, setTool } from '@/state/editor.ts';
+import { leftTabStore } from '@/features/palette/leftTab.ts';
+import { addLibraryToolById } from '@/features/tools/actions.ts';
+import { closeToolDetail, openPhotoWizard, patchToolsQuery } from '@/features/tools/store.ts';
 import { layoutStore, togglePanel, type LayoutState } from '@/state/layout.ts';
 import { toggleTheme } from '@/state/theme.ts';
 import {
@@ -165,6 +168,25 @@ export function createAppActions(deps: AppActionDeps): EditorActions {
         ? null
         : addToolPreset(toolClass, toolClass.name[localeStore.get()]);
     },
+    showToolLibrary: () => {
+      layoutStore.set({ ...layoutStore.get(), leftOpen: true });
+      leftTabStore.set('tools');
+      closeToolDetail();
+      focusPanelContents('bank');
+    },
+    openToolPhotoWizard: () => {
+      layoutStore.set({ ...layoutStore.get(), leftOpen: true });
+      leftTabStore.set('tools');
+      closeToolDetail();
+      openPhotoWizard();
+    },
+    searchToolLibrary: (query) => {
+      layoutStore.set({ ...layoutStore.get(), leftOpen: true });
+      leftTabStore.set('tools');
+      closeToolDetail();
+      patchToolsQuery({ text: query });
+    },
+    addLibraryTool: (id) => addLibraryToolById(id, localeStore.get()),
     undoToRevision,
     resetSettings: deps.resetSettings,
   };

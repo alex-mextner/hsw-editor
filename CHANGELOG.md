@@ -8,6 +8,11 @@ needs an entry here first.
 
 ### Added
 
+- Tool Library (`apps/web/src/features/tools`, [docs/tools.md](docs/tools.md#ui-tool-library-and-add-from-photo), #46): the Tools tab lists
+  built-in classes and the user's tools with generated thumbnails, grouped by type, searchable in ru/en and filterable by tag;
+  click or drag a tool onto the wall; detail page with live 3D preview, parameters, materials and the holding interface; the
+  inspector's "Suggested holders" now rank with `@hsw-editor/compat`; the "Add from photo" wizard (review grid, class
+  override, merge/split, dimensions, 3D preview, comparison with built-in candidates) and four palette commands.
 - `@hsw-editor/tools/contract`: browser-safe zod schemas and types of the tool library and import drafts.
 - Hanging tools by drag and drop (web): dragging a tool (on the wall or from the Tools panel) glows the mounts that take it
   and shows a ghost at the snapped pose; an unsuitable mount is non-droppable and says why (ru/en tooltip). Release snaps the

@@ -48,6 +48,14 @@ export interface EditorActions {
   /** Adds the bank element to the wall; the new item id, or null when it did not fit. */
   readonly addBankElement: (id: string) => string | null;
   readonly addToolPreset: (toolClassId: string) => string | null;
+  /** Brings the Tool Library tab forward (opening the left panel). */
+  readonly showToolLibrary: () => void;
+  /** Opens the "Add from photo" wizard of the Tool Library. */
+  readonly openToolPhotoWizard: () => void;
+  /** Shows the library filtered by `query` (ru/en words). */
+  readonly searchToolLibrary: (query: string) => void;
+  /** Adds a library tool by entry key (`class:<id>`, `tool:<id>`) or bare id; the new item id, or null. */
+  readonly addLibraryTool: (id: string) => string | null;
   /** Undoes edits until the wall is at `rev`; resolves to the number of undo steps taken. */
   readonly undoToRevision: (rev: number) => Promise<number>;
   readonly resetSettings: () => void;
@@ -491,6 +499,50 @@ export function createEditorCommands(actions: EditorActions): readonly Command[]
       mutates: true,
       handler: ({ id }) => ({
         itemId: requireSome(actions.addToolPreset(id), `cannot add tool '${id}'`),
+      }),
+    }),
+    defineCommand({
+      id: 'tools.library.show',
+      title: msg('cmd.tools.library.show'),
+      keywords: ['tools', 'library', 'инструменты', 'библиотека'],
+      group: 'navigation',
+      when: FREE,
+      keybindings: { all: ['g t'] },
+      mutates: false,
+      handler: effect(actions.showToolLibrary),
+    }),
+    defineCommand({
+      id: 'tools.library.search',
+      title: msg('cmd.tools.library.search'),
+      description: msg('cmd.tools.library.searchDescription'),
+      keywords: ['tools', 'find', 'инструменты', 'найти'],
+      group: 'bank',
+      args: z.object({ query: z.string() }),
+      mutates: false,
+      handler: ({ query }) => {
+        actions.searchToolLibrary(query);
+        return { query };
+      },
+    }),
+    defineCommand({
+      id: 'tools.fromPhoto',
+      title: msg('cmd.tools.fromPhoto'),
+      keywords: ['photo', 'camera', 'custom tool', 'фото', 'свой инструмент'],
+      group: 'bank',
+      when: FREE,
+      mutates: false,
+      handler: effect(actions.openToolPhotoWizard),
+    }),
+    defineCommand({
+      id: 'tools.add',
+      title: msg('cmd.tools.add'),
+      description: msg('cmd.tools.addDescription'),
+      group: 'bank',
+      when: 'hasWall',
+      args: idArgs,
+      mutates: true,
+      handler: ({ id }) => ({
+        itemId: requireSome(actions.addLibraryTool(id), `cannot add library tool '${id}'`),
       }),
     }),
     defineCommand({
