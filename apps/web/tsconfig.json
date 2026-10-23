@@ -15,6 +15,7 @@
     "src/features/omp/vendor/omp-render",
     "src/pwa/sw.ts",
     "src/state/statelib.ts",
-    "src/state/statelib-scope.ts"
+    "src/state/statelib-scope.ts",
+    "src/state/statelib-scope.test.ts"
   ]
 }
