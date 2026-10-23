@@ -28,6 +28,7 @@ import { dragOverTool, dropTool, leaveToolViewport } from './toolDrop.ts';
 import { measureClick, MeasureOverlay } from './MeasureTool.tsx';
 import { scenePalette } from './palette.ts';
 import { PlacementMarker } from './PlacementMarker.tsx';
+import { PhotoExportInstaller } from './PhotoExportInstaller.tsx';
 import { PhotoBoard } from './PhotoBoard.tsx';
 import { PhotoCameraRig } from './PhotoCameraRig.tsx';
 import { PhotoFrame } from './PhotoStage.tsx';
@@ -150,6 +151,7 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
           <directionalLight position={[0.8, 1.6, 2.4]} intensity={theme === 'dark' ? 1.6 : 1.3} />
           <directionalLight position={[-1.2, 0.4, 1.2]} intensity={0.5} />
           <BridgeInstaller />
+          {photoView ? <PhotoExportInstaller /> : null}
           <OmpViewportInstaller widthMm={size.width} heightMm={size.height} />
           {photoView ? (
             <PhotoCameraRig

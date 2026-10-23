@@ -94,12 +94,14 @@ The geometry is pure TypeScript in `packages/overlay` (no web/DOM dependency, in
 of the editor shell and only calls it.
 
 **Status.** Implemented: `packages/overlay` (calibration, rectification, camera recovery, mapping, snapping, wizard state
-machine, EXIF helpers), `cellAtOffset`/`rotateCellOffset` in `packages/core`, the server photo normaliser (HEIC/AVIF/EXIF),
-and in `apps/web/src/features/photo` the photo intake (drop / paste / choose with upload progress) and the calibration wizard
-(two points, four corners, detected grid). Planned (ticket #30, later PRs): the camera-matched backdrop, dragging and typed
-sizes on the photo, PNG export, the vision 'find tools' button. Below, "Flow" describes the target behaviour; sections "Math",
-"Snapping rules" and "Edge cases" describe what the package does today. The reference look of the finished overlay is
-`docs/references/user-reference-wall-overlay-2026-10-22.jpg`.
+machine, EXIF helpers), `cellAtOffset`/`rotateCellOffset` in `packages/core`, the server photo normaliser (HEIC/AVIF/EXIF), and
+in `apps/web` the 'Photo' mode: intake (drop / paste / choose, progress), the calibration wizard (two points, four corners,
+detected grid), the photo as the viewport backdrop through a camera whose projection is the calibration homography itself
+(exact on the wall plane), opacity / hide / before-after divider, moving and turning the board over the photo, dragging with
+the snapped footprint and mm ruler guides, typed sizes snapped with `{requested, snapped, reason}`, PNG export with a banner,
+and the 'find tools' button (job `vision.photo_to_objects`, graceful when the vision service is absent). The look of the
+finished overlay is `docs/references/user-reference-wall-overlay-2026-10-22.jpg`. Sections "Math", "Snapping rules" and
+"Edge cases" describe the package.
 
 ### Flow
 1. **Add the photo**: drop, paste or choose a file. HEIC/HEIF is converted to JPEG by the server (`POST /api/walls/:id/photos`),

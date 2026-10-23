@@ -1,6 +1,13 @@
 /** The real `EditorActions`: wires the registry's handlers to the editor's stores and wall actions. */
 import { api } from '@/api/http.ts';
-import { togglePhotoMode } from '@/features/photo/photoActions.ts';
+import {
+  calibrateShownPhoto,
+  exportPhotoPng,
+  findPhotoTools,
+  togglePhotoHidden,
+  togglePhotoMode,
+  toggleSplit,
+} from '@/features/photo/photoActions.ts';
 import { bankStore } from '@/bank/client.ts';
 import { newWallDialogStore } from '@/features/wizard/NewWallDialog.tsx';
 import type { HistoryEntry } from '@hsw-editor/core';
@@ -116,6 +123,11 @@ export function createAppActions(deps: AppActionDeps): EditorActions {
     toggleViewMode: () =>
       patchEditor({ view: editorStore.get().view === 'front' ? 'perspective' : 'front' }),
     toggleOverlay: togglePhotoMode,
+    exportPhoto: () => void exportPhotoPng(),
+    findPhotoTools: () => void findPhotoTools(),
+    calibratePhoto: calibrateShownPhoto,
+    togglePhotoVisible: togglePhotoHidden,
+    togglePhotoSplit: toggleSplit,
     togglePanel: (panel) => togglePanel(PANEL_LAYOUT_KEY[panel]),
     focusPanel: (panel) => {
       layoutStore.set({ ...layoutStore.get(), [PANEL_LAYOUT_KEY[panel]]: true });

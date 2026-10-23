@@ -29,6 +29,11 @@ export interface EditorActions {
   readonly fitView: () => void;
   readonly toggleViewMode: () => void;
   readonly toggleOverlay: () => void;
+  readonly exportPhoto: () => void;
+  readonly findPhotoTools: () => void;
+  readonly calibratePhoto: () => void;
+  readonly togglePhotoVisible: () => void;
+  readonly togglePhotoSplit: () => void;
   readonly togglePanel: (panel: PanelKey) => void;
   /** Opens the panel and moves keyboard focus into it. */
   readonly focusPanel: (panel: PanelKey) => void;
@@ -285,6 +290,51 @@ export function createEditorCommands(actions: EditorActions): readonly Command[]
       keybindings: { all: ['p'] },
       mutates: false,
       handler: effect(actions.toggleOverlay),
+    }),
+    defineCommand({
+      id: 'photo.export',
+      title: msg('photo.cmd.export'),
+      keywords: ['png', 'export', 'photo', 'экспорт', 'фото'],
+      group: 'view',
+      when: `hasWall && ${FREE}`,
+      mutates: false,
+      handler: effect(actions.exportPhoto),
+    }),
+    defineCommand({
+      id: 'photo.findTools',
+      title: msg('photo.cmd.findTools'),
+      keywords: ['tools', 'detect', 'vision', 'инструменты', 'найти'],
+      group: 'view',
+      when: `hasWall && ${FREE}`,
+      mutates: false,
+      handler: effect(actions.findPhotoTools),
+    }),
+    defineCommand({
+      id: 'photo.calibrate',
+      title: msg('photo.cmd.calibrate'),
+      keywords: ['scale', 'tape', 'ruler', 'калибровка', 'масштаб'],
+      group: 'view',
+      when: `hasWall && ${FREE}`,
+      mutates: false,
+      handler: effect(actions.calibratePhoto),
+    }),
+    defineCommand({
+      id: 'photo.hide',
+      title: msg('photo.cmd.hide'),
+      keywords: ['photo', 'hide', 'фото', 'скрыть'],
+      group: 'view',
+      when: `hasWall && ${FREE}`,
+      mutates: false,
+      handler: effect(actions.togglePhotoVisible),
+    }),
+    defineCommand({
+      id: 'photo.split',
+      title: msg('photo.cmd.split'),
+      keywords: ['before', 'after', 'compare', 'до', 'после'],
+      group: 'view',
+      when: `hasWall && ${FREE}`,
+      mutates: false,
+      handler: effect(actions.togglePhotoSplit),
     }),
     ...PANELS.map(({ panel, key }) =>
       defineCommand({
