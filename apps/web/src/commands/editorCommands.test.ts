@@ -56,6 +56,10 @@ function recordingActions(): { actions: EditorActions; calls: string[] } {
     selectItem: () => true,
     addBankElement: () => 'new-item',
     addToolPreset: () => 'new-item',
+    showToolLibrary: () => undefined,
+    openToolPhotoWizard: () => undefined,
+    searchToolLibrary: () => undefined,
+    addLibraryTool: () => 'new-item',
     undoToRevision: async () => 0,
     resetSettings: record('resetSettings'),
   };

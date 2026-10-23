@@ -64,18 +64,30 @@ export function toolPresetOps(
   return toolDraftOps(toolClass.id, label, position, presetDims(toolClass.id));
 }
 
-/** Like `toolPresetOps` for a tool whose class id and box are already known (a Tools panel drag). */
+/** What a Tool Library entry adds to the preset: measured class dimensions and the user tool it is a copy of. */
+export interface ToolDraftExtras {
+  /** Named dimension overrides (`shaftDiameter`, ...) the compatibility maths compares against mounts. */
+  readonly params?: Readonly<Record<string, number>>;
+  /** Id of the user's library tool; recorded as the model's source so the tool can be traced back. */
+  readonly customToolId?: string;
+}
+
+/** Like `toolPresetOps` for a tool whose class id and box are already known (a Tools panel drag or click). */
 export function toolDraftOps(
   toolClassId: string,
   label: string,
   position: { readonly x: number; readonly y: number },
   dims: Dims3,
+  extras: ToolDraftExtras = {},
 ): ToolPresetOps {
   const model: ModelRef = {
     id: newId('m'),
     label,
     status: 'chosen',
-    source: { type: 'library', by: 'preset' },
+    source: {
+      type: 'library',
+      by: extras.customToolId === undefined ? 'preset' : `tool:${extras.customToolId}`,
+    },
     dimensionsMm: dims,
     toolClass: toolClassId,
   };
@@ -86,7 +98,7 @@ export function toolDraftOps(
     toolClass: toolClassId,
     label,
     pose: { x: position.x, y: position.y, z: 40, rotX: 0, rotY: 0, rotZ: 0 },
-    params: {},
+    params: { ...extras.params },
     source: { type: 'manual' },
     locked: false,
   };

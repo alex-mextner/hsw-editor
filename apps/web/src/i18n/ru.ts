@@ -7,6 +7,7 @@ import { ompRu } from './catalog/omp.ts';
 import { invalidZonesRu } from './catalog/invalidZones.ts';
 import { photoRu } from './catalog/photo.ts';
 import { shellRu } from './catalog/shell.ts';
+import { toolsRu } from './catalog/tools.ts';
 import { viewportRu } from './catalog/viewport.ts';
 import { widgetsRu } from './catalog/widgets.ts';
 import type { Catalogue } from './keys.ts';
@@ -22,5 +23,6 @@ export const ru: Catalogue = {
   ...assetsRu,
   ...invalidZonesRu,
   ...commandsRu,
+  ...toolsRu,
   ...photoRu,
 };

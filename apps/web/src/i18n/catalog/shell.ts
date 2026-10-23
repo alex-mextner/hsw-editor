@@ -125,8 +125,6 @@ export const shellEn = {
   'tooldims.width': 'Width',
   'tooldims.length': 'Length',
   'tooldims.thickness': 'Thickness',
-  'tools.hint': 'Typical tools with approximate dimensions. Add one, then adjust its size.',
-  'tools.waitBank': 'The bank is still loading.',
 
   'kind.holder': 'Holder',
   'kind.tool': 'Tool',
@@ -381,8 +379,6 @@ export const shellRu: FeatureRu<typeof shellEn> = {
   'tooldims.width': 'Ширина',
   'tooldims.length': 'Длина',
   'tooldims.thickness': 'Толщина',
-  'tools.hint': 'Типовые инструменты с примерными размерами. Добавьте и поправьте размеры.',
-  'tools.waitBank': 'Банк ещё загружается.',
 
   'kind.holder': 'Держатель',
   'kind.tool': 'Инструмент',

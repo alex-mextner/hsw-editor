@@ -27,6 +27,9 @@ const GLOBALS = [
   'CustomEvent',
   'MutationObserver',
   'getComputedStyle',
+  'requestAnimationFrame',
+  'cancelAnimationFrame',
+  'Image',
   'localStorage',
   'sessionStorage',
 ] as const;

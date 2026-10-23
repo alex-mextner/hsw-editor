@@ -43,7 +43,8 @@ import {
 } from './edits.ts';
 import type { ToolClass } from '@hsw-editor/bank';
 import { offsetCell } from './footprint.ts';
-import { toolPresetOps } from './toolPresets.ts';
+import type { ToolDragPayload } from '@/scene/toolDrop.ts';
+import { presetDims, toolDraftOps, toolPresetOps } from './toolPresets.ts';
 import { sessionStore, submitOps } from './session.ts';
 
 export function currentWall(): Wall | null {
@@ -249,6 +250,24 @@ export function selectAll(): void {
 export function addToolPreset(toolClass: ToolClass, label: string): string | null {
   if (!currentWall()) return null;
   const { item, ops } = toolPresetOps(toolClass, label, viewportMiddle());
+  if (!submitOps(ops, 'add-tool').ok) return null;
+  setSelection([item.id]);
+  return item.id;
+}
+
+/** Adds a Tool Library tool (class dimensions, measured params, user-tool source) in front of the middle of the viewport. */
+export function addToolFromPayload(payload: ToolDragPayload): string | null {
+  if (!currentWall()) return null;
+  const { item, ops } = toolDraftOps(
+    payload.toolClass,
+    payload.label,
+    viewportMiddle(),
+    payload.dimsMm ?? presetDims(payload.toolClass),
+    {
+      ...(payload.params ? { params: payload.params } : {}),
+      ...(payload.customToolId === undefined ? {} : { customToolId: payload.customToolId }),
+    },
+  );
   if (!submitOps(ops, 'add-tool').ok) return null;
   setSelection([item.id]);
   return item.id;

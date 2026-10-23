@@ -3,11 +3,13 @@ import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { BankElement, BankIndex } from '@hsw-editor/bank';
 import type { Op, Wall, WallItem } from '@hsw-editor/core';
 import { bankStore } from '@/bank/client.ts';
-import { familyOf, holdersForToolClass } from '@/bank/suggest.ts';
+import { familyOf } from '@/bank/suggest.ts';
+import { suggestHolders } from '@/bank/holderSuggestions.ts';
 import { IconButton } from '@/components/IconButton.tsx';
 import { useI18n } from '@/i18n/index.ts';
 import { useStore } from '@/state/react.ts';
 import { addHolderForTool } from '@/wall/actions.ts';
+import { toolInterfaceOf } from '@/wall/toolInterface.ts';
 import { sessionStore, submitOps } from '@/wall/session.ts';
 import { VariantPickerCard, type Candidate } from './VariantPickerCard.tsx';
 
@@ -51,17 +53,20 @@ function switchOps(item: WallItem, candidate: BankElement): Op[] {
 
 function candidatesFor(
   item: WallItem,
+  wall: Wall | null,
   index: BankIndex,
   byId: ReadonlyMap<string, BankElement>,
-  toolClass: string | undefined,
 ): Candidate[] {
   if (item.kind === 'tool') {
-    if (toolClass === undefined) return [];
-    return holdersForToolClass(index, toolClass, item.params).map(({ element, score }) => ({
-      element,
-      score,
-      capacity: element.fitsTool.find((fit) => fit.toolClass === toolClass)?.capacity ?? null,
-    }));
+    // The compatibility maths of `@hsw-editor/compat`: class, measured dimensions and mount ranges decide.
+    const tool = wall ? toolInterfaceOf(item, wall) : undefined;
+    return tool === undefined
+      ? []
+      : suggestHolders(tool, index.elements).map(({ element, score, capacity }) => ({
+          element,
+          score,
+          capacity,
+        }));
   }
   const element = item.bankId === undefined ? undefined : byId.get(item.bankId);
   return element
@@ -82,8 +87,8 @@ export function VariantPicker({ item }: { readonly item: WallItem }) {
   const toolClass = isTool ? toolClassOf(item, wall) : undefined;
 
   const candidates = useMemo(
-    () => (bank.status === 'ready' ? candidatesFor(item, bank.index, bank.byId, toolClass) : []),
-    [bank, item, toolClass],
+    () => (bank.status === 'ready' ? candidatesFor(item, wall, bank.index, bank.byId) : []),
+    [bank, item, wall],
   );
   // Keyed by item so the message of one pick never shows on another selection.
   const [noRoomFor, setNoRoomFor] = useState<string | null>(null);

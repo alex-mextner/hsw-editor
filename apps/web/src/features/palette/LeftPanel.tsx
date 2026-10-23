@@ -1,22 +1,26 @@
 import { useEffect } from 'react';
-import { Wrench } from 'lucide-react';
-import { bankStore } from '@/bank/client.ts';
 import { BankPanel } from '@/features/bank/BankPanel.tsx';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.tsx';
 import { useI18n } from '@/i18n/index.ts';
 import { useStore } from '@/state/react.ts';
-import { presetDims } from '@/wall/toolPresets.ts';
-import { beginToolDrag, endToolDrag } from '@/scene/toolDrop.ts';
-import { addToolPreset } from '@/wall/actions.ts';
+import { leftTabStore, type LeftTab } from './leftTab.ts';
+import { ToolsTab } from '@/features/tools/ToolsTab.tsx';
 import { startToolSelectionSync } from '@/features/bank/toolFilterStore.ts';
 
-/** Left panel: the element bank and the tool presets used to start a wall from scratch. */
+/** Left panel: the element bank and the tool library. */
 export function LeftPanel() {
   const { t } = useI18n();
+  const tab = useStore(leftTabStore);
   // The selection feeds the bank filter whichever tab is open.
   useEffect(() => startToolSelectionSync(), []);
   return (
-    <Tabs defaultValue="bank" className="flex min-h-0 flex-1 flex-col gap-0">
+    <Tabs
+      value={tab}
+      onValueChange={(next) => {
+        if (next === 'bank' || next === 'tools') leftTabStore.set(next satisfies LeftTab);
+      }}
+      className="flex min-h-0 flex-1 flex-col gap-0"
+    >
       <TabsList className="m-2 mb-0 shrink-0">
         <TabsTrigger value="bank">{t('panel.bank')}</TabsTrigger>
         <TabsTrigger value="tools">{t('panel.tools')}</TabsTrigger>
@@ -24,57 +28,9 @@ export function LeftPanel() {
       <TabsContent value="bank" className="min-h-0 flex-1">
         <BankPanel />
       </TabsContent>
-      <TabsContent value="tools" className="min-h-0 flex-1 overflow-y-auto">
-        <ToolPresets />
+      <TabsContent value="tools" className="min-h-0 flex-1">
+        <ToolsTab />
       </TabsContent>
     </Tabs>
-  );
-}
-
-function ToolPresets() {
-  const { t, locale } = useI18n();
-  const bank = useStore(bankStore);
-  if (bank.status !== 'ready') {
-    return <p className="p-4 text-sm text-muted-foreground">{t('tools.waitBank')}</p>;
-  }
-  return (
-    <div className="grid gap-2 p-2">
-      <p className="px-1 text-xs text-muted-foreground">{t('tools.hint')}</p>
-      <ul className="grid gap-1.5">
-        {bank.index.toolClasses.map((toolClass) => {
-          const dims = presetDims(toolClass.id);
-          return (
-            <li key={toolClass.id}>
-              {/* Like the bank cards: the wrapper is the drag source (Firefox does not start drags on buttons). */}
-              <div
-                draggable
-                onDragStart={(event) =>
-                  beginToolDrag(event.nativeEvent, {
-                    toolClass: toolClass.id,
-                    label: toolClass.name[locale],
-                  })
-                }
-                onDragEnd={endToolDrag}
-              >
-                <button
-                  type="button"
-                  className="flex w-full items-center gap-2.5 rounded-lg border border-border bg-card px-2.5 py-2 text-left text-sm transition-colors hover:border-primary/60 hover:bg-muted"
-                  onClick={() => addToolPreset(toolClass, toolClass.name[locale])}
-                  draggable={false}
-                >
-                  <Wrench className="size-4 shrink-0 text-primary" aria-hidden />
-                  <span className="min-w-0 flex-1 truncate font-medium">
-                    {toolClass.name[locale]}
-                  </span>
-                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                    {dims.x}×{dims.y}×{dims.z}
-                  </span>
-                </button>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
   );
 }
