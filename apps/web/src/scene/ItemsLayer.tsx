@@ -6,16 +6,21 @@ import { goneReasonFor } from '@/bank/assetRecovery.ts';
 import { lastKnownElement } from '@/bank/client.ts';
 import { failureReason } from '@/bank/failureView.ts';
 import { variantVersion } from '@/bank/models.ts';
+import { refreshToolAssets, toolAssetsStore } from '@/toolmodels/assets.ts';
+import { onModelUrlReleased, toolModelVersion } from '@/toolmodels/regen.ts';
 import { useI18n } from '@/i18n/index.ts';
 import { useStore } from '@/state/react.ts';
 import { editorStore } from '@/state/editor.ts';
 import { InstancedModel, type Placement } from './InstancedModel.tsx';
 import { InstancedBoxes } from './InstancedBoxes.tsx';
 import { groupItems } from './itemGroups.ts';
-import { ModelBoundary } from './ModelBoundary.tsx';
+import { clearLoadedAsset, ModelBoundary } from './ModelBoundary.tsx';
 import { ModelPlaceholder } from './ModelPlaceholder.tsx';
 import type { ScenePalette } from './palette.ts';
 import { mm } from './units.ts';
+
+// A rebuilt model's blob URL that is let go is also dropped from the GLTF loader cache (its geometry would stay alive otherwise).
+onModelUrlReleased(clearLoadedAsset);
 
 /** Camera distance (m) beyond which the reduced LOD1 meshes are used; hysteresis avoids flicker. */
 const LOD_FAR_ENTER = 2.4;
@@ -51,6 +56,9 @@ export function ItemsLayer({ wall, bank, bankReady, palette, onItemPointerDown }
   const editor = useStore(editorStore);
   // Re-render when a regenerated model arrives: `resolveModel` reads that cache outside React state.
   useStore(variantVersion);
+  // Same for tool models: a rebuilt size arrives from the model worker.
+  useStore(toolModelVersion);
+  useStore(toolAssetsStore);
   const far = useFarLod(wall);
   const groups = groupItems(wall, bank, bankReady);
 
@@ -94,6 +102,46 @@ export function ItemsLayer({ wall, bank, bankReady, palette, onItemPointerDown }
               reason={failureReason({ kind: 'unknown', gone }, t)}
               onItemPointerDown={onItemPointerDown}
             />
+          );
+        }
+        if (group.tool) {
+          const { tool } = group;
+          const url = far ? tool.lod1 : tool.lod0;
+          const label = group.items[0]?.label ?? tool.entryId;
+          return (
+            <ModelBoundary
+              key={key}
+              url={url}
+              name={label}
+              revalidate={() => refreshToolAssets({ force: true })}
+              fallback={
+                <InstancedBoxes
+                  dimsMm={tool.dimsMm}
+                  centreMm={tool.centreMm}
+                  color={palette.item}
+                  placements={placements}
+                  onItemPointerDown={onItemPointerDown}
+                />
+              }
+              placeholder={(view) => (
+                <ModelPlaceholder
+                  dimsMm={tool.dimsMm}
+                  centreMm={tool.centreMm}
+                  placements={placements}
+                  palette={palette}
+                  name={view.name}
+                  reason={view.reason}
+                  onItemPointerDown={onItemPointerDown}
+                />
+              )}
+            >
+              <InstancedModel
+                url={url}
+                placements={placements}
+                onItemPointerDown={onItemPointerDown}
+                look="tool"
+              />
+            </ModelBoundary>
           );
         }
         if (!group.source) {

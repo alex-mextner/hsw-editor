@@ -5,6 +5,7 @@
  */
 import { newId, type LeafOp, type ModelRef, type Wall, type WallItem } from '@hsw-editor/core';
 import type { ToolClass } from '@hsw-editor/bank';
+import { defaultDimsOfTool } from '@/toolmodels/resolve.ts';
 import { paramsDraftFor } from '@/widgets/draft.ts';
 
 export interface Dims3 {
@@ -81,6 +82,14 @@ export interface ToolDraftExtras {
   readonly params?: Readonly<Record<string, number>>;
   /** Id of the user's library tool; recorded as the model's source so the tool can be traced back. */
   readonly customToolId?: string;
+  /** Id of the generator class (`screwdriver`, `pliers-combination`) the tool was added from; it draws the tool on the wall. */
+  readonly generatorClass?: string;
+}
+
+/** `source.by` of the model reference: the library tool, the generator class or a plain preset (see `generatorRef`). */
+function modelSourceBy(extras: ToolDraftExtras): string {
+  if (extras.customToolId !== undefined) return `tool:${extras.customToolId}`;
+  return extras.generatorClass === undefined ? 'preset' : `gen:${extras.generatorClass}`;
 }
 
 /** Like `toolPresetOps` for a tool whose class id and box are already known (a Tools panel drag or click). */
@@ -97,7 +106,7 @@ export function toolDraftOps(
     status: 'chosen',
     source: {
       type: 'library',
-      by: extras.customToolId === undefined ? 'preset' : `tool:${extras.customToolId}`,
+      by: modelSourceBy(extras),
     },
     dimensionsMm: dims,
     toolClass: toolClassId,
@@ -131,6 +140,12 @@ export const TOOL_PARAM_KEYS = {
 
 /** Reference dimensions of a tool (its model's size); the user's overrides are not applied. */
 export function toolBaseDims(item: WallItem, wall: Wall): Dims3 | null {
+  // A tool drawn by a generated model is as big as that model; a preset's rough box is only a stand-in. A size measured on a
+  // photo (vision) stays what the photo said.
+  if (item.source.type !== 'vision') {
+    const generated = defaultDimsOfTool(item, wall);
+    if (generated) return generated;
+  }
   const model = item.modelRefId
     ? wall.models.find((candidate) => candidate.id === item.modelRefId)
     : undefined;

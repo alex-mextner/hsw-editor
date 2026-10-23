@@ -10,6 +10,7 @@ import { pwaPluginOptions } from './src/pwa/pluginOptions.ts';
 /**
  * Demo build (`VITE_HSW_DEMO=1`, GitHub Pages): the committed seed bank is copied next to the app at the URLs the daemon would
  * serve (`/api/bank/index`, `/api/bank/search-index`, `/bank/assets/...`), so the bank browser needs no code path of its own.
+ * The tool models of the showcase wall are copied the same way (`/api/tools/assets/index`, `/tools/assets/glb/...`).
  */
 function demoSeedBank() {
   const seed = fileURLToPath(new URL('../../packages/bank/seed', import.meta.url));
@@ -23,6 +24,14 @@ function demoSeedBank() {
       for (const dir of ['glb', 'thumb']) {
         cpSync(`${seed}/${dir}`, `${out}/bank/assets/${dir}`, { recursive: true });
       }
+      // Generated tool models of the showcase wall (`bun scripts/tools/demo-assets.ts`, run by `bun run build`).
+      const tools = fileURLToPath(new URL('./.generated/tools-assets', import.meta.url));
+      if (!existsSync(`${tools}/index.json`)) {
+        throw new Error('demo build: run `bun scripts/tools/demo-assets.ts` first (tool model assets are missing)');
+      }
+      mkdirSync(`${out}/api/tools/assets`, { recursive: true });
+      cpSync(`${tools}/index.json`, `${out}/api/tools/assets/index`);
+      cpSync(`${tools}/glb`, `${out}/tools/assets/glb`, { recursive: true });
     },
   };
 }
@@ -83,6 +92,8 @@ export default defineConfig(({ mode }) => {
         '/api/bank': proxyTo(env['HSW_BANK_TARGET'] ?? env['HSW_API_TARGET'] ?? DAEMON),
         '/api': { ...proxyTo(env['HSW_API_TARGET'] ?? DAEMON), ws: true },
         '/bank': proxyTo(env['HSW_BANK_TARGET'] ?? env['HSW_API_TARGET'] ?? DAEMON),
+        // Content-hashed tool model GLBs of the daemon's asset store (the index is under /api).
+        '/tools': proxyTo(env['HSW_API_TARGET'] ?? DAEMON),
       },
     },
     build: { sourcemap: true, target: 'es2022' },

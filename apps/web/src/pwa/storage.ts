@@ -6,6 +6,7 @@
  * the page, so they work on the very first visit before the worker controls the page. Everything the user pins
  * is exempt from LRU eviction until they clear it.
  */
+import { toolAssetUrl } from '@hsw-editor/tools/contract';
 import { storeResponse, type AssetCacheDeps } from './assetCache.ts';
 import { ASSET_CATEGORIES, routeFor, type AssetCategory } from './cachePolicy.ts';
 import type { CategoryStats } from './registry.ts';
@@ -101,6 +102,24 @@ export function bankAssetUrls(
       urls.add(`${origin}/bank/assets/${element.assets.lod0.path}`);
       urls.add(`${origin}/bank/assets/${element.assets.lod1.path}`);
     }
+  }
+  return [...urls];
+}
+
+/** The part of the tool asset index the downloader needs (structurally what `ToolAssetIndex` provides). */
+export interface ToolIndexLike {
+  readonly entries: readonly {
+    readonly lod0: { readonly path: string };
+    readonly lod1: { readonly path: string };
+  }[];
+}
+
+/** GLB urls (deduplicated, stable order) of every generated tool model: both LODs of every class and library tool. */
+export function toolAssetUrls(index: ToolIndexLike, origin: string): string[] {
+  const urls = new Set<string>();
+  for (const entry of index.entries) {
+    urls.add(`${origin}${toolAssetUrl(entry.lod0)}`);
+    urls.add(`${origin}${toolAssetUrl(entry.lod1)}`);
   }
   return [...urls];
 }

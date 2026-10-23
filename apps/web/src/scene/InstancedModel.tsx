@@ -1,6 +1,6 @@
 import { useLayoutEffect, useMemo, useRef } from 'react';
 import { useGLTF } from '@react-three/drei';
-import type { ThreeEvent } from '@react-three/fiber';
+import { useThree, type ThreeEvent } from '@react-three/fiber';
 import {
   Color,
   Euler,
@@ -9,11 +9,14 @@ import {
   type Material,
   Matrix4,
   type Mesh,
+  type MeshStandardMaterial,
   type Object3D,
   Quaternion,
+  type Texture,
   Vector3,
 } from 'three';
 import { itemUserData } from './itemHit.ts';
+import { toolEnvironment } from './toolEnvironment.ts';
 import { MM } from './units.ts';
 
 /** One placement of a model: pose in wall frame (mm, degrees) plus the tint state. */
@@ -64,15 +67,45 @@ interface InstancedModelProps {
   readonly url: string;
   readonly placements: readonly Placement[];
   readonly onItemPointerDown: (id: string, event: ThreeEvent<PointerEvent>) => void;
+  /** `tool`: a generated tool model with metallic-roughness PBR parts; they reflect the studio environment. */
+  readonly look?: 'bank' | 'tool';
+}
+
+/** How much of the studio environment the metals and plastics of a tool reflect. */
+const TOOL_ENV_INTENSITY = 0.9;
+
+function isStandard(material: Material): material is MeshStandardMaterial {
+  return 'isMeshStandardMaterial' in material && material.isMeshStandardMaterial === true;
+}
+
+function lookAsTool(parts: readonly Part[], environment: Texture): void {
+  for (const part of parts) {
+    for (const material of Array.isArray(part.material) ? part.material : [part.material]) {
+      if (!isStandard(material)) continue;
+      material.envMap = environment;
+      material.envMapIntensity = TOOL_ENV_INTENSITY;
+      material.needsUpdate = true;
+    }
+  }
 }
 
 /**
  * All placements of one GLB drawn with one InstancedMesh per GLB mesh: 200 holders of the same
  * element cost a handful of draw calls instead of 200 x parts.
  */
-export function InstancedModel({ url, placements, onItemPointerDown }: InstancedModelProps) {
+export function InstancedModel({
+  url,
+  placements,
+  onItemPointerDown,
+  look = 'bank',
+}: InstancedModelProps) {
   const gltf = useGLTF(url);
-  const parts = useMemo(() => collectParts(gltf.scene), [gltf.scene]);
+  const gl = useThree((state) => state.gl);
+  const parts = useMemo(() => {
+    const collected = collectParts(gltf.scene);
+    if (look === 'tool') lookAsTool(collected, toolEnvironment(gl));
+    return collected;
+  }, [gltf.scene, look, gl]);
   const refs = useRef<(InstancedMesh | null)[]>([]);
   // Instanced meshes are rebuilt when the capacity changes; placements only update matrices/colours.
   const capacity = Math.max(placements.length, 1);

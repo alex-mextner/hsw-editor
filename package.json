@@ -12,7 +12,7 @@
   "scripts": {
     "dev": "bun run --filter @hsw-editor/web dev",
     "dev:server": "bun --watch apps/server/src/index.ts",
-    "build": "bun run --filter @hsw-editor/web build",
+    "build": "bun scripts/tools/demo-assets.ts && bun run --filter @hsw-editor/web build",
     "typecheck": "bun scripts/typecheck.ts",
     "vendor:omp-render": "bun scripts/vendor-omp-render.ts",
     "lint": "oxlint --deny-warnings",
@@ -31,7 +31,8 @@
     "pwa:assets": "bun scripts/gen-pwa-assets.ts",
     "tools:sheet": "bun packages/tools/scripts/sheet.ts",
     "tools:prototypes": "bun packages/tools/scripts/prototypes.ts",
-    "bench:invalid-zones": "bun apps/web/scripts/bench-invalid-zones.ts"
+    "bench:invalid-zones": "bun apps/web/scripts/bench-invalid-zones.ts",
+    "tools:demo-assets": "bun scripts/tools/demo-assets.ts --force"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",

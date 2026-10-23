@@ -9,7 +9,7 @@ import { applyOp, OpError, type LeafOp, type Wall, type WallItem } from '@hsw-ed
 import { bankStore } from '@/bank/client.ts';
 import { createValueStore } from '#state-backend';
 import { patchEditor, setSelection, type AttachPreview, type Vec2 } from '@/state/editor.ts';
-import { planToolDrag, toolBox, toolBoxCentre, type ToolDragPlan } from '@/wall/attach.ts';
+import { planToolDrag, toolBox, toolBoxCentreOf, type ToolDragPlan } from '@/wall/attach.ts';
 import { seatAfterDrop } from '@/physics/postStep.ts';
 import { sessionStore, submitOps } from '@/wall/session.ts';
 import { presetDims, toolDraftOps, type Dims3 } from '@/wall/toolPresets.ts';
@@ -29,6 +29,8 @@ export interface ToolDragPayload {
   readonly params?: Readonly<Record<string, number>>;
   /** Id of the user's library tool being dragged (absent for a built-in class). */
   readonly customToolId?: string;
+  /** Id of the built-in generator class being dragged (absent for a user tool); it draws the tool on the wall. */
+  readonly generatorClass?: string;
 }
 
 /** Tool currently dragged from the panel (dataTransfer contents are unreadable during dragover). */
@@ -73,6 +75,7 @@ function draftFor(payload: ToolDragPayload, at: Vec2): Draft {
   const { item, ops } = toolDraftOps(payload.toolClass, payload.label, at, dims, {
     ...(payload.params ? { params: payload.params } : {}),
     ...(payload.customToolId === undefined ? {} : { customToolId: payload.customToolId }),
+    ...(payload.generatorClass === undefined ? {} : { generatorClass: payload.generatorClass }),
   });
   const setup = ops.filter((op) => op.type === 'addModelRef');
   draft = { payload, item, setup };
@@ -125,7 +128,7 @@ function plan(event: DragEvent): Planned | null {
           ghost: {
             pose: { ...item.pose },
             dimsMm: { x: box.x, y: box.y, z: box.z },
-            centreMm: toolBoxCentre(box),
+            centreMm: toolBoxCentreOf(item, virtual),
             valid: planned.resolution.kind !== 'refuse',
           },
         }

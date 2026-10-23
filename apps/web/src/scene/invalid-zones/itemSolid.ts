@@ -1,12 +1,14 @@
 import type { BankElement } from '@hsw-editor/bank';
 import type { Wall, WallItem } from '@hsw-editor/core';
 import { resolveModel } from '@/bank/models.ts';
+import { resolveToolModel } from '@/toolmodels/resolve.ts';
 import { itemBounds } from '../itemBounds.ts';
 import { boxFromCentreDims, type ItemSolid } from './wallAdapter.ts';
 
 /**
  * The solid an item is checked as: its bank GLB (full detail, absolute url because the worker resolves relative
- * urls against its own script), or the proportional stand-in box the scene draws for tools without a model.
+ * urls against its own script), a tool's generated model (LOD1), or the proportional stand-in box the scene draws
+ * for tools without a model.
  * The same bounds back the fallback box when the GLB cannot be loaded.
  */
 export function itemSolid(
@@ -23,6 +25,14 @@ export function itemSolid(
     return {
       solidKey: model.key,
       source: { kind: 'glb', url: new URL(model.lod0, baseUrl).href, fallbackBox: box },
+    };
+  }
+  const tool = resolveToolModel(item, wall);
+  if (tool) {
+    // LOD1 keeps the silhouette of the tool (what overlaps what) at a fraction of the triangles.
+    return {
+      solidKey: tool.key,
+      source: { kind: 'glb', url: new URL(tool.lod1, baseUrl).href, fallbackBox: box },
     };
   }
   const { x, y, z } = bounds.dims;

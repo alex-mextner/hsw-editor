@@ -11,7 +11,7 @@ export type { Vec3 } from './rotation.ts';
 export interface HangPoint {
   /** Point on the tool (tool frame) a hook or peg engages. */
   point: Vec3;
-  kind: 'hole' | 'loop' | 'butt' | 'head' | 'body';
+  kind: 'hole' | 'loop' | 'butt' | 'head' | 'body' | 'neck';
   diameterMm?: number | undefined;
 }
 

@@ -57,7 +57,7 @@ export interface ToolFiles {
 }
 
 /** Path segments of `/api/tools/<segment>` that are routes, not tools. */
-const RESERVED_IDS: ReadonlySet<string> = new Set(['classes', 'drafts', 'vision']);
+const RESERVED_IDS: ReadonlySet<string> = new Set(['classes', 'drafts', 'vision', 'assets']);
 
 const SAFE_FILE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,120}$/;
 

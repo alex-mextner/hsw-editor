@@ -8,6 +8,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group.tsx';
 import { useT } from '@/i18n/index.ts';
 import { useStore } from '@/state/react.ts';
 import { sessionStore, submitOps } from '@/wall/session.ts';
+import { rehangResizedTool } from '@/wall/rehang.ts';
 import { toolBaseDims } from '@/wall/toolPresets.ts';
 import { aspectLockStore } from './draft.ts';
 import {
@@ -149,7 +150,12 @@ function DimensionForm({
     const change = next ? diffParams(item.params, next) : null;
     setWorking(null);
     setTyping(null);
-    if (change) submitOps([toOp(item.id, change.set, change.unset)], 'set-params');
+    if (!change) return;
+    const result = submitOps([toOp(item.id, change.set, change.unset)], 'set-params');
+    // A hung tool changed size: once its rebuilt model is known it is placed in its slot again.
+    if (result.ok && item.kind === 'tool' && item.parentId !== undefined) {
+      rehangResizedTool(item.id).catch(() => undefined);
+    }
   };
 
   const revert = (): boolean => {
