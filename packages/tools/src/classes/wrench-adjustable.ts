@@ -4,7 +4,11 @@
  * (ISO 6787 / DIN 3117) with jaw capacities of about L / 8 (20, 24, 30, 36). The handle can be bare steel,
  * dip-coated (like the blue wrench on the HSW wall photo) or fitted with a ribbed rubber grip.
  * Proportions are fractions of the length, tuned against 8 in / 200 mm trade wrenches: head thickness
- * 11 mm, handle 17..20 mm wide and 6.5 mm thick, jaw face 32 mm.
+ * 11 mm, handle 16..20 mm wide and about 7 mm thick, jaw face 32 mm.
+ *
+ * Checked against the blue wrench of the HSW wall photo (head about a third of the length, jaw opening about
+ * 10 % of it, handle about 11 % wide with the dip coat): at 200 mm the head is 47.6 mm wide against a 19.6 mm
+ * handle bar (2.4x; 2.2x over the dip coat) and the handle is 9.8 % wide (10.7 % with the coat).
  */
 import { DEG, type V2, smoothstep } from '../math.ts';
 import { type Mesh, mergeMeshes } from '../mesh.ts';
@@ -100,17 +104,17 @@ export const wrenchAdjustable = defineToolClass({
     const k = Lt / 200;
     const cap = 0.12 * Lt;
     const g = Math.min(Math.max(p.jawOpening, 0.6), cap);
-    const jtBase = 0.06 * Lt;
+    const jtBase = 0.052 * Lt;
     const jtTip = 0.04 * Lt;
     const mt = 0.042 * Lt;
     const mtBase = 0.055 * Lt;
     const jl = 0.125 * Lt;
     const hb = 0.115 * Lt;
-    const xr = cap + mt + 0.03 * Lt;
+    const xr = cap + mt + 0.024 * Lt;
     const Th = 0.055 * Lt;
     const tb = 0.034 * Lt;
-    const wButt = 0.075 * Lt;
-    const wTop = 0.088 * Lt;
+    const wButt = 0.082 * Lt;
+    const wTop = 0.098 * Lt;
     const holeR = 0.022 * Lt;
     const holeY = 0.068 * Lt;
     const xn = (xr - jtBase) / 2 - 0.04 * xr;
