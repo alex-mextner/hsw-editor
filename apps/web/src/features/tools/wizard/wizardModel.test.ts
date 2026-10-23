@@ -7,6 +7,7 @@ import {
   committable,
   isVisionUnavailable,
   MAX_PHOTOS,
+  parseTypedDimension,
   percent,
   photoProblem,
   takePhotos,
@@ -30,6 +31,7 @@ function object(key: string, photo: number, patch: Partial<DraftObject> = {}): D
     dimensionsMm: null,
     needsScale: false,
     dimensionsEstimated: false,
+    dimensionAdjustments: [],
     images: {},
     preview: null,
     ...patch,
@@ -122,5 +124,35 @@ describe('helpers', () => {
     expect(isVisionUnavailable('vision sidecar not reachable at http://127.0.0.1:8795')).toBe(true);
     expect(isVisionUnavailable('photo 2 is corrupt')).toBe(false);
     expect(isVisionUnavailable(null)).toBe(false);
+  });
+});
+
+describe('parseTypedDimension', () => {
+  test('keeps what is typed exactly, with a comma or a point', () => {
+    expect(parseTypedDimension('80', 'width')).toEqual({ kind: 'ok', valueMm: 80 });
+    expect(parseTypedDimension(' 99,8 ', 'length')).toEqual({ kind: 'ok', valueMm: 99.8 });
+    expect(parseTypedDimension('1', 'length')).toEqual({ kind: 'ok', valueMm: 1 });
+    expect(parseTypedDimension('3000', 'width')).toEqual({ kind: 'ok', valueMm: 3000 });
+  });
+
+  test('a thin tool is a real thickness: steel rule 0.4 mm, saw blade 0.6 mm', () => {
+    expect(parseTypedDimension('0.4', 'thickness')).toEqual({ kind: 'ok', valueMm: 0.4 });
+    expect(parseTypedDimension('0.05', 'thickness')).toEqual({ kind: 'range' });
+    expect(parseTypedDimension('0.4', 'width')).toEqual({ kind: 'range' });
+  });
+
+  test('refuses absurd sizes instead of clamping them', () => {
+    expect(parseTypedDimension('12086', 'length')).toEqual({ kind: 'range' });
+    expect(parseTypedDimension('3000.5', 'width')).toEqual({ kind: 'range' });
+    expect(parseTypedDimension('0.5', 'length')).toEqual({ kind: 'range' });
+    expect(parseTypedDimension('0', 'width')).toEqual({ kind: 'range' });
+    expect(parseTypedDimension('-20', 'thickness')).toEqual({ kind: 'range' });
+  });
+
+  test('an empty field is nothing to send, a non-number is invalid', () => {
+    expect(parseTypedDimension('', 'length')).toEqual({ kind: 'empty' });
+    expect(parseTypedDimension('   ', 'width')).toEqual({ kind: 'empty' });
+    expect(parseTypedDimension('abc', 'length')).toEqual({ kind: 'invalid' });
+    expect(parseTypedDimension('Infinity', 'length')).toEqual({ kind: 'invalid' });
   });
 });

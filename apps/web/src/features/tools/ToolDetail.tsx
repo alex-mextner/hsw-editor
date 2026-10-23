@@ -33,9 +33,16 @@ import { ParamFields } from './ParamFields.tsx';
 import { isCustomized, matchingPreset, valuesFor, withParam } from './paramValues.ts';
 import { PartsSection } from './PartsSection.tsx';
 import { libraryStore, openToolDetail, refreshToolLibrary } from './store.ts';
+import { parseTypedDimension } from './wizard/wizardModel.ts';
 import { ToolPreview3D, type ModelPart } from './ToolPreview3D.tsx';
 import { ToolThumb } from './ToolThumb.tsx';
-import type { CustomTool } from '@hsw-editor/tools/contract';
+import {
+  type CustomTool,
+  type DimensionKey,
+  DimensionKeySchema,
+  MAX_DIMENSION_MM,
+  MIN_DIMENSION_MM,
+} from '@hsw-editor/tools/contract';
 
 const PARAM_DEBOUNCE_MS = 200;
 /** Quiet time after the last slider/colour tick before a user tool is refitted on the server. */
@@ -371,13 +378,21 @@ function UserToolDetail({
 
   const [dimDraft, setDimDraft] = useState<Record<string, string>>({});
   const dimsMm = tool?.dimensionsMm;
-  const commitDim = (key: 'length' | 'width' | 'thickness'): void => {
+  // A refused size (not a number / outside the sane range) is never sent: it stays in its field with the reason next to it
+  // until the user types again, so the page never shows a size the model does not have.
+  const [dimError, setDimError] = useState<Partial<Record<DimensionKey, 'invalid' | 'range'>>>({});
+  const commitDim = (key: DimensionKey): void => {
     const raw = dimDraft[key];
     if (raw === undefined || dimsMm === undefined) return;
-    const value = Number(raw);
+    const parsed = parseTypedDimension(raw, key);
+    if (parsed.kind === 'range' || parsed.kind === 'invalid') {
+      setDimError((previous) => ({ ...previous, [key]: parsed.kind }));
+      return;
+    }
+    setDimError(({ [key]: _done, ...rest }) => rest);
     setDimDraft(({ [key]: _done, ...rest }) => rest);
-    if (Number.isFinite(value) && value > 0 && value !== dimsMm[key]) {
-      void apply({ dimensionsMm: { [key]: value } });
+    if (parsed.kind === 'ok' && parsed.valueMm !== dimsMm[key]) {
+      void apply({ dimensionsMm: { [key]: parsed.valueMm } });
     }
   };
 
@@ -415,18 +430,23 @@ function UserToolDetail({
         </Section>
         <Section title={t('toolDetail.dimensions')}>
           <div className="grid grid-cols-3 gap-2" data-testid="tool-detail-dims">
-            {(['length', 'width', 'thickness'] as const).map((key) => (
+            {DimensionKeySchema.options.map((key) => (
               <label key={key} className="grid gap-1 text-xs text-muted-foreground">
                 {t(`toolDetail.dim.${key}`)}
                 <Input
                   type="number"
                   inputMode="decimal"
-                  min={0.1}
+                  min={MIN_DIMENSION_MM[key]}
+                  max={MAX_DIMENSION_MM}
                   step={0.5}
                   value={dimDraft[key] ?? `${Math.round(current.dimensionsMm[key] * 10) / 10}`}
                   disabled={busy}
+                  aria-invalid={dimError[key] !== undefined}
                   className="h-7 text-right font-mono text-xs"
-                  onChange={(event) => setDimDraft({ ...dimDraft, [key]: event.target.value })}
+                  onChange={(event) => {
+                    setDimDraft({ ...dimDraft, [key]: event.target.value });
+                    setDimError(({ [key]: _done, ...rest }) => rest);
+                  }}
                   onBlur={() => commitDim(key)}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') commitDim(key);
@@ -435,6 +455,17 @@ function UserToolDetail({
               </label>
             ))}
           </div>
+          {DimensionKeySchema.options.map((key) => {
+            const problem = dimError[key];
+            return problem === undefined ? null : (
+              <p key={key} role="alert" className="text-[11px] text-destructive" data-testid="tool-detail-dim-error" data-dim={key}>
+                {t(`toolWizard.editor.dimName.${key}`)}:{' '}
+                {problem === 'range'
+                  ? t('toolWizard.editor.dimOutOfRange', { min: MIN_DIMENSION_MM[key], max: MAX_DIMENSION_MM })
+                  : t('toolWizard.editor.dimInvalid')}
+              </p>
+            );
+          })}
           <p className="text-[11px] text-muted-foreground">
             {t(`toolDetail.dimSource.${current.dimensionsMm.source}`)}
             {' · '}

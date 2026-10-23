@@ -5,7 +5,13 @@
  * Browser-safe types and zod schemas only; the disk logic is `node/drafts.ts`.
  */
 import { z } from 'zod';
-import { ColorSegmentSchema, ObservedProfileSchema, ToolIdSchema } from './schema.ts';
+import {
+  ColorSegmentSchema,
+  DimensionAdjustmentSchema,
+  ObservedProfileSchema,
+  ToolIdSchema,
+  typedDimensionSchema,
+} from './schema.ts';
 import { TagsSchema } from './tags.ts';
 
 export const DraftIdSchema = ToolIdSchema;
@@ -103,6 +109,8 @@ export const DraftObjectSchema = z.strictObject({
   needsScale: z.boolean(),
   /** The size is the class-typical one (no scale on the photo, nothing typed): a flagged estimate, never a measurement. */
   dimensionsEstimated: z.boolean().default(false),
+  /** Typed sizes the model could not take exactly (class ranges), with the reason; empty when every typed size is kept. */
+  dimensionAdjustments: z.array(DimensionAdjustmentSchema).default([]),
   /** Crop / cut-out of the object, relative to the draft directory. */
   images: z.strictObject({
     crop: z.string().optional(),
@@ -156,9 +164,9 @@ export const DraftObjectPatchSchema = z.strictObject({
   /** Real dimensions typed by the user; they win over the photo scale. */
   dimensionsMm: z
     .strictObject({
-      length: z.number().positive().optional(),
-      width: z.number().positive().optional(),
-      thickness: z.number().positive().optional(),
+      length: typedDimensionSchema('length').optional(),
+      width: typedDimensionSchema('width').optional(),
+      thickness: typedDimensionSchema('thickness').optional(),
     })
     .optional(),
 });

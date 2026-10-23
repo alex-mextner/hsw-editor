@@ -100,6 +100,8 @@ function refit(tool: ToolDoc, patch: CustomToolPatch): Rebuilt {
       candidates: tool.classCandidates,
       dimensionsMm: dims,
       dimensionSource: typesLength ? 'user' : tool.dimensionsMm.source,
+      // the length of a refit is the model's own unless the user typed one: it yields to a typed width
+      lengthHeld: wanted.length === undefined,
       ...(tool.profileKind ? { profileKind: tool.profileKind } : {}),
     },
     {

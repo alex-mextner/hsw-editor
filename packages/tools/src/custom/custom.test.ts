@@ -104,6 +104,137 @@ describe('fitObject', () => {
     expect(fitted.dimensionsMm.length).toBeGreaterThan(140);
     expect(fitted.dimensionsMm.length).toBeLessThan(160);
   });
+
+  test('typed length and width are kept exactly when the class range can hold them (issue 214)', () => {
+    const truth = generate('screwdriver', {}, 0);
+    const profile = observeModel(truth);
+    for (const dims of [
+      { length: 100 },
+      { width: 20 },
+      { length: 137.5, width: 25 },
+      { length: 300, width: 30, thickness: 31 },
+    ]) {
+      const fitted = fitObject({
+        profile,
+        colors: [],
+        candidates: [{ classId: 'screwdriver', score: 0.9 }],
+        dimensionsMm: dims,
+        dimensionSource: 'user',
+      });
+      for (const [key, want] of Object.entries(dims)) {
+        expect(fitted.dimensionsMm[key as 'length' | 'width' | 'thickness']).toBeCloseTo(want, 1);
+      }
+      expect(fitted.dimensionAdjustments).toEqual([]);
+      expect(fitted.fit.iou).toBeGreaterThan(0.6);
+    }
+  });
+
+  test('a width beyond the class range is snapped to the nearest reachable one and reported, never silent', () => {
+    const truth = generate('screwdriver', {}, 0);
+    const fitted = fitObject({
+      profile: observeModel(truth),
+      colors: [],
+      candidates: [{ classId: 'screwdriver', score: 0.9 }],
+      dimensionsMm: { width: 80, length: 100 },
+      dimensionSource: 'user',
+    });
+    const adjustment = fitted.dimensionAdjustments.find((a) => a.key === 'width');
+    expect(adjustment?.requestedMm).toBe(80);
+    expect(adjustment?.reason).toBe('class-range');
+    expect(adjustment?.actualMm).toBeCloseTo(fitted.dimensionsMm.width, 6);
+    expect(adjustment?.actualMm).toBeLessThan(80);
+    // the size that can be kept stays exact, and is not reported
+    expect(fitted.dimensionsMm.length).toBeCloseTo(100, 1);
+    expect(fitted.dimensionAdjustments.map((a) => a.key)).toEqual(['width']);
+  });
+
+  test('sizes are held on the full-detail model that is reported, not only on the fit-time one (issue 214)', () => {
+    // the utility knife grows a rib-detail layer at LOD0 only: width 25 at LOD1 is 25.45 at LOD0 unless refined there
+    const profile = observeModel(generate('utility-knife', {}, 0));
+    const fitted = fitObject({
+      profile,
+      colors: [],
+      candidates: [{ classId: 'utility-knife', score: 0.9 }],
+      dimensionsMm: { width: 25 },
+      dimensionSource: 'user',
+    });
+    expect(fitted.classId).toBe('utility-knife');
+    expect(fitted.dimensionsMm.width).toBeCloseTo(25, 1);
+    expect(fitted.dimensionAdjustments).toEqual([]);
+  });
+
+  test('a typed width wins over holding the photo length when one parameter drives both (issue 214)', () => {
+    // combination pliers scale uniformly with their single `length` parameter: width and length cannot both be held
+    const profile = observeModel(generate('pliers-combination', {}, 0));
+    const naturalWidth = Math.max(...profile.stations.map((st) => st.hi - st.lo));
+    const wanted = Math.round(naturalWidth * 1.15 * 10) / 10;
+    const fitted = fitObject({
+      profile,
+      colors: [],
+      candidates: [{ classId: 'pliers-combination', score: 0.9 }],
+      dimensionsMm: { width: wanted },
+      dimensionSource: 'user',
+    });
+    expect(fitted.classId).toBe('pliers-combination');
+    expect(fitted.dimensionsMm.width).toBeCloseTo(wanted, 1);
+    // the length was not typed: it follows, and is not reported as an adjustment
+    expect(fitted.dimensionAdjustments).toEqual([]);
+  });
+
+  test('a refit that only holds the model length lets a typed width win (issue 214)', () => {
+    const profile = observeModel(generate('pliers-combination', {}, 0));
+    const naturalWidth = Math.max(...profile.stations.map((st) => st.hi - st.lo));
+    const first = Math.round(naturalWidth * 1.05 * 10) / 10;
+    const second = Math.round(naturalWidth * 1.15 * 10) / 10;
+    const fit = (width: number, length: number) =>
+      fitObject({
+        profile,
+        colors: [],
+        candidates: [{ classId: 'pliers-combination', score: 0.9 }],
+        dimensionsMm: { width, length },
+        dimensionSource: 'user',
+        lengthHeld: true,
+      });
+    const once = fit(first, profile.lengthMm);
+    expect(once.dimensionsMm.width).toBeCloseTo(first, 1);
+    // the second edit carries the length the model now has; the new width still wins
+    const twice = fit(second, once.dimensionsMm.length);
+    expect(twice.dimensionsMm.width).toBeCloseTo(second, 1);
+    expect(twice.dimensionAdjustments).toEqual([]);
+  });
+
+  test('a generic shape holds typed length, width and thickness exactly', () => {
+    const profile = observeModel(generate('screwdriver', {}, 0));
+    const fitted = fitObject({
+      profile,
+      colors: [],
+      candidates: [],
+      dimensionsMm: { length: 120, width: 22, thickness: 9 },
+      dimensionSource: 'user',
+    });
+    expect(fitted.classId).toBeNull();
+    expect(fitted.dimensionsMm.length).toBeCloseTo(120, 1);
+    expect(fitted.dimensionsMm.width).toBeCloseTo(22, 1);
+    expect(fitted.dimensionsMm.thickness).toBeCloseTo(9, 1);
+    expect(fitted.dimensionAdjustments).toEqual([]);
+  });
+
+  test('a generic shape thinner than its thinnest wall reports the thickness it really has', () => {
+    const profile = observeModel(generate('screwdriver', {}, 0));
+    const fitted = fitObject({
+      profile,
+      colors: [],
+      candidates: [],
+      dimensionsMm: { thickness: 0.4 },
+      dimensionSource: 'user',
+    });
+    expect(fitted.classId).toBeNull();
+    const adjustment = fitted.dimensionAdjustments.find((a) => a.key === 'thickness');
+    expect(adjustment?.requestedMm).toBe(0.4);
+    expect(adjustment?.reason).toBe('shape-limit');
+    expect(adjustment?.actualMm).toBeCloseTo(fitted.dimensionsMm.thickness, 6);
+    expect(adjustment?.actualMm).toBeGreaterThan(0.4);
+  });
 });
 
 describe('tool store', () => {
@@ -393,8 +524,17 @@ describe('tool patches', () => {
   });
 
   test('colours a tool saved before userPartColors kept in partColors survive refits as user colours', () => {
-    const generic = fitObject({ profile, colors, candidates: [], dimensionSource: 'photo', profileKind: 'lathe_profile' });
-    const legacyGeneric: CustomTool = { ...docOf(generic, 'lathe_profile'), partColors: { body: '#00ff00' } };
+    const generic = fitObject({
+      profile,
+      colors,
+      candidates: [],
+      dimensionSource: 'photo',
+      profileKind: 'lathe_profile',
+    });
+    const legacyGeneric: CustomTool = {
+      ...docOf(generic, 'lathe_profile'),
+      partColors: { body: '#00ff00' },
+    };
     const renamed = applyPatch(legacyGeneric, { name: { en: 'Bottle' } });
     expect(renamed.tool.userPartColors).toEqual({ body: '#00ff00' });
 
@@ -418,12 +558,29 @@ describe('tool patches', () => {
     expect(resized.model.parts.find((p) => p.name === 'handle')?.material.color).toBe('#00ff00');
 
     // a legacy tool with nothing to split is marked migrated, so a params edit cannot change what a later split sees
-    const untouched: CustomTool = { ...docOf(fitted), colors: twoColors, partColors: fitted.partColors };
+    const untouched: CustomTool = {
+      ...docOf(fitted),
+      colors: twoColors,
+      partColors: fitted.partColors,
+    };
     const migrated = applyPatch(untouched, { params: { ...untouched.params } });
     expect(migrated.tool.userPartColors).toEqual({});
-    const toHammer = applyPatch({ ...untouched, ...migrated.tool, model: untouched.model }, { classId: 'hammer' });
+    const toHammer = applyPatch(
+      { ...untouched, ...migrated.tool, model: untouched.model },
+      { classId: 'hammer' },
+    );
     expect(toHammer.tool.userPartColors).toEqual({});
-    expect(toHammer.tool.partColors).toEqual(fitObject({ profile: observeModel(generate('screwdriver', {}, 0)), colors: twoColors, candidates: [], dimensionSource: 'photo' }, { classId: 'hammer' }).partColors);
+    expect(toHammer.tool.partColors).toEqual(
+      fitObject(
+        {
+          profile: observeModel(generate('screwdriver', {}, 0)),
+          colors: twoColors,
+          candidates: [],
+          dimensionSource: 'photo',
+        },
+        { classId: 'hammer' },
+      ).partColors,
+    );
 
     // a tool saved by the current code is never split: photo colours of a gapped segmentation stay sampled
     const gapped = [

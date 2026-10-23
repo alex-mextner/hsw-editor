@@ -101,6 +101,10 @@ photo(s) --sidecar photo_to_objects--> objects (mask, crop, class top-k, closed-
   a refit. A scale reference is optional: without one the profile (in pixels, `profilePx`) is scaled by the class-typical length
   of the chosen or best suggested class and the object is flagged `dimensionsEstimated` (saved as `dimensionsMm.source:
   "estimated"`); typing one real length replaces the estimate. Only an object with no class and no typed size says `needsScale`.
+  A typed length / width is held **exactly**: after the silhouette fit, `fitClassToProfile` runs a bounded least-squares step over the class's
+  mm parameters (`targets`, clamped to their ranges) until the model's overall size is the typed one; a typed thickness is the `zScale` of the mesh
+  (0.2-5x). A size the class ranges cannot reach ends at the nearest reachable one and is reported in `dimensionAdjustments` (requested, actual,
+  reason `class-range` / `thickness-range`), which the wizard shows under the fields. Typed sizes outside 1-3000 mm (thickness 0.1-3000) are refused (`400`), never fitted. Sizes are matched on the cheap fit-time model and then polished on the full-detail one that is stored.
   A photo of tools never builds or places a wall; tools are only added to the collection.
 - **Several photos of one tool**: group the objects; the most informative observation is the primary, the suggestions of
   the others are merged, all photos are kept in `source/`.

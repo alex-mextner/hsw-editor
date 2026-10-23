@@ -1,9 +1,20 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { CheckIcon, RulerIcon, ScissorsIcon, Trash2Icon, Undo2Icon } from 'lucide-react';
-import type { Draft, DraftObject } from '@hsw-editor/tools/contract';
+import {
+  type DimensionKey,
+  DimensionKeySchema,
+  type Draft,
+  type DraftObject,
+  MAX_DIMENSION_MM,
+  MIN_DIMENSION_MM,
+} from '@hsw-editor/tools/contract';
 import { Button } from '@/components/ui/button.tsx';
 import { Input } from '@/components/ui/input.tsx';
-import { claimPreviewSlot, previewSlotStore, releasePreviewSlot } from '@/features/bank/previewSlot.ts';
+import {
+  claimPreviewSlot,
+  previewSlotStore,
+  releasePreviewSlot,
+} from '@/features/bank/previewSlot.ts';
 import { useI18n } from '@/i18n/index.ts';
 import { cn } from '@/lib/cn.ts';
 import { useStore } from '@/state/react.ts';
@@ -11,16 +22,18 @@ import { toolRoutes, type ToolClassInfo } from '../api.ts';
 import { ToolPreview3D } from '../ToolPreview3D.tsx';
 import { CandidateCompare } from './CandidateCompare.tsx';
 import type { DraftEdits } from './useDraftEdits.ts';
-import { percent, topClasses } from './wizardModel.ts';
+import { parseTypedDimension, percent, topClasses } from './wizardModel.ts';
 
 const PREVIEW_SLOT = 'tool-wizard-preview';
 const GENERIC = '__generic__';
-const DIM_KEYS = ['length', 'width', 'thickness'] as const;
+const DIM_KEYS = DimensionKeySchema.options;
 
 function Block({ title, children }: { readonly title: string; readonly children: ReactNode }) {
   return (
     <section className="grid gap-1.5">
-      <h4 className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{title}</h4>
+      <h4 className="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+        {title}
+      </h4>
       {children}
     </section>
   );
@@ -46,34 +59,61 @@ export function ObjectEditor({ draft, object, classes, edits }: ObjectEditorProp
     return () => releasePreviewSlot(PREVIEW_SLOT);
   }, []);
   const [dimDraft, setDimDraft] = useState<Record<string, string>>({});
+  const [dimError, setDimError] = useState<
+    Partial<Record<DimensionKey, 'invalid' | 'range'>>
+  >({});
   const [splitInto, setSplitInto] = useState(2);
   const locked = object.status === 'added';
   const top = topClasses(object, 3);
-  const className = (id: string): string => classes.find((cls) => cls.id === id)?.name[locale] ?? id;
+  const className = (id: string): string =>
+    classes.find((cls) => cls.id === id)?.name[locale] ?? id;
   const name = object.name[locale] ?? object.name.en ?? object.name.ru ?? '';
   const preview = object.preview;
   const dims = object.dimensionsMm;
   const typed = object.userDimensions;
 
-  /** No size is known yet (nothing to scale by): one typed real length is enough to fit and add the tool. */
-  const commitLength = (): void => {
-    const raw = dimDraft['length'];
-    setDimDraft(({ length: _done, ...rest }) => rest);
+  /**
+   * Sends a typed size, or shows why it is refused (not a number / outside the sane range): a refused value is never
+   * sent and stays in the field next to its message, so nothing changes silently.
+   */
+  const commitTyped = (key: DimensionKey, send: (valueMm: number) => void): void => {
+    const raw = dimDraft[key];
     if (raw === undefined) return;
-    const value = Number(raw.replace(',', '.'));
-    if (Number.isFinite(value) && value > 0) {
-      void edits.patch(object.key, { dimensionsMm: { length: value } });
+    const parsed = parseTypedDimension(raw, key);
+    if (parsed.kind === 'invalid' || parsed.kind === 'range') {
+      setDimError((previous) => ({ ...previous, [key]: parsed.kind }));
+      return;
     }
+    setDimError(({ [key]: _done, ...rest }) => rest);
+    setDimDraft(({ [key]: _done, ...rest }) => rest);
+    if (parsed.kind === 'ok') send(parsed.valueMm);
   };
 
-  const commitDim = (key: (typeof DIM_KEYS)[number]): void => {
-    const raw = dimDraft[key];
-    setDimDraft(({ [key]: _done, ...rest }) => rest);
-    if (raw === undefined || dims === null) return;
-    const value = Number(raw.replace(',', '.'));
-    if (Number.isFinite(value) && value > 0 && Math.abs(value - dims[key]) > 1e-6) {
-      void edits.patch(object.key, { dimensionsMm: { [key]: value } });
-    }
+  const typeInto = (key: DimensionKey, raw: string): void => {
+    setDimDraft((previous) => ({ ...previous, [key]: raw }));
+    setDimError(({ [key]: _done, ...rest }) => rest);
+  };
+
+  /** No size is known yet (nothing to scale by): one typed real length is enough to fit and add the tool. */
+  const commitLength = (): void =>
+    commitTyped(
+      'length',
+      (valueMm) => void edits.patch(object.key, { dimensionsMm: { length: valueMm } }),
+    );
+
+  const commitDim = (key: DimensionKey): void =>
+    commitTyped(key, (valueMm) => {
+      // retyping the size already asked for changes nothing
+      if (typed?.[key] !== valueMm)
+        void edits.patch(object.key, { dimensionsMm: { [key]: valueMm } });
+    });
+
+  const dimMessage = (key: DimensionKey): string | null => {
+    const problem = dimError[key];
+    if (problem === undefined) return null;
+    return problem === 'range'
+      ? t('toolWizard.editor.dimOutOfRange', { min: MIN_DIMENSION_MM[key], max: MAX_DIMENSION_MM })
+      : t('toolWizard.editor.dimInvalid');
   };
 
   return (
@@ -114,11 +154,14 @@ export function ObjectEditor({ draft, object, classes, edits }: ObjectEditorProp
           defaultValue={name}
           disabled={edits.busy || locked}
           aria-label={t('toolWizard.editor.name')}
-          placeholder={object.classId === null ? t('toolWizard.class.generic') : className(object.classId)}
+          placeholder={
+            object.classId === null ? t('toolWizard.class.generic') : className(object.classId)
+          }
           data-testid="wizard-object-name"
           onBlur={(event) => {
             const next = event.target.value.trim();
-            if (next !== '' && next !== name) void edits.patch(object.key, { name: { [locale]: next } });
+            if (next !== '' && next !== name)
+              void edits.patch(object.key, { name: { [locale]: next } });
           }}
         />
       </Block>
@@ -147,8 +190,14 @@ export function ObjectEditor({ draft, object, classes, edits }: ObjectEditorProp
                 />
                 <span className="font-medium">{className(suggestion.classId)}</span>
                 <span className="font-mono text-[11px]">{percent(suggestion.score)}%</span>
-                <span aria-hidden className="col-span-2 block h-1 overflow-hidden rounded-full bg-muted">
-                  <span className="block h-full bg-primary" style={{ width: `${percent(suggestion.score)}%` }} />
+                <span
+                  aria-hidden
+                  className="col-span-2 block h-1 overflow-hidden rounded-full bg-muted"
+                >
+                  <span
+                    className="block h-full bg-primary"
+                    style={{ width: `${percent(suggestion.score)}%` }}
+                  />
                 </span>
               </label>
             );
@@ -161,7 +210,9 @@ export function ObjectEditor({ draft, object, classes, edits }: ObjectEditorProp
             disabled={edits.busy || locked}
             data-testid="wizard-class-select"
             onChange={(event) =>
-              void edits.patch(object.key, { classId: event.target.value === GENERIC ? null : event.target.value })
+              void edits.patch(object.key, {
+                classId: event.target.value === GENERIC ? null : event.target.value,
+              })
             }
             className="h-8 rounded-lg border border-input bg-transparent px-2 text-sm text-foreground"
           >
@@ -191,19 +242,31 @@ export function ObjectEditor({ draft, object, classes, edits }: ObjectEditorProp
                 <Input
                   type="number"
                   inputMode="decimal"
-                  min={0.1}
+                  min={MIN_DIMENSION_MM.length}
+                  max={MAX_DIMENSION_MM}
                   step={0.5}
                   value={dimDraft['length'] ?? ''}
                   disabled={edits.busy}
+                  aria-invalid={dimError.length !== undefined}
                   className="h-7 w-32 text-right font-mono text-xs"
                   data-testid="wizard-length-only"
-                  onChange={(event) => setDimDraft({ ...dimDraft, length: event.target.value })}
+                  onChange={(event) => typeInto('length', event.target.value)}
                   onBlur={commitLength}
                   onKeyDown={(event) => {
                     if (event.key === 'Enter') commitLength();
                   }}
                 />
               </label>
+            )}
+            {dimMessage('length') === null ? null : (
+              <p
+                role="alert"
+                className="text-[11px] text-destructive"
+                data-testid="wizard-dim-error"
+                data-dim="length"
+              >
+                {dimMessage('length')}
+              </p>
             )}
           </>
         ) : (
@@ -215,12 +278,14 @@ export function ObjectEditor({ draft, object, classes, edits }: ObjectEditorProp
                   <Input
                     type="number"
                     inputMode="decimal"
-                    min={0.1}
+                    min={MIN_DIMENSION_MM[key]}
+                    max={MAX_DIMENSION_MM}
                     step={0.5}
                     value={dimDraft[key] ?? `${Math.round(dims[key] * 10) / 10}`}
                     disabled={edits.busy || locked}
+                    aria-invalid={dimError[key] !== undefined}
                     className="h-7 text-right font-mono text-xs"
-                    onChange={(event) => setDimDraft({ ...dimDraft, [key]: event.target.value })}
+                    onChange={(event) => typeInto(key, event.target.value)}
                     onBlur={() => commitDim(key)}
                     onKeyDown={(event) => {
                       if (event.key === 'Enter') commitDim(key);
@@ -229,6 +294,36 @@ export function ObjectEditor({ draft, object, classes, edits }: ObjectEditorProp
                 </label>
               ))}
             </div>
+            {DIM_KEYS.map((key) => {
+              const message = dimMessage(key);
+              return message === null ? null : (
+                <p
+                  key={key}
+                  role="alert"
+                  className="text-[11px] text-destructive"
+                  data-testid="wizard-dim-error"
+                  data-dim={key}
+                >
+                  {t(`toolWizard.editor.dimName.${key}`)}: {message}
+                </p>
+              );
+            })}
+            {object.dimensionAdjustments.map((adjustment) => (
+              <output
+                key={adjustment.key}
+                className="flex items-start gap-1.5 text-[11px] text-warn"
+                data-testid="wizard-dim-adjusted"
+                data-dim={adjustment.key}
+              >
+                <RulerIcon className="mt-0.5 size-3 shrink-0" aria-hidden />
+                {t('toolWizard.editor.dimAdjusted', {
+                  name: t(`toolWizard.editor.dimName.${adjustment.key}`),
+                  requested: Math.round(adjustment.requestedMm * 10) / 10,
+                  actual: Math.round(adjustment.actualMm * 10) / 10,
+                  reason: t(`toolWizard.editor.dimReason.${adjustment.reason}`),
+                })}
+              </output>
+            ))}
             <p className="text-[11px] text-muted-foreground">
               {object.dimensionsEstimated
                 ? t('toolWizard.editor.dimsEstimated')

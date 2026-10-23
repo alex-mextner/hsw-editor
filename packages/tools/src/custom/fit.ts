@@ -6,7 +6,7 @@
  * the observed widths. Steps: uniform length scaling, orientation test (front/side x flipped), coordinate
  * descent over the numeric dimension parameters, greedy choice of style options.
  */
-import { clamp, lerp } from '../math.ts';
+import { clamp, lerp, sizeOf } from '../math.ts';
 import { type ToolModel, sectionExtentsAt } from '../model.ts';
 import type { AnyValues, NumSpec, ParamValue } from '../params.ts';
 import { type AnyToolClass, generate, getToolClass } from '../registry.ts';
@@ -31,7 +31,24 @@ export interface FitOptions {
   /** Start values (defaults of the class when omitted). */
   start?: Readonly<Record<string, ParamValue>>;
   maxEvals?: number;
+  /** Exact overall size (mm) of the generated model to reach after the shape fit, as far as the class ranges allow. */
+  targets?: DimensionTargets;
 }
+
+export interface DimensionTargets {
+  lengthMm?: number | undefined;
+  /** The length is the profile's own, not typed: it yields to a typed width. */
+  lengthHeld?: boolean | undefined;
+  widthMm?: number | undefined;
+}
+
+/** The refinement stops when every targeted size is within this many mm. */
+const TARGET_TOLERANCE_MM = 0.005;
+const REFINE_ITERATIONS = 12;
+/** Passes on the full-detail model, which the cheap-model result is already close to. */
+const POLISH_ITERATIONS = 5;
+/** Largest change of one parameter per refinement step (a factor), so a bad Jacobian cannot throw the shape away. */
+const MAX_STEP_LOG = Math.log(3);
 
 const SAMPLES = 28;
 
@@ -188,7 +205,22 @@ export function fitClassToProfile(
     }
   }
   descend([0.1, 0.04]);
-
+  if (options.targets) {
+    // the exact sizes the user typed beat the silhouette loss: refine on the cheap fit-time model, polish on the
+    // full-detail one (its extra geometry changes the outer size a little), then re-score the shape that results
+    refineToTargets(dims, values, options.targets, build, REFINE_ITERATIONS);
+    model = refineToTargets(
+      dims,
+      values,
+      options.targets,
+      (v) => {
+        evals++;
+        return generate(classId, v, 0);
+      },
+      POLISH_ITERATIONS,
+    );
+    cur = score(model, obs, best.view, best.flipped);
+  }
   const params = Object.fromEntries(
     Object.entries(cls.schema).map(([key, spec]) => [key, values[key] ?? spec.def]),
   ) as AnyValues;
@@ -202,6 +234,141 @@ export function fitClassToProfile(
     lengthMm: cur.lengthMm,
     evals,
   };
+}
+
+interface Goal {
+  target: number;
+  /** 1 for a typed size; small for a size that is only held. */
+  weight: number;
+  read: (model: ToolModel) => number;
+}
+
+const HELD_WEIGHT = 1e-3;
+
+/** Minimum-norm solution of `J d = -err` for one or two goals; `null` when the goals do not respond to any parameter. */
+function minNormStep(
+  jacobian: readonly (readonly number[])[],
+  err: readonly number[],
+): number[] | null {
+  const n = jacobian[0]?.length ?? 0;
+  const dot = (a: readonly number[], b: readonly number[]): number =>
+    a.reduce((sum, x, i) => sum + x * (b[i] ?? 0), 0);
+  const row = (i: number): readonly number[] => jacobian[i] ?? [];
+  const single = (i: number): number[] | null => {
+    const g = dot(row(i), row(i));
+    if (g < 1e-12) return null;
+    const scale = -(err[i] ?? 0) / g;
+    return row(i).map((x) => x * scale);
+  };
+  if (jacobian.length === 1) return n === 0 ? null : single(0);
+  const a = dot(row(0), row(0));
+  const b = dot(row(0), row(1));
+  const d = dot(row(1), row(1));
+  const det = a * d - b * b;
+  if (det > 1e-9 * a * d && a * d > 0) {
+    // lambda = (J Jt)^-1 (-err); step = Jt lambda
+    const l0 = (-(err[0] ?? 0) * d + (err[1] ?? 0) * b) / det;
+    const l1 = (-(err[1] ?? 0) * a + (err[0] ?? 0) * b) / det;
+    return row(0).map((x, i) => x * l0 + (row(1)[i] ?? 0) * l1);
+  }
+  // the goals pull the same parameters the same way: no joint step; the caller serves them one at a time
+  return null;
+}
+
+/**
+ * After the silhouette fit: nudge the class's mm dimensions (minimum change in log space, clamped to the class ranges)
+ * until the model's overall length / width are exactly the targets. A target the ranges cannot hold ends at the
+ * nearest reachable size. Mutates `values`, returns the model built from them.
+ */
+function refineToTargets(
+  dims: readonly [string, NumSpec][],
+  values: AnyValues,
+  targets: DimensionTargets,
+  build: (v: AnyValues) => ToolModel,
+  iterations: number,
+): ToolModel {
+  const goals: Goal[] = [];
+  if (targets.lengthMm !== undefined) {
+    // a held (not typed) length yields to a typed width when one parameter drives both
+    goals.push({
+      target: targets.lengthMm,
+      weight: targets.lengthHeld ? HELD_WEIGHT : 1,
+      read: (m) => sizeOf(m.bounds)[1],
+    });
+  }
+  if (targets.widthMm !== undefined) {
+    goals.push({ target: targets.widthMm, weight: 1, read: (m) => sizeOf(m.bounds)[0] });
+  }
+  const valueOf = (key: string, spec: NumSpec): number =>
+    typeof values[key] === 'number' ? (values[key] as number) : spec.def;
+  const errorsOf = (m: ToolModel): number[] => goals.map((g) => g.read(m) - g.target);
+  const worst = (errors: readonly number[]): number => Math.max(...errors.map(Math.abs));
+  /** Squared relative error: a target the ranges cannot reach does not hide progress on the other one. */
+  const lossOf = (errors: readonly number[]): number =>
+    errors.reduce(
+      (sum, e, i) => sum + (goals[i]?.weight ?? 1) * (e / (goals[i]?.target ?? 1)) ** 2,
+      0,
+    );
+  /** Which single goal to serve first: the typed ones, then by how far off (relative) they are. */
+  const priority = (i: number, errors: readonly number[]): number =>
+    (goals[i]?.weight ?? 1) * Math.abs((errors[i] ?? 0) / (goals[i]?.target ?? 1));
+  let model = build(values);
+  const pinned = new Set<string>();
+  // a parameter that hit its bound stays pinned for the rest of this pass: the bound is the answer for its goal
+  for (let iteration = 0; iteration < iterations && goals.length > 0; iteration++) {
+    const err = errorsOf(model);
+    if (worst(err) <= TARGET_TOLERANCE_MM) break;
+    const active = dims.filter(([key]) => !pinned.has(key));
+    if (active.length === 0) break;
+    const jacobian: number[][] = goals.map(() => []);
+    for (const [key, spec] of active) {
+      const now = valueOf(key, spec);
+      // probe away from the bound the value sits on
+      let probe = clamp(now * 1.01, spec.min, spec.max);
+      if (probe === now) probe = clamp(now * 0.99, spec.min, spec.max);
+      const sensitivity = probe === now ? null : build({ ...values, [key]: probe });
+      goals.forEach((g, i) => {
+        const change =
+          sensitivity === null ? 0 : (g.read(sensitivity) - g.read(model)) / Math.log(probe / now);
+        jacobian[i]?.push(change);
+      });
+    }
+    // all goals together first; when that cannot improve (one of them is out of reach), each goal alone, worst first
+    const all = goals.map((_, i) => i);
+    const subsets = [
+      all,
+      ...(all.length > 1 ? [...all].sort((a, b) => priority(b, err) - priority(a, err)).map((i) => [i]) : []),
+    ];
+    let moved = false;
+    for (const subset of subsets) {
+      if (moved) break;
+      const step = minNormStep(
+        subset.map((i) => jacobian[i] ?? []),
+        subset.map((i) => err[i] ?? 0),
+      );
+      if (step === null) continue;
+      const biggest = Math.max(...step.map(Math.abs));
+      const damp = biggest > MAX_STEP_LOG ? MAX_STEP_LOG / biggest : 1;
+      for (let shrink = 1; shrink >= 0.25 && !moved; shrink /= 2) {
+        const next: AnyValues = { ...values };
+        const clamped: string[] = [];
+        active.forEach(([key, spec], j) => {
+          const wanted = valueOf(key, spec) * Math.exp(damp * shrink * (step[j] ?? 0));
+          next[key] = clamp(wanted, spec.min, spec.max);
+          if (next[key] !== wanted) clamped.push(key);
+        });
+        const built = build(next);
+        if (lossOf(errorsOf(built)) < lossOf(err)) {
+          Object.assign(values, next);
+          model = built;
+          for (const key of clamped) pinned.add(key);
+          moved = true;
+        }
+      }
+    }
+    if (!moved) break;
+  }
+  return model;
 }
 
 /** Uniformly rescale an observed profile to a new length (user-entered real dimension). */
