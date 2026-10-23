@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import type { BankElement, BankIndex } from '@hsw-editor/bank';
-import type { Op, Wall, WallItem } from '@hsw-editor/core';
+import type { Wall, WallItem } from '@hsw-editor/core';
 import { bankStore } from '@/bank/client.ts';
 import { familyOf } from '@/bank/suggest.ts';
 import { suggestHolders } from '@/bank/holderSuggestions.ts';
@@ -13,6 +13,7 @@ import { toolInterfaceOf } from '@/wall/toolInterface.ts';
 import { sessionStore, submitOps } from '@/wall/session.ts';
 import { usePhysicsRatings, useRankedCandidates } from '@/physics/suggest.ts';
 import { VariantPickerCard, type Candidate } from './VariantPickerCard.tsx';
+import { switchOps } from './variantLadder.ts';
 
 const NO_HOLDER_IDS: readonly string[] = [];
 
@@ -41,17 +42,6 @@ function toolClassOf(item: WallItem, wall: Wall | null): string | undefined {
   if ('toolClass' in item && typeof item.toolClass === 'string') return item.toolClass;
   const ref = wall?.models.find((model) => model.id === item.modelRefId);
   return ref && 'toolClass' in ref && typeof ref.toolClass === 'string' ? ref.toolClass : undefined;
-}
-
-/** Ops that make `item` use `candidate`, dropping params the new element does not define. */
-function switchOps(item: WallItem, candidate: BankElement): Op[] {
-  const known = new Set((candidate.params ?? []).map((def) => def.key));
-  const stale = Object.keys(item.params).filter((key) => !known.has(key));
-  const ops: Op[] = [
-    { type: 'setVariant', id: item.id, variantId: candidate.id, bankId: candidate.id },
-  ];
-  if (stale.length > 0) ops.push({ type: 'setParams', id: item.id, unset: stale });
-  return ops;
 }
 
 function candidatesFor(

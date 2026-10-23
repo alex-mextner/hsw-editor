@@ -16,7 +16,7 @@ const POLL_MS = 700;
 export type DetectState =
   | { readonly phase: 'idle' }
   | { readonly phase: 'running'; readonly progress: JobProgress | null }
-  /** The server has no `calibrate-grid` handler (the vision service is optional). */
+  /** The server has no `vision.calibrate` handler (the vision service is optional). */
   | { readonly phase: 'unavailable' }
   | { readonly phase: 'review'; readonly result: GridResult; readonly calibration: Calibration }
   | { readonly phase: 'failed'; readonly message: string | null };

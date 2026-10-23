@@ -1,6 +1,7 @@
 import {
   Columns2,
   Download,
+  Contrast,
   ScanSearch,
   Eye,
   EyeOff,
@@ -15,10 +16,12 @@ import {
 import { IconButton } from '@/components/IconButton.tsx';
 import { Slider } from '@/components/ui/slider.tsx';
 import { useShortcutLabel } from '@/commands/app.ts';
-import { useI18n } from '@/i18n/index.ts';
+import { useI18n, type MessageKey } from '@/i18n/index.ts';
 import {
   photoStore,
+  type WebContrastMode,
   setOverlayOpacity,
+  cycleWebContrast,
   startCalibration,
   toggleAlign,
   togglePhotoHidden,
@@ -26,9 +29,20 @@ import {
 } from '@/state/photo.ts';
 import { useStore } from '@/state/react.ts';
 import { sessionStore } from '@/wall/session.ts';
-import { exportPhotoPng, findPhotoTools, togglePhotoMode } from './photoActions.ts';
+import {
+  exportPhotoPng,
+  findPhotoTools,
+  isGridCalibrated,
+  togglePhotoMode,
+} from './photoActions.ts';
 import { findToolsStore } from './findTools.ts';
 import { choosePhotoFile } from './photoImport.ts';
+
+const WEB_CONTRAST_LABEL = {
+  auto: 'photo.webContrast.auto',
+  on: 'photo.webContrast.on',
+  off: 'photo.webContrast.off',
+} as const satisfies Record<WebContrastMode, MessageKey>;
 
 /** Photo controls of the viewport toolbar: photo mode on/off, import, calibrate, how the photo shows, board drag. */
 export function PhotoToolbar() {
@@ -38,9 +52,11 @@ export function PhotoToolbar() {
   const wall = useStore(sessionStore)?.wall;
   const photoId = photo.photoId;
   const tools = useStore(findToolsStore);
+  // A grid-detected calibration sits on the real lattice: turning the board would take it off.
+  const onLattice = isGridCalibrated(wall, photoId);
 
   return (
-    <div className="pointer-events-auto flex items-center gap-1 rounded-lg border border-border bg-panel/95 p-0.5 pr-2 shadow-sm backdrop-blur">
+    <div className="pointer-events-auto flex max-w-[calc(100vw-1rem)] flex-wrap items-center gap-1 rounded-lg border border-border bg-panel/95 p-0.5 pr-2 shadow-sm backdrop-blur">
       <IconButton
         label={photoId !== null ? t('overlay.hide') : t('overlay.show')}
         shortcut={overlayKey}
@@ -70,6 +86,13 @@ export function PhotoToolbar() {
           >
             {photo.photoHidden ? <ImageOff /> : <ImageIcon />}
           </IconButton>
+          <IconButton
+            label={t(WEB_CONTRAST_LABEL[photo.webContrast])}
+            pressed={photo.webContrast === 'on'}
+            onClick={cycleWebContrast}
+          >
+            <Contrast />
+          </IconButton>
           <IconButton label={t('photo.split')} pressed={photo.split !== null} onClick={toggleSplit}>
             <Columns2 />
           </IconButton>
@@ -83,6 +106,7 @@ export function PhotoToolbar() {
           <IconButton
             label={t('photo.rollBoard')}
             pressed={photo.align === 'roll'}
+            disabled={onLattice}
             onClick={() => toggleAlign('roll')}
           >
             <RotateCw />

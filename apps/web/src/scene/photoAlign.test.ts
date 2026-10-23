@@ -7,7 +7,7 @@ import {
   toCoreCalibration,
 } from '@hsw-editor/overlay';
 import { DEFAULT_BOARD } from '@hsw-editor/core';
-import { alignCalibration, withHomography } from './photoAlign.ts';
+import { alignCalibration, snapToLattice, withHomography } from './photoAlign.ts';
 
 const image = { width: 1400, height: 1000 };
 const extent = boardExtent(DEFAULT_BOARD);
@@ -113,5 +113,63 @@ describe('alignCalibration', () => {
       nowPx: [310, 300],
     });
     expect(moved?.homography).toBeDefined();
+  });
+});
+
+describe('snapToLattice', () => {
+  const lattice = { colPitchMm: 20, rowPitchMm: 24 };
+
+  test('a shift along a column is a whole number of rows, and along x a whole number of columns', () => {
+    expect(snapToLattice(0.4, 49, lattice)).toEqual({ dxMm: 0, dyMm: 48 });
+    expect(snapToLattice(41, 1, lattice)).toEqual({ dxMm: 40, dyMm: 0 });
+  });
+
+  test('a one-column shift carries the half-row stagger', () => {
+    // Plain rounding would give (20, 0) - a spot between real cells.
+    expect(snapToLattice(20, 0, lattice).dxMm).toBe(20);
+    expect(Math.abs(snapToLattice(20, 0, lattice).dyMm)).toBe(12);
+    expect(snapToLattice(21, 4, lattice).dyMm % 24).not.toBe(0);
+  });
+
+  test('negative shifts snap the same way', () => {
+    expect(snapToLattice(-41, -49, lattice)).toEqual({ dxMm: -40, dyMm: -48 });
+    expect(snapToLattice(-20, 0, lattice).dxMm).toBe(-20);
+    expect(Math.abs(snapToLattice(-20, 0, lattice).dyMm)).toBe(12);
+  });
+
+  test('every result is a lattice translation', () => {
+    for (let i = 0; i < 200; i += 1) {
+      const dx = Math.sin(i * 12.9898) * 400;
+      const dy = Math.cos(i * 78.233) * 400;
+      const snapped = snapToLattice(dx, dy, lattice);
+      const col = snapped.dxMm / 20;
+      const row2 = snapped.dyMm / 12;
+      expect(Number.isInteger(col)).toBe(true);
+      expect(Number.isInteger(row2)).toBe(true);
+      expect(Math.abs(col - row2) % 2).toBe(0);
+    }
+  });
+});
+
+describe('alignCalibration on a grid calibration', () => {
+  test('a move shifts the board by a lattice translation when the lattice is given', () => {
+    const lattice = { colPitchMm: DEFAULT_BOARD.colPitchMm, rowPitchMm: DEFAULT_BOARD.rowPitchMm };
+    const gesture = { kind: 'move', startPx: [600, 500], nowPx: [650, 470] } as const;
+    const moved = alignCalibration(corners, image, extent, gesture, lattice);
+    const free = alignCalibration(corners, image, extent, gesture);
+    if (!moved || !free) throw new Error('no calibration');
+    const before = photoMapFromCalibration(corners, image, extent);
+    const after = photoMapFromCalibration(moved, image, extent);
+    if (!before || !after) throw new Error('no map');
+    // A wall-frame shift adds the same translation to every photo pixel's wall point.
+    const a = before.pxToWall([700, 400]);
+    const b = after.pxToWall([700, 400]);
+    if (!a || !b) throw new Error('no wall point');
+    const cols = (b[0] - a[0]) / lattice.colPitchMm;
+    const rows2 = (b[1] - a[1]) / (lattice.rowPitchMm / 2);
+    expect(cols).toBeCloseTo(Math.round(cols), 6);
+    expect(rows2).toBeCloseTo(Math.round(rows2), 6);
+    expect(Math.abs(Math.round(cols) - Math.round(rows2)) % 2).toBe(0);
+    expect(free.homography).not.toEqual(moved.homography);
   });
 });

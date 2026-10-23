@@ -1,10 +1,10 @@
-/** `calibrate-grid` job: API calls and the mapping from a job result to a photo calibration. */
+/** `vision.calibrate` job (grid mode): API calls and the mapping from its result to a photo calibration. */
 import { CalibrationSchema, type Calibration } from '@hsw-editor/core';
 import { z } from 'zod';
 import { fetchJson } from '@/api/http.ts';
 import { postJson } from '@/api/requests.ts';
 
-export const GRID_JOB_KIND = 'calibrate-grid';
+export const GRID_JOB_KIND = 'vision.calibrate';
 
 const ProgressSchema = z.object({
   done: z.number().optional(),
@@ -39,7 +39,14 @@ export type GridResult = z.infer<typeof GridResultSchema>;
 export async function startGridJob(wallId: string, photoId: string): Promise<Job> {
   const json = await postJson('/api/jobs', {
     kind: GRID_JOB_KIND,
-    input: { wallId, photoId },
+    // The wizard shows the result for review; nothing is stored until the user applies it.
+    input: {
+      wallId,
+      photoId,
+      calibrate: { mode: 'grid' },
+      applyCalibration: false,
+      askUser: false,
+    },
     wallId,
   });
   return JobEnvelopeSchema.parse(json).job;
@@ -60,13 +67,19 @@ export function jobErrorText(job: Job): string | null {
   return typeof parsed.data === 'string' ? parsed.data : parsed.data.message;
 }
 
-/** `null` when the result has no scale (neither `mmPerPx` nor a homography): nothing to apply. */
+const GridJobResultSchema = z.object({
+  calibration: z.object({ ok: z.boolean(), core: GridResultSchema.optional() }),
+});
+
+/** `null` when the job found no grid, or the result has no scale (neither `mmPerPx` nor a homography). */
 export function gridCalibration(
   result: unknown,
 ): { result: GridResult; calibration: Calibration } | null {
-  const parsed = GridResultSchema.safeParse(result);
-  if (!parsed.success) return null;
-  const fields = parsed.data;
+  const job = GridJobResultSchema.safeParse(result);
+  if (!job.success || !job.data.calibration.ok || job.data.calibration.core === undefined) {
+    return null;
+  }
+  const fields = job.data.calibration.core;
   if (fields.mmPerPx === undefined && fields.homography === undefined) return null;
   const calibration = CalibrationSchema.safeParse({
     method: 'grid',

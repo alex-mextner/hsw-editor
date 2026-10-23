@@ -3,6 +3,7 @@ import { MoveHorizontalIcon } from 'lucide-react';
 import type { Wall } from '@hsw-editor/core';
 import { api } from '@/api/http.ts';
 import { notify } from '@/features/notices/notices.ts';
+import { PhotoGhosts } from '@/features/photo/PhotoGhosts.tsx';
 import { useT } from '@/i18n/index.ts';
 import { setSplit, photoStore } from '@/state/photo.ts';
 import { useStore } from '@/state/react.ts';
@@ -103,6 +104,7 @@ export function PhotoFrame({
         </div>
         {view && photo.split !== null ? <SplitHandle split={photo.split} /> : null}
         {view ? <PhotoGuides wall={wall} view={view} /> : null}
+        {view ? <PhotoGhosts wall={wall} view={view} /> : null}
         {view ? <PhotoAlign wall={wall} view={view} /> : null}
       </div>
     </div>

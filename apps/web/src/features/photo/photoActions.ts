@@ -1,5 +1,5 @@
 /** Photo mode entry points shared by the top bar, toolbar, inspector, empty-wall hints and the command registry. */
-import type { Photo } from '@hsw-editor/core';
+import type { Photo, Wall } from '@hsw-editor/core';
 import { api } from '@/api/http.ts';
 import { notify } from '@/features/notices/notices.ts';
 import { t } from '@/i18n/index.ts';
@@ -15,6 +15,11 @@ import {
   togglePhotoHidden,
   toggleSplit,
 } from '@/state/photo.ts';
+
+/** True when the photo's calibration comes from the grid detector, i.e. the board sits on the real lattice. */
+export function isGridCalibrated(wall: Wall | null | undefined, photoId: string | null): boolean {
+  return wall?.photos.find((entry) => entry.id === photoId)?.calibration?.method === 'grid';
+}
 
 /** Opens photo mode on `photo`; a photo without a calibration starts in the wizard. */
 export function showPhoto(photo: Photo): void {
@@ -76,10 +81,23 @@ export async function findPhotoTools(): Promise<void> {
   if (!shown) return;
   await runFindTools(shown.wallId, shown.photo.id);
   const state = findToolsStore.get();
-  if (state.phase === 'done') notify('info', t('photo.findTools.done'));
-  else if (state.phase === 'unavailable') notify('info', t('photo.findTools.unavailable'));
-  else if (state.phase === 'failed') {
-    notify('error', t('photo.findTools.failed', { message: state.message ?? '' }));
+  switch (state.phase) {
+    case 'done':
+      notify(
+        'info',
+        state.found > 0
+          ? t('photo.findTools.done', { count: state.found })
+          : t('photo.findTools.none'),
+      );
+      break;
+    case 'unavailable':
+      notify('info', t('photo.findTools.unavailable'));
+      break;
+    case 'failed':
+      notify('error', t('photo.findTools.failed', { message: state.message ?? '' }));
+      break;
+    default:
+      break;
   }
 }
 

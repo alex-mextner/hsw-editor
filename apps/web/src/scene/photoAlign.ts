@@ -16,6 +16,46 @@ import {
 
 export type AlignKind = 'move' | 'roll';
 
+/** Cell pitches of the board: a grid-detected photo is calibrated on the real lattice, so moves stay on it. */
+export interface Lattice {
+  readonly colPitchMm: number;
+  readonly rowPitchMm: number;
+}
+
+/** A shift of (`col`, `row2`) = whole columns and half rows is a lattice translation when the parities agree. */
+function isLatticeShift(col: number, row2: number): boolean {
+  return Math.abs(row2 - col) % 2 === 0;
+}
+
+/**
+ * The lattice translation nearest to (`dxMm`, `dyMm`): whole columns and half rows with the stagger parity (a column
+ * step shifts the row by half a pitch), so every board cell lands on a cell of the real wall.
+ */
+export function snapToLattice(
+  dxMm: number,
+  dyMm: number,
+  lattice: Lattice,
+): { readonly dxMm: number; readonly dyMm: number } {
+  const halfRow = lattice.rowPitchMm / 2;
+  const col = Math.round(dxMm / lattice.colPitchMm);
+  const row2 = Math.round(dyMm / halfRow);
+  const candidates = (
+    [
+      [col, row2],
+      [col, row2 - 1],
+      [col, row2 + 1],
+      [col - 1, row2],
+      [col + 1, row2],
+    ] as const
+  ).filter(([c, r]) => isLatticeShift(c, r));
+  const distance = ([c, r]: readonly [number, number]): number =>
+    (c * lattice.colPitchMm - dxMm) ** 2 + (r * halfRow - dyMm) ** 2;
+  const best = candidates.reduce((nearest, candidate) =>
+    distance(candidate) < distance(nearest) ? candidate : nearest,
+  );
+  return { dxMm: best[0] * lattice.colPitchMm, dyMm: best[1] * halfRow };
+}
+
 /** The calibration as a stored homography, also for a calibration that only knows a scale. */
 export function withHomography(calibration: Calibration, map: PhotoMap): Calibration {
   if (calibration.homography !== undefined) return calibration;
@@ -40,6 +80,8 @@ export function alignCalibration(
   image: ImageSize,
   extent: BoardExtent,
   gesture: { readonly kind: AlignKind; readonly startPx: Vec2; readonly nowPx: Vec2 },
+  /** Given for a calibration fitted on the real lattice (grid detector): a move then snaps to whole cells. */
+  lattice?: Lattice,
 ): Calibration | null {
   const map = photoMapFromCalibration(base, image, extent);
   if (map === null) return null;
@@ -48,7 +90,9 @@ export function alignCalibration(
   if (from === null || to === null) return null;
   const change: WallFrameChange =
     gesture.kind === 'move'
-      ? { dxMm: from[0] - to[0], dyMm: from[1] - to[1] }
+      ? lattice === undefined
+        ? { dxMm: from[0] - to[0], dyMm: from[1] - to[1] }
+        : snapToLattice(from[0] - to[0], from[1] - to[1], lattice)
       : rollChange(from, to, extent);
   return transformCalibration(withHomography(base, map), change);
 }

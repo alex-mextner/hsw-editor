@@ -7,6 +7,18 @@ import type { Calibration } from '@hsw-editor/core';
 
 export type AlignMode = 'move' | 'roll';
 
+/** How the web is outlined over the photo: from the wall's brightness (`auto`), or forced on / off. */
+export type WebContrastMode = 'auto' | 'on' | 'off';
+const NEXT_WEB_CONTRAST: Readonly<Record<WebContrastMode, WebContrastMode>> = {
+  auto: 'on',
+  on: 'off',
+  off: 'auto',
+};
+
+export function nextWebContrastMode(mode: WebContrastMode): WebContrastMode {
+  return NEXT_WEB_CONTRAST[mode];
+}
+
 export interface PhotoModeState {
   /** The wall photo shown behind the board; null = photo mode is off. */
   readonly photoId: string | null;
@@ -20,6 +32,8 @@ export interface PhotoModeState {
   readonly split: number | null;
   /** Dragging (`move`) or turning (`roll`) the board over the photo is on. */
   readonly align: AlignMode | null;
+  /** Outline and shading of the white web so it shows on a white wall: auto from the photo, or forced on / off. */
+  readonly webContrast: WebContrastMode;
   /** The calibration while a board drag is in progress; committed as one `setCalibration` on release. */
   readonly draft: Calibration | null;
 }
@@ -33,6 +47,7 @@ const INITIAL: PhotoModeState = {
   photoHidden: false,
   split: null,
   align: null,
+  webContrast: 'auto',
   draft: null,
 };
 
@@ -87,4 +102,9 @@ export function setSplit(value: number): void {
 export function toggleAlign(mode: AlignMode): void {
   const { align } = photoStore.get();
   patchPhoto({ align: align === mode ? null : mode, draft: null });
+}
+
+/** Cycles the web outline auto -> on -> off. */
+export function cycleWebContrast(): void {
+  patchPhoto({ webContrast: nextWebContrastMode(photoStore.get().webContrast) });
 }
