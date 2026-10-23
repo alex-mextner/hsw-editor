@@ -74,9 +74,9 @@ export function ItemsLayer({ wall, bank, bankReady, palette, onItemPointerDown }
             id: item.id,
             x: live?.x ?? item.pose.x,
             y: live?.y ?? item.pose.y,
-            z: item.pose.z,
-            rotX: item.pose.rotX,
-            rotY: item.pose.rotY,
+            z: live?.z ?? item.pose.z,
+            rotX: live?.rotX ?? item.pose.rotX,
+            rotY: live?.rotY ?? item.pose.rotY,
             rotZ: live?.rotZ ?? item.pose.rotZ,
             tint,
           };

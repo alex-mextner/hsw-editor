@@ -9,6 +9,12 @@ needs an entry here first.
 ### Added
 
 - `@hsw-editor/tools/contract`: browser-safe zod schemas and types of the tool library and import drafts.
+- Hanging tools by drag and drop (web): dragging a tool (on the wall or from the Tools panel) glows the mounts that take it
+  and shows a ghost at the snapped pose; an unsuitable mount is non-droppable and says why (ru/en tooltip). Release snaps the
+  tool onto its slot with a short glide (one undo step), a refused drop returns it. Holders carry their tools when moved,
+  rotated or nudged; removing a holder detaches its tools first (toast, Inspector flag); "add holder for tool" hangs the
+  tool through `attachItem`. Tools panel cards call `beginToolDrag` / `endToolDrag` (`scene/toolDrop.ts`). `auditHangs` judges
+  capacity on tools owning a valid slot first (#84; a slot shared by two tools gets the new `slot_taken` reason), and a test pins the compat bank-seed fixture to the committed seed.
 - Wall document schema, invertible op reducer and history (`packages/core`): `Wall`, `WallItem`, `Photo`, `ModelRef`,
   16 ops with `applyOp(wall, op) -> { wall, inverse }`, collision/bounds warnings, `schemaVersion` migration hook.
 - Wall store (`~/.local/share/hsw-editor/walls/<id>`, `HSW_EDITOR_HOME`): atomic `wall.json`, fsynced `history.jsonl`,
@@ -53,6 +59,8 @@ needs an entry here first.
 
 ### Changed
 
+- Web: a tool dragged on the wall hangs on a suitable mount or, dropped elsewhere, snaps to a lattice cell as before (Alt = exact). Its box is
+  drawn from the butt (origin) towards the tip, the frame the mounts use, so tools saved earlier appear shifted by half their length.
 - `HSW_EDITOR_DATA_DIR` is now `HSW_EDITOR_HOME`.
 - The built bank (`bank:ingest`) lives in `<data home>/bank`, the directory the daemon serves: `HSW_EDITOR_HOME`, else
   `$XDG_DATA_HOME/hsw-editor`. `bankPaths` no longer reads `HSW_EDITOR_DATA_DIR`; move a bank built under another directory

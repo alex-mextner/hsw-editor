@@ -249,17 +249,29 @@ export function resolveDrop(
   }
   if (best !== null) {
     // Placement maths only for the winner: it is the one thing the caller consumes.
-    const target: MountTarget = {
-      holderId: best.holder.item.id,
-      slot: best.slot.index,
-      compat: best.compat,
-      placement: placeTool(tool, best.holder.spec, best.slot, best.holder.item.pose),
-      distanceMm: best.distanceMm,
+    return {
+      kind: 'attach',
+      target: mountTarget(tool, best.holder, best.slot, best.compat, best.distanceMm),
     };
-    return { kind: 'attach', target };
   }
   if (refusal !== null) return { kind: 'refuse', ...refusal };
   return { kind: 'free' };
+}
+
+function mountTarget(
+  tool: ToolInterface,
+  holder: HolderEntry,
+  slot: MountSlot,
+  compat: Compatibility,
+  distanceMm: number,
+): MountTarget {
+  return {
+    holderId: holder.item.id,
+    slot: slot.index,
+    compat,
+    placement: placeTool(tool, holder.spec, slot, holder.item.pose),
+    distanceMm,
+  };
 }
 
 function hangOps(toolId: string, target: MountTarget): LeafOp[] {
@@ -432,13 +444,54 @@ export interface HangAudit {
   compat: Compatibility;
 }
 
-/** Every hung tool whose mount no longer suits it (e.g. after a variant swap or a hand edit). */
+type SlotClaim = 'unique' | 'unslotted' | 'out-of-range' | 'collision';
+
+/**
+ * How each occupant of a holder stands towards the slot it names: the first tool claiming an in-range slot
+ * owns it; tools naming a slot someone else owns, or one the mount does not have, are the surplus.
+ */
+function slotClaims(ctx: AttachContext, holder: HolderEntry): Map<string, SlotClaim> {
+  const claimed = new Set<number>();
+  const claims = new Map<string, SlotClaim>();
+  for (const item of holder.occupants) {
+    const tool = ctx.toolInterface(item);
+    const fit = tool === undefined ? undefined : compatibility(tool, holder.spec);
+    const slots = slotCount(fit?.ok ? matchedEntry(holder.spec, fit) : null);
+    // A tool the mount does not take is flagged on its own; it must not make a fitting tool lose its slot.
+    if (item.slot === undefined || !fit?.ok) claims.set(item.id, 'unslotted');
+    else if (item.slot >= slots) claims.set(item.id, 'out-of-range');
+    else if (claimed.has(item.slot)) claims.set(item.id, 'collision');
+    else {
+      claimed.add(item.slot);
+      claims.set(item.id, 'unique');
+    }
+  }
+  return claims;
+}
+
+/** Lower ranks are judged first; the two surplus kinds share the last rank and keep wall order among themselves. */
+const CLAIM_RANK: Record<SlotClaim, number> = {
+  unique: 0,
+  unslotted: 1,
+  'out-of-range': 2,
+  collision: 2,
+};
+
+/**
+ * Every hung tool whose mount no longer suits it (e.g. after a variant swap or a hand edit). Capacity is
+ * judged on tools owning a valid slot first, then unslotted ones, so the surplus (colliding or out-of-range
+ * slots) is flagged whatever the wall item order.
+ */
 export function auditHangs(ctx: AttachContext): HangAudit[] {
   const out: HangAudit[] = [];
   for (const holder of holderIndex(ctx)) {
-    // Judge capacity in slot order (unslotted last, then wall order), so the surplus tool is the one flagged.
+    const claims = slotClaims(ctx, holder);
+    const claimOf = (item: WallItem): SlotClaim => claims.get(item.id) ?? 'unslotted';
+    // Array.sort is stable: ties keep wall order.
     const ranked = [...holder.occupants].sort(
-      (a, b) => (a.slot ?? Infinity) - (b.slot ?? Infinity),
+      (a, b) =>
+        CLAIM_RANK[claimOf(a)] - CLAIM_RANK[claimOf(b)] ||
+        (a.slot ?? Infinity) - (b.slot ?? Infinity),
     );
     for (const [position, toolItem] of ranked.entries()) {
       const tool = ctx.toolInterface(toolItem);
@@ -448,13 +501,15 @@ export function auditHangs(ctx: AttachContext): HangAudit[] {
         out.push({ toolId: toolItem.id, holderId: holder.item.id, compat });
         continue;
       }
-      const entry = matchedEntry(holder.spec, compat);
-      const slots = slotCount(entry);
-      if (toolItem.slot !== undefined && toolItem.slot >= slots) {
-        const reason: Reason = {
-          code: 'slot_out_of_range',
-          params: { slot: toolItem.slot, slots },
-        };
+      const claim = claimOf(toolItem);
+      const slots = slotCount(matchedEntry(holder.spec, compat));
+      let reason: Reason | null = null;
+      if (claim === 'out-of-range' && toolItem.slot !== undefined) {
+        reason = { code: 'slot_out_of_range', params: { slot: toolItem.slot, slots } };
+      } else if (claim === 'collision' && toolItem.slot !== undefined) {
+        reason = { code: 'slot_taken', params: { slot: toolItem.slot } };
+      }
+      if (reason !== null) {
         out.push({
           toolId: toolItem.id,
           holderId: holder.item.id,
@@ -464,4 +519,28 @@ export function auditHangs(ctx: AttachContext): HangAudit[] {
     }
   }
   return out;
+}
+
+/**
+ * Where `toolItem` would hang on one specific holder: its first free slot (or `slot` when that one is free).
+ * Null when the holder is unknown, does not suit the tool, or has no such free slot. Used when the holder
+ * is chosen first and the tool follows (a new holder added for a tool).
+ */
+export function mountTargetFor(
+  ctx: AttachContext,
+  toolItem: WallItem,
+  holderId: string,
+  slot?: number,
+): MountTarget | null {
+  const tool = ctx.toolInterface(toolItem);
+  const holder = holderIndex(ctx).find((entry) => entry.item.id === holderId);
+  if (tool === undefined || holder === undefined) return null;
+  const evaluation = evaluateHolder(toolItem, tool, holder, eulerToMatrix(holder.item.pose));
+  if (!evaluation.compat.ok) return null;
+  const free = evaluation.freeSlots.find(
+    (candidate) => slot === undefined || candidate.slot.index === slot,
+  );
+  if (free === undefined) return null;
+  // Chosen by the caller, not dropped: there is no drop point, so the distance is 0.
+  return mountTarget(tool, holder, free.slot, evaluation.compat, 0);
 }

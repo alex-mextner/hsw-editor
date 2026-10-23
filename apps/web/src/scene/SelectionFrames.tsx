@@ -37,6 +37,9 @@ export function SelectionFrames({ wall, bank, palette, invalidIds }: SelectionFr
         const live = editor.dragging.get(item.id);
         const x = live?.x ?? item.pose.x;
         const y = live?.y ?? item.pose.y;
+        const z = live?.z ?? item.pose.z;
+        const rotX = live?.rotX ?? item.pose.rotX;
+        const rotY = live?.rotY ?? item.pose.rotY;
         const rotZ = live?.rotZ ?? item.pose.rotZ;
         const { dims, centre } = bounds;
         const bad = invalidIds.has(item.id) || (live !== undefined && !editor.dragValid);
@@ -45,8 +48,8 @@ export function SelectionFrames({ wall, bank, palette, invalidIds }: SelectionFr
         return (
           <group
             key={item.id}
-            position={[x * MM, y * MM, item.pose.z * MM]}
-            rotation={[item.pose.rotX * DEG, item.pose.rotY * DEG, rotZ * DEG]}
+            position={[x * MM, y * MM, z * MM]}
+            rotation={[rotX * DEG, rotY * DEG, rotZ * DEG]}
           >
             <lineSegments
               position={[centre.x * MM, centre.y * MM, centre.z * MM]}

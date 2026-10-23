@@ -6,6 +6,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs.t
 import { useI18n } from '@/i18n/index.ts';
 import { useStore } from '@/state/react.ts';
 import { presetDims } from '@/wall/toolPresets.ts';
+import { beginToolDrag, endToolDrag } from '@/scene/toolDrop.ts';
 import { addToolPreset } from '@/wall/actions.ts';
 import { startToolSelectionSync } from '@/features/bank/toolFilterStore.ts';
 
@@ -44,19 +45,32 @@ function ToolPresets() {
           const dims = presetDims(toolClass.id);
           return (
             <li key={toolClass.id}>
-              <button
-                type="button"
-                className="flex w-full items-center gap-2.5 rounded-lg border border-border bg-card px-2.5 py-2 text-left text-sm transition-colors hover:border-primary/60 hover:bg-muted"
-                onClick={() => addToolPreset(toolClass, toolClass.name[locale])}
+              {/* Like the bank cards: the wrapper is the drag source (Firefox does not start drags on buttons). */}
+              <div
+                draggable
+                onDragStart={(event) =>
+                  beginToolDrag(event.nativeEvent, {
+                    toolClass: toolClass.id,
+                    label: toolClass.name[locale],
+                  })
+                }
+                onDragEnd={endToolDrag}
               >
-                <Wrench className="size-4 shrink-0 text-primary" aria-hidden />
-                <span className="min-w-0 flex-1 truncate font-medium">
-                  {toolClass.name[locale]}
-                </span>
-                <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-                  {dims.x}×{dims.y}×{dims.z}
-                </span>
-              </button>
+                <button
+                  type="button"
+                  className="flex w-full items-center gap-2.5 rounded-lg border border-border bg-card px-2.5 py-2 text-left text-sm transition-colors hover:border-primary/60 hover:bg-muted"
+                  onClick={() => addToolPreset(toolClass, toolClass.name[locale])}
+                  draggable={false}
+                >
+                  <Wrench className="size-4 shrink-0 text-primary" aria-hidden />
+                  <span className="min-w-0 flex-1 truncate font-medium">
+                    {toolClass.name[locale]}
+                  </span>
+                  <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
+                    {dims.x}×{dims.y}×{dims.z}
+                  </span>
+                </button>
+              </div>
             </li>
           );
         })}

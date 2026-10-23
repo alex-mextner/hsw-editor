@@ -121,7 +121,8 @@ export function VariantPicker({ item }: { readonly item: WallItem }) {
 
   const pick = (candidate: Candidate): void => {
     if (isTool) {
-      setNoRoomFor(addHolderForTool(item, candidate.element) ? null : item.id);
+      // A refusal already told the user why in a toast; only a missing cell shows the no-room line.
+      setNoRoomFor(addHolderForTool(item, candidate.element) === 'no-room' ? item.id : null);
       return;
     }
     submitOps(switchOps(item, candidate.element), 'set-variant');
