@@ -265,15 +265,15 @@ export function createBankHandler(
         previous.signature !== signature ||
         (previous.rejected.length > 0 && age > REJECTED_RETRY_MS) ||
         forced;
-      const next =
-        previous !== null && !stale
-          ? { ...previous, checkedAt: Date.now() }
-          : await rebuild(list, signature, logOnce);
+      const rebuilt = previous === null || stale;
+      const next = rebuilt
+        ? await rebuild(list, signature, logOnce)
+        : { ...previous, checkedAt: Date.now() };
       // The first root with an index decides. When its index cannot be read or verified (an ingest
       // mid-write, a failed read, damage) the bank already in use stays instead of a shrunken older root
       // or the seed taking over; a fresh process with no bank in use falls through to the next root.
       snap =
-        next.decidingUnreadable && previous?.served
+        rebuilt && next.decidingUnreadable && previous?.served
           ? {
               ...previous,
               rejected: next.rejected,
