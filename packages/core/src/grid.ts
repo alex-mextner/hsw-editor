@@ -80,6 +80,66 @@ export function nearestCell(board: Board, x: number, y: number): GridCell {
   return best;
 }
 
+/**
+ * Offset between two cells in the bank's footprint convention: `dCol` columns to the right and `dRow2` HALF-rows up.
+ * Neighbouring columns are staggered by half a row, so a valid offset has `dRow2 = dCol (mod 2)`; in mm it is
+ * (dCol * colPitch, dRow2 * rowPitch / 2) regardless of the parity of the anchor's column.
+ */
+export interface CellOffset {
+  dCol: number;
+  dRow2: number;
+}
+
+/**
+ * Cell reached from `anchor` by `offset`. The result may lie outside the board (check with `cellInBoard`).
+ * Throws `RangeError` for an offset that is not on the honeycomb: that is bad data, not a placement problem.
+ */
+export function cellAtOffset(anchor: GridCell, offset: CellOffset): GridCell {
+  if (
+    !Number.isInteger(offset.dCol) ||
+    !Number.isInteger(offset.dRow2) ||
+    (offset.dRow2 - offset.dCol) % 2 !== 0
+  ) {
+    throw new RangeError(
+      `cell offset (dCol ${offset.dCol}, dRow2 ${offset.dRow2}) is not on the honeycomb: dRow2 and dCol must be integers of equal parity`,
+    );
+  }
+  const col = anchor.col + offset.dCol;
+  const halfRow = 2 * anchor.row + (anchor.col & 1) + offset.dRow2;
+  return { col, row: (halfRow - (col & 1)) / 2 };
+}
+
+/**
+ * Rotates an offset about the anchor by `rotZDeg` (counter-clockwise seen from the room). The lattice is regular
+ * hexagonal (rowPitch = colPitch * 2 / sqrt(3), as on every HSW board), so multiples of 60 degrees map offsets onto
+ * offsets exactly; other angles, and boards with another pitch ratio, go to the nearest valid offset.
+ */
+export function rotateCellOffset(board: Board, offset: CellOffset, rotZDeg: number): CellOffset {
+  const angle = (rotZDeg * Math.PI) / 180;
+  const x = offset.dCol * board.colPitchMm;
+  const y = (offset.dRow2 * board.rowPitchMm) / 2;
+  const rx = (x * Math.cos(angle) - y * Math.sin(angle)) / board.colPitchMm;
+  const ry = ((x * Math.sin(angle) + y * Math.cos(angle)) * 2) / board.rowPitchMm;
+  // Nearest lattice point in mm: try the columns around rx (one more each side, so a tall-pitch board still finds its
+  // neighbours) and, in each, the two parity-correct half-rows around ry.
+  let best: CellOffset = { dCol: 0, dRow2: 0 };
+  let bestDistance = Infinity;
+  for (const dCol of [Math.floor(rx) - 1, Math.floor(rx), Math.ceil(rx), Math.ceil(rx) + 1]) {
+    const parityRow = Math.floor((ry - (dCol & 1)) / 2) * 2 + (dCol & 1);
+    for (const dRow2 of [parityRow, parityRow + 2]) {
+      const dx = (dCol - rx) * board.colPitchMm;
+      const dy = ((dRow2 - ry) * board.rowPitchMm) / 2;
+      const distance = dx * dx + dy * dy;
+      if (distance < bestDistance - 1e-9) {
+        bestDistance = distance;
+        best = { dCol, dRow2 };
+      }
+    }
+  }
+  // `+ 0` turns -0 into 0 so offsets compare equal.
+  return { dCol: best.dCol + 0, dRow2: best.dRow2 + 0 };
+}
+
 /** Degrees normalised to [0, 360). */
 export function normalizeDeg(deg: number): number {
   const wrapped = ((deg % 360) + 360) % 360;

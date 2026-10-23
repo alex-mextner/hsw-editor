@@ -18,6 +18,7 @@ const projects = [
   'packages/commands',
   'packages/draw',
   'packages/user-settings',
+  'packages/overlay',
   'apps/server',
   'apps/web',
 ];

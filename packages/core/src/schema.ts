@@ -121,6 +121,9 @@ const Mat3Schema = z.tuple([
   finite,
 ]);
 
+/** Most photo<->wall correspondences a stored calibration keeps. */
+export const MAX_CALIBRATION_POINTS = 1000;
+
 /** How a photo maps onto the wall plane. At least `mmPerPx` or `homography` should be present to be useful. */
 export const CalibrationSchema = z.strictObject({
   method: z.enum(CALIBRATION_METHODS),
@@ -133,7 +136,7 @@ export const CalibrationSchema = z.strictObject({
   /** Correspondences used for the fit: photo pixel -> wall mm. */
   points: z
     .array(z.strictObject({ px: z.tuple([finite, finite]), wall: z.tuple([finite, finite]) }))
-    .max(1000)
+    .max(MAX_CALIBRATION_POINTS)
     .optional(),
 });
 

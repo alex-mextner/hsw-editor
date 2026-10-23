@@ -99,6 +99,13 @@
       "name": "@hsw-editor/draw",
       "version": "0.1.0",
     },
+    "packages/overlay": {
+      "name": "@hsw-editor/overlay",
+      "version": "0.1.0",
+      "dependencies": {
+        "@hsw-editor/core": "workspace:*",
+      },
+    },
     "packages/user-settings": {
       "name": "@hsw-editor/user-settings",
       "version": "0.1.0",
@@ -324,6 +331,8 @@
     "@hsw-editor/core": ["@hsw-editor/core@workspace:packages/core"],
 
     "@hsw-editor/draw": ["@hsw-editor/draw@workspace:packages/draw"],
+
+    "@hsw-editor/overlay": ["@hsw-editor/overlay@workspace:packages/overlay"],
 
     "@hsw-editor/server": ["@hsw-editor/server@workspace:apps/server"],
 

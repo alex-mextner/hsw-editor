@@ -4,7 +4,7 @@ Local 3D wall editor for HSW honeycomb tool walls. Spec: `docs/specs/2026-10-22-
 
 ## Layout
 
-`apps/web` (Vite+React 19+R3F+shadcn/base-ui+Tailwind v4, PWA) | `apps/server` (Bun) | `packages/core` (wall schema, ops) |
+`apps/web` (Vite+React 19+R3F+shadcn/base-ui+Tailwind v4, PWA) | `apps/server` (Bun) | `packages/core` (wall schema, ops) | `packages/overlay` (photo calibration + snapping, pure) |
 `packages/bank` | `services/vision` (uv, FastAPI) | `cli/hsw_editor.py` (agenttools_service wrapper, symlinked to `~/.local/bin/hsw-editor`).
 
 ## Commands

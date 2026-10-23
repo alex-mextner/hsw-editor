@@ -1,0 +1,13 @@
+{
+  "name": "@hsw-editor/overlay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pure geometry for the WYSIWYG photo overlay: scale calibration, perspective rectification, wall<->photo mapping and snapping to what is buildable.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@hsw-editor/core": "workspace:*"
+  }
+}
