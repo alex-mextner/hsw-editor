@@ -57,7 +57,7 @@ export const drillBitCase = defineToolClass({
   id: 'drill-bit-case',
   family: 'drivers',
   name: L('Drill-bit case', 'Кейс со свёрлами'),
-  bankClass: 'bit-set',
+  bankClass: 'drill-bit-case',
   keywords: {
     en: [
       'drill bit case',

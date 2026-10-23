@@ -145,7 +145,7 @@ export const nutDriver = defineToolClass({
   id: 'nut-driver',
   family: 'drivers',
   name: L('Nut driver', 'Торцевая отвёртка'),
-  bankClass: 'screwdriver',
+  bankClass: 'nut-driver',
   keywords: {
     en: ['nut driver', 'socket screwdriver', 'hex nut driver', 'nut spinner'],
     ru: ['торцевая отвертка', 'торцевая отвёртка', 'ключ-отвертка', 'головка с рукояткой'],

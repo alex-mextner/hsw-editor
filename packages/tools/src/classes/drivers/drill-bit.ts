@@ -241,7 +241,7 @@ export const drillBit = defineToolClass({
   id: 'drill-bit',
   family: 'drivers',
   name: L('Twist drill bit', 'Спиральное сверло'),
-  bankClass: 'bit-set',
+  bankClass: 'drill-bit',
   keywords: {
     en: ['drill bit', 'twist drill bit', 'hss drill bit', 'metal drill bit', 'drill'],
     ru: ['сверло', 'спиральное сверло', 'сверло по металлу'],
