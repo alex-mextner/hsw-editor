@@ -13,7 +13,8 @@ export type OriginFilter = (typeof ORIGIN_FILTERS)[number];
 export interface BankFilters {
   /** Category id; selecting a node includes its whole subtree. */
   readonly category: string | null;
-  readonly toolClass: string | null;
+  /** Elements must be about at least one of these tool classes; empty = any. Fed by the tool filter store. */
+  readonly toolClasses: readonly string[];
   readonly size: SizeBucket | null;
   readonly redistributableOnly: boolean;
   readonly origin: OriginFilter;
@@ -21,7 +22,7 @@ export interface BankFilters {
 
 export const NO_FILTERS: BankFilters = {
   category: null,
-  toolClass: null,
+  toolClasses: [],
   size: null,
   redistributableOnly: false,
   origin: 'all',
@@ -46,7 +47,7 @@ export function sizeBucket(cellCount: number): SizeBucket {
 export function activeFilterCount(filters: BankFilters): number {
   return (
     Number(filters.category !== null) +
-    Number(filters.toolClass !== null) +
+    Number(filters.toolClasses.length > 0) +
     Number(filters.size !== null) +
     Number(filters.redistributableOnly) +
     Number(filters.origin !== 'all')
@@ -70,7 +71,12 @@ export function matchesFilters(
   ) {
     return false;
   }
-  if (filters.toolClass !== null && !element.toolClasses.includes(filters.toolClass)) return false;
+  if (
+    filters.toolClasses.length > 0 &&
+    !filters.toolClasses.some((id) => element.toolClasses.includes(id))
+  ) {
+    return false;
+  }
   if (filters.size !== null && sizeBucket(element.footprint.cells.length) !== filters.size) {
     return false;
   }

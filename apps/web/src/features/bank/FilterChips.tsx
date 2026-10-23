@@ -5,6 +5,7 @@ import { useI18n } from '@/i18n/index.ts';
 import type { BankFilters } from './filters.ts';
 import { ORIGIN_LABELS, SIZE_LABELS } from './labels.ts';
 import { patchBankFilters } from './panelState.ts';
+import { dispatchToolFilter } from './toolFilterStore.ts';
 
 interface Chip {
   readonly key: string;
@@ -15,11 +16,13 @@ interface Chip {
 interface FilterChipsProps {
   readonly index: BankIndex;
   readonly filters: BankFilters;
+  /** Tool classes of the explicit (persisted) tool filter. */
+  readonly explicit: readonly string[];
   readonly onReset: () => void;
 }
 
 /** One removable chip per active filter, plus a reset that also clears the search. */
-export function FilterChips({ index, filters, onReset }: FilterChipsProps) {
+export function FilterChips({ index, filters, explicit, onReset }: FilterChipsProps) {
   const { t, locale } = useI18n();
   const chips: Chip[] = [];
   if (filters.category !== null) {
@@ -30,12 +33,16 @@ export function FilterChips({ index, filters, onReset }: FilterChipsProps) {
       remove: () => patchBankFilters({ category: null }),
     });
   }
-  if (filters.toolClass !== null) {
-    const toolClass = index.toolClasses.find((candidate) => candidate.id === filters.toolClass);
+  for (const id of explicit) {
+    const toolClass = index.toolClasses.find((candidate) => candidate.id === id);
     chips.push({
-      key: 'toolClass',
-      label: toolClass?.name[locale] ?? filters.toolClass,
-      remove: () => patchBankFilters({ toolClass: null }),
+      key: `toolClass:${id}`,
+      label: toolClass?.name[locale] ?? id,
+      remove: () =>
+        dispatchToolFilter({
+          type: 'setExplicit',
+          classes: explicit.filter((other) => other !== id),
+        }),
     });
   }
   if (filters.size !== null) {

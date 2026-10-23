@@ -1,14 +1,20 @@
 import { useMemo } from 'react';
+import { effectiveToolFilter, rankHoldersForTools } from '@hsw-editor/compat';
 import { SlidersHorizontalIcon } from 'lucide-react';
 import type { BankElement, BankIndex } from '@hsw-editor/bank';
 import { createBankSearch, type BankSearch } from '@/bank/search.ts';
 import { IconButton } from '@/components/IconButton.tsx';
+import { useStore } from '@/state/react.ts';
+import { sessionStore } from '@/wall/session.ts';
+import { toolInterfaceOf } from '@/wall/toolInterface.ts';
 import { useI18n } from '@/i18n/index.ts';
 import { BankGrid } from './BankGrid.tsx';
 import { BankSearchBox } from './BankSearchBox.tsx';
 import { BankNoResults } from './BankStates.tsx';
 import { FilterChips } from './FilterChips.tsx';
 import { FilterPanel } from './FilterPanel.tsx';
+import { SelectionFilterChip } from './SelectionFilterChip.tsx';
+import { dispatchToolFilter, toolFilterStore } from './toolFilterStore.ts';
 import {
   activeFilterCount,
   applyFilters,
@@ -46,7 +52,14 @@ interface BankBrowserProps {
 /** Search + filters + virtual card grid of the loaded bank. */
 export function BankBrowser({ index, byId, panel, onOpen, onAdd }: BankBrowserProps) {
   const { t, tn, locale } = useI18n();
-  const { query, filters } = panel;
+  const { query } = panel;
+  const toolFilter = useStore(toolFilterStore);
+  const wall = useStore(sessionStore)?.wall ?? null;
+  const effective = effectiveToolFilter(toolFilter);
+  const filters = useMemo(
+    () => ({ ...panel.filters, toolClasses: effective.classes }),
+    [panel.filters, effective.classes],
+  );
 
   const candidates = useMemo(() => {
     const ranked = query.trim() === '' ? null : searchFor(index).search(query);
@@ -58,11 +71,30 @@ export function BankBrowser({ index, byId, panel, onOpen, onAdd }: BankBrowserPr
     [candidates, filters],
   );
   const categoryCounts = useMemo(() => countByCategory(scoped), [scoped]);
-  const results = useMemo(() => applyFilters(scoped, filters), [scoped, filters]);
+  const filtered = useMemo(() => applyFilters(scoped, filters), [scoped, filters]);
+  // Selected tools: best fit first (an empty query keeps the index order otherwise).
+  const results = useMemo(() => {
+    if (!effective.resettable || query.trim() !== '' || wall === null) return filtered;
+    const tools = toolFilter.selection.itemIds.flatMap((id) => {
+      const item = wall.items.find((candidate) => candidate.id === id);
+      const tool = item === undefined ? undefined : toolInterfaceOf(item, wall);
+      return tool === undefined ? [] : [tool];
+    });
+    const rank = new Map(
+      rankHoldersForTools(filtered, tools).map((entry, position) => [entry.holder.id, position]),
+    );
+    return [...filtered].sort(
+      (a, b) => (rank.get(a.id) ?? Infinity) - (rank.get(b.id) ?? Infinity),
+    );
+  }, [filtered, effective.resettable, query, wall, toolFilter.selection.itemIds]);
   const toolClassIds = useMemo(() => usedToolClasses(index.elements), [index.elements]);
 
   const activeFilters = activeFilterCount(filters);
-  const reset = (): void => patchBankPanel({ query: '', filters: NO_FILTERS });
+  const reset = (): void => {
+    patchBankPanel({ query: '', filters: NO_FILTERS });
+    dispatchToolFilter({ type: 'setExplicit', classes: [] });
+    dispatchToolFilter({ type: 'dismissOverride' });
+  };
 
   return (
     <>
@@ -95,9 +127,19 @@ export function BankBrowser({ index, byId, panel, onOpen, onAdd }: BankBrowserPr
           />
         </div>
       ) : null}
-      {activeFilters > 0 ? (
+      {effective.resettable ? (
         <div className="px-2 pb-1.5">
-          <FilterChips index={index} filters={filters} onReset={reset} />
+          <SelectionFilterChip index={index} classes={effective.classes} />
+        </div>
+      ) : null}
+      {activeFilterCount(panel.filters) + toolFilter.explicit.length > 0 ? (
+        <div className="px-2 pb-1.5">
+          <FilterChips
+            index={index}
+            filters={panel.filters}
+            explicit={toolFilter.explicit}
+            onReset={reset}
+          />
         </div>
       ) : null}
       <p className="px-3 pb-1 text-[11px] text-muted-foreground" aria-live="polite">
@@ -110,7 +152,7 @@ export function BankBrowser({ index, byId, panel, onOpen, onAdd }: BankBrowserPr
           elements={results}
           locale={locale}
           query={query}
-          resetKey={`${query}|${JSON.stringify(filters)}`}
+          resetKey={`${query}|${JSON.stringify(filters)}|${effective.resettable ? toolFilter.selection.itemIds.join(',') : ''}`}
           onOpen={onOpen}
           onAdd={onAdd}
         />
