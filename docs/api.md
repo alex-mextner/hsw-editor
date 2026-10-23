@@ -154,6 +154,28 @@ The bank routes (`/api/bank/*`, `/bank/assets/*`) are owned by `packages/bank` (
 packages (omp bridge, draw backends, vision proxy, bank) plug into the daemon through `apps/server/src/modules.ts`
 (`ServerModule`); they run after the loopback guard, so they inherit it.
 
+## Client errors
+
+The web app reports failures it survived (a missing GLB/thumbnail, a render error, an unhandled rejection) so they can be
+diagnosed after the fact. Module `apps/server/src/clientErrors.ts`, behind the same loopback/origin guard.
+
+| Method & path                  | Body / query                                                         | Response                         |
+| ------------------------------ | -------------------------------------------------------------------- | -------------------------------- |
+| `POST /api/client-errors`      | `{ kind, message, ts, url?, bankId?, status?, stack?, page?, userAgent?, detail? }` | `204`                |
+| `GET /api/client-errors`       | `?limit=N` (default 50, max 500)                                     | `{ entries }`, oldest first, newest last |
+
+- `kind`: `asset-load` | `render` | `unhandled` | `user-report`; `ts`: ISO timestamp; `detail`: flat `Record<string, string | number | boolean>`.
+- Errors: `400 invalid_json` / `invalid_body` (unknown `kind`, missing `message`, bad `ts`), `400 invalid_query` (bad `limit`),
+  `413 payload_too_large` (body above 16 KiB, refused without parsing). Responses are `Cache-Control: no-store`.
+- Free text is truncated to `message` 2000, `url` 500, `page` 500, `stack` 4000, `userAgent` 300, `bankId` 200 characters; `detail`
+  keys to 100 and string values to 500. `?query` and `#fragment` runs (they can carry tokens) are removed from every one of those
+  fields, including URLs quoted inside `message` and `stack`, before anything is written. The scrub is blunt: text glued to a
+  query (such as `:line:col` after it) goes too. `detail` keys that collide afterwards get a `#2`, `#3`, ... suffix (so a stored key may exceed 100 characters by that suffix).
+- `ts` must be an ISO 8601 datetime (`2026-10-22T10:00:00.000Z`, offsets allowed).
+- Stored as JSONL in `<home>/logs/client-errors.jsonl` by a single serialized writer; at 5 MiB the file is renamed to
+  `client-errors.jsonl.1` (one generation kept). `GET` reads the current file, then `.1` if it needs more, and skips torn lines
+  (a crash mid-append is terminated with a newline before the next entry).
+
 ## Jobs
 
 Long-running work (vision, drawing). Handlers are registered in-process with `registerJob` (`apps/server/src/jobs.ts`).
@@ -227,6 +249,7 @@ walls/<id>/history.jsonl    one JSON entry per rev, appended + fsynced BEFORE wa
 walls/<id>/photos/ models/  uploaded and generated assets (photos/derived/ for drawn views)
 walls/.trash/               deleted walls
 settings.json               per-user settings document (atomic write, mode 0600; a corrupt file is kept as settings.json.corrupt-<ts>)
+logs/client-errors.jsonl    client error reports (+ .1 after rotation at 5 MiB)
 server.lock                 pid of the single writer
 ```
 

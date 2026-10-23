@@ -59,7 +59,7 @@ const STORE_STATUS: Record<StoreErrorCode, number> = {
   locked: 500,
 };
 
-function errorBody(code: string, message: string, details?: unknown): ApiErrorBody {
+export function errorBody(code: string, message: string, details?: unknown): ApiErrorBody {
   return { error: { code, message, ...(details === undefined ? {} : { details }) } };
 }
 

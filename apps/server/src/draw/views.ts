@@ -19,7 +19,10 @@ import {
 } from '@hsw-editor/draw';
 import { decodeRaw } from './image.ts';
 import type { DrawRuntime } from './runtime.ts';
-import { drawQueue } from './serial-queue.ts';
+import { SerialQueue } from '../serial-queue.ts';
+
+/** One draw request at a time for the whole server (quota safety, one browser tab). */
+const drawQueue = new SerialQueue();
 
 export interface ViewsInput {
   /** Correlation prefix, e.g. `<wallId>/<itemId>`. */
