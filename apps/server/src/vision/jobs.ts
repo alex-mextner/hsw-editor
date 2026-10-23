@@ -521,7 +521,16 @@ async function runPhotoToWall(
   }
 
   let applied: { rev: number; itemIds: string[] } | null = null;
-  const auto = itemOps.filter(({ item }) => item.autoApply);
+  // Item ids follow the segmentation instance, so a re-run of the same photo (other parameters, refresh) proposes the same
+  // ids: what is already on the wall is not added again (an `addItem` of an existing id would fail the whole job).
+  const current = (await ctx.walls.get(input.wallId)).wall;
+  const onWall = new Set([...current.items.map((i) => i.id), ...current.models.map((m) => m.id)]);
+  const auto = itemOps.filter(
+    ({ item, ops }) =>
+      item.autoApply &&
+      !onWall.has(item.id) &&
+      ops.every((op) => op.type !== 'addModelRef' || !onWall.has(op.model.id)),
+  );
   if (auto.length > 0) {
     const outcome = await ctx.walls.apply(input.wallId, {
       ops: auto.flatMap(({ ops }) => ops),

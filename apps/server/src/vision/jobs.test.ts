@@ -400,6 +400,42 @@ describe('vision.photo_to_wall', () => {
     expect(items.map((i) => i['applied'])).toEqual([true, false, true]);
   });
 
+  test('a re-run that proposes ids already on the wall does not add them again (no failed job)', async () => {
+    const h = harness();
+    const first = [proposalItem(1, 0.95, true), proposalItem(3, 0.97, true)];
+    h.client.results.push(okResult(h.imageDir, first));
+    await h.run('vision.photo_to_wall', {
+      wallId: WALL_ID,
+      photoId: PHOTO_ID,
+      autoApplyConfidence: 0.9,
+    });
+    // the same objects are on the wall now; the second run (other parameters => no job-cache hit) proposes them again plus a new one
+    h.walls.wall = {
+      ...h.walls.wall,
+      items: [
+        ...h.walls.wall.items,
+        ...first
+          .map((p) => (p['ops'] as LeafOp[]).find((op) => op.type === 'addItem'))
+          .flatMap((op) => (op?.type === 'addItem' ? [op.item] : [])),
+      ],
+      models: [
+        ...h.walls.wall.models,
+        ...first
+          .map((p) => (p['ops'] as LeafOp[]).find((op) => op.type === 'addModelRef'))
+          .flatMap((op) => (op?.type === 'addModelRef' ? [op.model] : [])),
+      ],
+    };
+    h.client.results.push(okResult(h.imageDir, [...first, proposalItem(2, 0.99, true)]));
+    const out = objectOf(
+      await h.run('vision.photo_to_wall', {
+        wallId: WALL_ID,
+        photoId: PHOTO_ID,
+        autoApplyConfidence: 0.8,
+      }),
+    );
+    expect(objectOf(out['applied'] ?? null)['itemIds']).toEqual(['vabc-02']);
+  });
+
   test('the default request never asks the service to auto-apply and passes board, bank and overrides', async () => {
     const h = harness();
     h.client.results.push(okResult(h.imageDir, []));
