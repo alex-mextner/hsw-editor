@@ -120,6 +120,51 @@ describe('fuzzy matching', () => {
   });
 });
 
+describe('long fields', () => {
+  const description = 'Show the element bank on the left';
+
+  test('a scattered subsequence in a sentence is not a match', () => {
+    expect(matchQuery('tema', [{ text: description, weight: 0.8 }])).toBeNull();
+    expect(
+      matchQuery('тема', [{ text: 'Показывать банк элементов слева', weight: 0.8 }]),
+    ).toBeNull();
+  });
+
+  test('a word prefix in a sentence is', () => {
+    expect(matchQuery('elem', [{ text: description, weight: 0.8 }])).not.toBeNull();
+    expect(matchQuery('bank left', [{ text: description, weight: 0.8 }])).not.toBeNull();
+  });
+});
+
+describe('long titles keep subsequence and typo matching', () => {
+  test('a 30-character title is still found by a typo', () => {
+    expect(
+      matchQuery('keybord', [{ text: 'Customise keyboard shortcuts…', weight: 1 }]),
+    ).not.toBeNull();
+    expect(
+      matchQuery('setings', [{ text: 'Reset all settings to defaults', weight: 1 }]),
+    ).not.toBeNull();
+  });
+});
+
+describe('rewritten readings stay tight', () => {
+  test('"тема" does not match unrelated titles through scattered letters', () => {
+    for (const title of [
+      'Snap to honeycomb grid',
+      'Chord timeout (ms)',
+      'AI actions need approval',
+    ]) {
+      expect(matchQuery('тема', [{ text: title, weight: 1 }])).toBeNull();
+    }
+    expect(
+      matchQuery('тема', [
+        { text: 'Theme', weight: 0.8 },
+        { text: 'Тема', weight: 1 },
+      ]),
+    ).not.toBeNull();
+  });
+});
+
 describe('ranking across English and Russian', () => {
   test('English queries', () => {
     expect(search('sort')[0]).toBe('Sort elements');

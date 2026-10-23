@@ -94,11 +94,11 @@ when-clause over one without, then the later registered.
 
 Clauses that cannot both be true (`dialog` and `!dialog`, `mode == 'a'` and `mode == 'b'`) never conflict.
 `conflictsWith(keymap, commands, candidate)` previews a binding while the editor is recording a key.
-The engine's own sample defaults are checked to be conflict-free (`keymap.test.ts`); the editor's real defaults get the same test when they are migrated into the registry (#54).
+The engine's own sample defaults are checked to be conflict-free (`keymap.test.ts`) and so are the editor's real defaults on macOS, Linux and Windows (`apps/web/src/commands/editorCommands.test.ts`).
 
 ### User keymap
 
-Planned storage ([#52](https://github.com/alex-mextner/hsw-editor/issues/52)): per user in the server user settings (namespace `keymap`) with a localStorage mirror. The engine itself only produces and consumes the JSON below.
+Stored per user in the user settings document (namespace `keymap`, see [In the web app](#in-the-web-app)) with a `localStorage` mirror. The engine itself only produces and consumes the JSON below.
 
 ```json
 { "version": 1, "overrides": { "edit.undo": [{ "key": "mod+u" }], "view.toggleGrid": [] } }
@@ -121,12 +121,12 @@ drops bad entries with a warning instead of failing the whole file (an entry who
 | `:` | go to: walls, panels, history revisions |
 | `?` | ask the AI |
 
-Search is fuzzy (fzf-style scoring: word starts, consecutive runs, gaps), bilingual and forgiving:
+Search is fuzzy (fzf-style scoring: word starts, consecutive runs, gaps; descriptions and keywords only match at word starts), bilingual and forgiving:
 
 - every item matches in both languages and through its keywords;
 - a query is also tried **transliterated** (`сорт` finds *Sort*, `tema` finds *Тема*) and as if typed on the **wrong layout**
   (`ыщке` finds *Sort*, `ntvf` finds *Тема*);
-- one missing or extra letter is forgiven on words of four letters or more;
+- one missing letter is forgiven on words of five letters or more (`keybord` finds *keyboard*);
 - recents and frequency (a 14-day half-life, capped below the exact-title bonus) break near-ties; they never beat a clearly better text match.
 
 Settings appear as rows with an inline control (switch, choice, number); Enter on a switch toggles it in place.  A provider that throws is reported in `failedProviders` and does not hide the others. The engine (`searchPalette`) takes providers, so the app contributes walls, wall items,
@@ -150,3 +150,17 @@ The tool input is one flat object (`op` plus optional `group`, `query`, `limit`,
 
 The palette talks to omp only through the `PaletteAiBridge` interface (`ask`, `status`, `setAppCommandHandler`), so the omp panel
 bridge ([#16](https://github.com/alex-mextner/hsw-editor/issues/16)) can implement it when it lands.
+
+### In the web app
+
+`apps/web/src/commands/app.ts` is the composition root: one `CommandRegistry`, one `SettingsStore`, the keymap (`keymapStore`, rebuilt when commands or the user keymap change) and one `KeyDispatcher`, fed by a single `keydown` listener on `window` in the bubble phase (`useGlobalKeys`), so a widget that already handled a key keeps it. The editor's commands are defined in `editorCommands.ts` against an `EditorActions` interface, which is how their default keys, when-clauses and the conflict-free guarantee are tested without the scene (`editorCommands.test.ts`).
+
+Default keys of the editor: `mod+z` undo, `mod+shift+z` / `ctrl+y` redo, `delete` / `backspace` delete, `mod+d` duplicate, `r` / `shift+r` rotate, `l` lock, `mod+a` select all, `escape` clear selection, arrows nudge (repeat), `v` `m` `s` tools, `f` fit, `o` view, `p` photo overlay, `b` `i` `a` `h` panels, `g b` `g i` `g a` `g h` go to a panel, `shift+/` cheat-sheet, `g k` keybinding editor, `mod+shift+p` and `mod+k` palette (the only keys that work inside a text field). The keybinding editor is `g k` and not the VS Code style `mod+k mod+s`, because `mod+k` opens the palette and would shadow the chord.
+
+Context keys the app provides: `selection`, `hasWall`, `canUndo`, `canRedo`, `mode` (the active tool), `dialog` (palette, cheat-sheet, keybinding editor or the new-wall dialog is open), `focus` (`canvas`, `bank`, `inspector`, `history`, `agent`, `input`, `palette`) and `setting.<id>`. The palette and the AI run commands against the context *behind* the dialog (`getBaseContext`), otherwise the palette's own `dialog` would disable every `!dialog` command.
+
+Settings (`appSettings.ts`) are two-way bridged to the stores that already own the values (theme, language, snap, units, view mode, panels): changing either side updates the other, every write is guarded by an equality check. At start a stored setting wins; for a setting still at its default the app store's own saved value is adopted. Panel visibility is bridged but stays on the device (a phone starts with panels closed and must not close the desktop's).
+
+Persistence uses `@hsw-editor/user-settings`: namespaces `settings` (non-default setting values), `keymap` (the user keymap) and `palette` (usage for recents and frequency). It reads from the `localStorage` mirror at once, pushes to `/api/settings` when the server is reachable, pulls on start and on `online`, and follows `/api/settings/events` (`settings` event, `client.notifyServerRev`). Without the server everything works locally.
+
+The palette UI is `apps/web/src/features/commandPalette/`; its sources beyond commands and settings (walls, wall items, bank elements and tools, history entries to "undo back to here", help pages, go-to) are `commands/providers.ts`. A source that fails (the wall list or history while offline) is named in a notice under the results, the others still answer. The AI bridge is `aiBridgeStore` (`commands/aiBridge.ts`); until the omp panel bridge sets one it is an honest "unavailable" bridge and the palette says so. `AiSession` (`aiSessionCore.ts`) holds the answer, the planned actions and the approval prompt; the approve or auto mode is the `ai.approval` setting, also switchable from the answer pane.
