@@ -65,7 +65,15 @@ export function classOverrides(
     const base = entry.values[key];
     if (BOX_PARAM_KEY_NAMES.has(key) || typeof base !== 'number' || !Number.isFinite(value))
       continue;
-    if (Math.abs(base - value) > 1e-3) out[key] = value;
+    // The library hands a dragged class its measured dimensions as params; one that is what the default model measures (a hammer's
+    // `handleLength` is the wood, not the parameter) is not a wish for another size.
+    const measured = entry.holding.dims[key];
+    if (
+      Math.abs(base - value) > 1e-3 &&
+      (measured === undefined || Math.abs(measured - value) > 1e-3)
+    ) {
+      out[key] = value;
+    }
   }
   return out;
 }

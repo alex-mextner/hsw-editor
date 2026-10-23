@@ -194,6 +194,19 @@ describe('resolveToolModel', () => {
     expect(urls[0]).toContain('/api/tools/assets/index?fresh=');
   });
 
+  test('the measured dimensions a dragged class carries are not wishes: the pre-generated model stays', () => {
+    const { d, port } = deps([hammer]);
+    const measured = { ...hammer.holding.dims };
+    const wall = wallWith(
+      tool({ toolClass: 'hammer', params: measured }),
+      model({ source: { type: 'library', by: 'gen:hammer' } }),
+    );
+    const source = resolveToolModel(wall.items[0]!, wall, d);
+    expect(source?.exact).toBe(true);
+    expect(source?.key).toBe(`tool|class:hammer|${hammer.paramHash}`);
+    expect(port.posted).toHaveLength(0);
+  });
+
   test('a library tool is never rebuilt, whatever is typed', () => {
     const { d, port } = deps([userToolEntry('mine', screwdriver)]);
     const wall = wallWith(
