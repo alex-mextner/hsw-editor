@@ -6,7 +6,7 @@ import {
   type KeyboardEvent,
   type MouseEvent,
 } from 'react';
-import { LockIcon, PlusIcon } from 'lucide-react';
+import { LockIcon, PlusIcon, UserIcon } from 'lucide-react';
 import type { BankElement } from '@hsw-editor/bank';
 import { highlightSegments } from '@/bank/search.ts';
 import { useI18n, type Locale } from '@/i18n/index.ts';
@@ -147,20 +147,32 @@ export const BankCard = memo(function BankCard({
             </span>
           ) : null}
           <span className="mt-auto flex">
-            <span
-              title={redistributable ? spdx : t('bank.license.localOnlyTitle', { spdx })}
-              className={cn(
-                'inline-flex h-4 max-w-full items-center gap-1 rounded px-1 text-[10px] leading-none',
-                redistributable
-                  ? 'bg-muted text-muted-foreground'
-                  : 'bg-destructive/10 text-destructive',
-              )}
-            >
-              {redistributable ? null : <LockIcon className="size-2.5 shrink-0" aria-hidden />}
-              <span className="truncate">
-                {redistributable ? spdx : t('bank.license.localOnly')}
+            {element.source === 'user' ? (
+              // The user's own elements are never redistributable; "mine" is the more useful chip than the lock.
+              <span
+                data-testid="bank-card-mine-badge"
+                title={t('bank.mineTitle')}
+                className="inline-flex h-4 max-w-full items-center gap-1 rounded bg-primary/15 px-1 text-[10px] leading-none text-primary"
+              >
+                <UserIcon className="size-2.5 shrink-0" aria-hidden />
+                <span className="truncate">{t('bank.mine')}</span>
               </span>
-            </span>
+            ) : (
+              <span
+                title={redistributable ? spdx : t('bank.license.localOnlyTitle', { spdx })}
+                className={cn(
+                  'inline-flex h-4 max-w-full items-center gap-1 rounded px-1 text-[10px] leading-none',
+                  redistributable
+                    ? 'bg-muted text-muted-foreground'
+                    : 'bg-destructive/10 text-destructive',
+                )}
+              >
+                {redistributable ? null : <LockIcon className="size-2.5 shrink-0" aria-hidden />}
+                <span className="truncate">
+                  {redistributable ? spdx : t('bank.license.localOnly')}
+                </span>
+              </span>
+            )}
           </span>
         </span>
       </button>

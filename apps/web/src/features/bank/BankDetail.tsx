@@ -1,6 +1,6 @@
 import { layoutStore } from '@/state/layout.ts';
 import { useCallback, useEffect, useState } from 'react';
-import { ArrowLeftIcon, PlusIcon } from 'lucide-react';
+import { ArrowLeftIcon, PencilIcon, PlusIcon, Trash2Icon } from 'lucide-react';
 import type { BankElement, BankIndex } from '@hsw-editor/bank';
 import { IconButton } from '@/components/IconButton.tsx';
 import { isTypingTarget } from '@/commands/registry.ts';
@@ -70,10 +70,13 @@ interface BankDetailProps {
   readonly index: BankIndex;
   readonly onBack: () => void;
   readonly onAdd: (element: BankElement) => void;
+  /** Edit / delete are offered for the user's own elements only. */
+  readonly onEdit: (element: BankElement) => void;
+  readonly onDelete: (element: BankElement) => void;
 }
 
 /** Full description of one element, replacing the grid inside the panel. */
-export function BankDetail({ element, index, onBack, onAdd }: BankDetailProps) {
+export function BankDetail({ element, index, onBack, onAdd, onEdit, onDelete }: BankDetailProps) {
   const { t, tn, locale } = useI18n();
   // Window-level, because the grid card that had focus is gone and focus falls back to <body>.
   useEffect(() => {
@@ -100,7 +103,18 @@ export function BankDetail({ element, index, onBack, onAdd }: BankDetailProps) {
           <ArrowLeftIcon aria-hidden />
         </IconButton>
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-semibold">{element.name[locale]}</h2>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <h2 className="truncate text-sm font-semibold">{element.name[locale]}</h2>
+            {element.source === 'user' ? (
+              <span
+                data-testid="bank-detail-mine-badge"
+                title={t('bank.mineTitle')}
+                className="inline-flex h-4 shrink-0 items-center rounded bg-primary/15 px-1 text-[10px] leading-none text-primary"
+              >
+                {t('bank.mine')}
+              </span>
+            ) : null}
+          </div>
           {element.variantLabel ? (
             <p className="truncate text-[11px] text-muted-foreground">
               {element.variantLabel[locale]}
@@ -145,7 +159,29 @@ export function BankDetail({ element, index, onBack, onAdd }: BankDetailProps) {
           <PrintNotesSection element={element} />
         </div>
       </div>
-      <footer className="border-t border-border bg-panel p-2">
+      <footer className="flex flex-col gap-2 border-t border-border bg-panel p-2">
+        {element.source === 'user' ? (
+          <div className="flex gap-2">
+            <Button
+              variant="outline"
+              className="flex-1"
+              data-testid="bank-detail-edit"
+              onClick={() => onEdit(element)}
+            >
+              <PencilIcon aria-hidden />
+              {t('bank.detail.edit')}
+            </Button>
+            <Button
+              variant="destructive"
+              className="flex-1"
+              data-testid="bank-detail-delete"
+              onClick={() => onDelete(element)}
+            >
+              <Trash2Icon aria-hidden />
+              {t('bank.detail.delete')}
+            </Button>
+          </div>
+        ) : null}
         <Button className="w-full" onClick={() => onAdd(element)}>
           <PlusIcon aria-hidden />
           {t('bank.detail.add')}

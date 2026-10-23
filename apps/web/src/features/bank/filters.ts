@@ -7,7 +7,7 @@ import { isInCategory, type BankCategory } from '@hsw-editor/bank';
 export const SIZE_BUCKETS = ['s1', 's2', 's3to4', 's5plus'] as const;
 export type SizeBucket = (typeof SIZE_BUCKETS)[number];
 
-export const ORIGIN_FILTERS = ['all', 'generated', 'sources'] as const;
+export const ORIGIN_FILTERS = ['all', 'generated', 'sources', 'mine'] as const;
 export type OriginFilter = (typeof ORIGIN_FILTERS)[number];
 
 export interface BankFilters {
@@ -34,6 +34,8 @@ export interface FilterTarget {
   readonly toolClasses: readonly string[];
   readonly footprint: { readonly cells: readonly unknown[] };
   readonly generated: boolean;
+  /** `user` on elements the user imported. */
+  readonly source?: 'user' | undefined;
   readonly license: { readonly redistributable: boolean };
 }
 
@@ -82,7 +84,10 @@ export function matchesFilters(
   }
   if (filters.redistributableOnly && !element.license.redistributable) return false;
   if (filters.origin === 'generated' && !element.generated) return false;
-  if (filters.origin === 'sources' && element.generated) return false;
+  // The user's own uploads are neither generated nor from the downloaded sources.
+  if (filters.origin === 'sources' && (element.generated || element.source === 'user'))
+    return false;
+  if (filters.origin === 'mine' && element.source !== 'user') return false;
   return true;
 }
 
