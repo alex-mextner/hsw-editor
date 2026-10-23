@@ -174,6 +174,9 @@ export const shellEn = {
   'warning.missing_parent': 'Holder missing',
   'warning.missing_photo': 'Photo missing',
   'warning.missing_model': 'Model missing',
+  'warning.parent_not_holder': 'Parent is not a holder',
+  'warning.slot_collision': 'Slot occupied twice',
+  'warning.slot_without_parent': 'Slot without a holder',
 
   'history.empty': 'No edits yet.',
   'history.undone': 'Undone',
@@ -191,6 +194,7 @@ export const shellEn = {
   'history.setCalibration': 'Calibrated a photo',
   'history.setBoard': 'Resized the board',
   'history.rename': 'Renamed',
+  'history.attachItem': 'Attached or detached a tool',
   'history.modelRef': 'Changed reference models',
   'history.batch': 'Several changes',
 
@@ -391,6 +395,9 @@ export const shellRu: FeatureRu<typeof shellEn> = {
   'warning.missing_parent': 'Нет держателя',
   'warning.missing_photo': 'Нет фото',
   'warning.missing_model': 'Нет модели',
+  'warning.parent_not_holder': 'Родитель не держатель',
+  'warning.slot_collision': 'Слот занят дважды',
+  'warning.slot_without_parent': 'Слот без держателя',
 
   'history.empty': 'Правок пока нет.',
   'history.undone': 'Отменено',
@@ -408,6 +415,7 @@ export const shellRu: FeatureRu<typeof shellEn> = {
   'history.setCalibration': 'Откалибровано фото',
   'history.setBoard': 'Изменён размер панели',
   'history.rename': 'Переименовано',
+  'history.attachItem': 'Инструмент закреплён или снят',
   'history.modelRef': 'Изменены эталонные модели',
   'history.batch': 'Несколько изменений',
 

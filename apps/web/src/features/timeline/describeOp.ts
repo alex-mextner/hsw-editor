@@ -24,6 +24,8 @@ export function describeOp(op: Op): OpDescription {
       return { key: 'history.setVariant' };
     case 'lock':
       return { key: op.locked ? 'history.lock' : 'history.unlock' };
+    case 'attachItem':
+      return { key: 'history.attachItem' };
     case 'addPhoto':
       return { key: 'history.addPhoto' };
     case 'removePhoto':
