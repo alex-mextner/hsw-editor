@@ -76,7 +76,7 @@ export const InputRequestSchema = z.discriminatedUnion('kind', [
     kind: z.literal('calibration'),
     payload: z.object({
       photoId: z.string().min(1),
-      mode: z.enum(['two-point', 'grid']).default('two-point'),
+      mode: z.enum(['two-point', 'corners', 'grid']).default('two-point'),
     }),
   }),
 ]);

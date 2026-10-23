@@ -19,6 +19,7 @@ import {
   type ParamMap,
 } from './draftEdits.ts';
 import { useDraftPreview } from './draftPreview.ts';
+import { noteKey, rememberSnap, snapNoteStore, snapParam } from './sizeSnap.ts';
 import { DimensionWidgetField, parseField, type StepSize } from './DimensionWidgetField.tsx';
 import { DimensionWidgetProvenance } from './DimensionWidgetProvenance.tsx';
 import { toolParamDefs } from './toolDimensions.ts';
@@ -128,6 +129,7 @@ function DimensionForm({
   // slider-release and blur handlers, which fire before React re-renders, never read a stale edit.
   const [working, setWorkingState] = useState<ParamMap | null>(null);
   const workingRef = useRef<ParamMap | null>(null);
+  const snapNotes = useStore(snapNoteStore);
   const [typing, setTyping] = useState<{ readonly key: string; readonly text: string } | null>(
     null,
   );
@@ -163,13 +165,20 @@ function DimensionForm({
     return next;
   };
 
+  /** Snaps a typed value to what can be built and remembers the explanation next to the field. */
+  const noteSnap = (def: ParamDef, requested: number): number => {
+    const snap = snapParam(def, requested);
+    rememberSnap(item.id, def.key, snap);
+    return snap.snapped;
+  };
+
   const commitTyped = (def: ParamDef): void => {
     const pending = typing?.key === def.key ? typing.text : null;
     const parsed = pending === null ? null : parseField(def, pending, unit);
     commit(
       parsed === null
         ? workingRef.current
-        : withValue(defs, current(), def, parsed, aspect, item.params),
+        : withValue(defs, current(), def, noteSnap(def, parsed), aspect, item.params),
     );
   };
 
@@ -177,7 +186,8 @@ function DimensionForm({
     setTyping({ key: def.key, text });
     const parsed = parseField(def, text, unit);
     // Only in-range numbers preview live, so typing "1" on the way to "150" does not jump to the minimum.
-    if (parsed !== null && parsed >= def.min && parsed <= def.max) edit(def, parsed);
+    if (parsed !== null && parsed >= def.min && parsed <= def.max)
+      edit(def, snapParam(def, parsed).snapped);
   };
 
   const onStep = (def: ParamDef, direction: 1 | -1, size: StepSize, apply: boolean): void => {
@@ -223,6 +233,7 @@ function DimensionForm({
               unit={unit}
               disabled={disabled}
               text={typing?.key === def.key ? typing.text : null}
+              snap={snapNotes[noteKey(item.id, def.key)] ?? null}
               onText={(text) => onText(def, text)}
               onSlide={(value) => {
                 setTyping(null);

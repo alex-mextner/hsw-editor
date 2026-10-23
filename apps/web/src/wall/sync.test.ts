@@ -383,3 +383,69 @@ describe('demo API (read-only)', () => {
     sync.dispose();
   });
 });
+
+describe('WallSync uploads and stale reads', () => {
+  const photoOp: Op = {
+    type: 'addPhoto',
+    photo: {
+      id: 'p1',
+      file: 'photos/p1.jpg',
+      mime: 'image/jpeg',
+      width: 10,
+      height: 10,
+      origin: 'upload',
+    },
+  };
+
+  test('the wall an upload answers with is shown at once and is undoable', async () => {
+    const server = new FakeServer();
+    const sync = await ready(server);
+    server.external(photoOp, ME);
+    sync.acceptUploaded(server.wall);
+    const state = sync.getSnapshot();
+    expect(state.wall?.photos.map((p) => p.id)).toEqual(['p1']);
+    expect(state.confirmedRev).toBe(1);
+    expect(state.canUndo).toBe(true);
+  });
+
+  test('the SSE echo arriving first makes the upload answer a no-op', async () => {
+    const server = new FakeServer();
+    const sync = await ready(server);
+    const entry = server.external(photoOp, ME);
+    await sync.applyRemote(entry);
+    const before = sync.getSnapshot();
+    sync.acceptUploaded(server.wall);
+    expect(sync.getSnapshot()).toEqual(before);
+  });
+
+  test('the upload answer first makes the SSE echo a no-op', async () => {
+    const server = new FakeServer();
+    const sync = await ready(server);
+    const entry = server.external(photoOp, ME);
+    sync.acceptUploaded(server.wall);
+    await sync.applyRemote(entry);
+    expect(sync.getSnapshot().wall?.photos).toHaveLength(1);
+    expect(sync.getSnapshot().confirmedRev).toBe(1);
+  });
+
+  test('queued edits survive an upload answer and are still sent after it', async () => {
+    const server = new FakeServer();
+    const sync = await ready(server);
+    server.external(photoOp, ME);
+    sync.submit([{ type: 'addItem', item: holder('a') }]);
+    sync.acceptUploaded(server.wall);
+    expect(sync.getSnapshot().wall?.items.map((i) => i.id)).toEqual(['a']);
+    expect(sync.getSnapshot().pending).toBe(1);
+  });
+
+  test('a resync whose read is older than what the session already holds is dropped', async () => {
+    const server = new FakeServer();
+    const sync = await ready(server);
+    const stale = server.wall;
+    server.external(photoOp, ME);
+    sync.acceptUploaded(server.wall);
+    server.wall = stale;
+    await sync.resync();
+    expect(sync.getSnapshot().wall?.photos).toHaveLength(1);
+  });
+});

@@ -152,7 +152,11 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
           <BridgeInstaller />
           <OmpViewportInstaller widthMm={size.width} heightMm={size.height} />
           {photoView ? (
-            <PhotoCameraRig camera={photoView.camera.three} />
+            <PhotoCameraRig
+              camera={photoView.camera}
+              wallToPx={photoView.map.wallToPxMatrix}
+              image={photoView.image}
+            />
           ) : (
             <CameraRig
               view={editor.view}

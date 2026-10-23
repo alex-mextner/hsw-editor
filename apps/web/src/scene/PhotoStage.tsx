@@ -7,6 +7,7 @@ import { useT } from '@/i18n/index.ts';
 import { setSplit, photoStore } from '@/state/photo.ts';
 import { useStore } from '@/state/react.ts';
 import { PhotoAlign } from './PhotoAlign.tsx';
+import { PhotoGuides } from './PhotoGuides.tsx';
 import { fitBox, type Box, type PhotoView } from './photoView.ts';
 
 function useElementSize(
@@ -101,6 +102,7 @@ export function PhotoFrame({
           {children}
         </div>
         {view && photo.split !== null ? <SplitHandle split={photo.split} /> : null}
+        {view ? <PhotoGuides wall={wall} view={view} /> : null}
         {view ? <PhotoAlign wall={wall} view={view} /> : null}
       </div>
     </div>
