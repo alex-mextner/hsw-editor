@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { readGlbSolid } from './glb.ts';
+import { isRedish } from './stripeColour.ts';
 
 /** Minimal GLB: one triangle (counter-clockwise from +z) instanced by two nodes, the second mirrored in x. */
-function twoTriangleGlb(): ArrayBuffer {
+function twoTriangleGlb(baseColor?: [number, number, number, number]): ArrayBuffer {
   const bin = new Uint8Array(44);
   const view = new DataView(bin.buffer);
   [0, 0, 0, 1, 0, 0, 0, 1, 0].forEach((value, i) => view.setFloat32(i * 4, value, true));
@@ -12,7 +13,14 @@ function twoTriangleGlb(): ArrayBuffer {
     scene: 0,
     scenes: [{ nodes: [0, 1] }],
     nodes: [{ mesh: 0 }, { mesh: 0, scale: [-1, 1, 1] }],
-    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1 }] }],
+    meshes: [
+      {
+        primitives: [
+          { attributes: { POSITION: 0 }, indices: 1, ...(baseColor ? { material: 0 } : {}) },
+        ],
+      },
+    ],
+    ...(baseColor ? { materials: [{ pbrMetallicRoughness: { baseColorFactor: baseColor } }] } : {}),
     accessors: [
       {
         bufferView: 0,
@@ -63,5 +71,22 @@ describe('readGlbSolid', () => {
     expect(normalZ(0)).toBeGreaterThan(0);
     expect(normalZ(1)).toBeGreaterThan(0);
     expect(Math.min(...Array.from(solid.positions).filter((_, i) => i % 3 === 0))).toBe(-1);
+  });
+
+  test('records the material colour and box of every mesh instance for the stripe colour', async () => {
+    const solid = await readGlbSolid(twoTriangleGlb([0.8, 0.02, 0.02, 1]));
+    expect(solid.colours).toHaveLength(2);
+    const [plain, mirrored] = solid.colours ?? [];
+    expect(plain?.min).toEqual([0, 0, 0]);
+    expect(plain?.max).toEqual([1, 1, 0]);
+    expect(mirrored?.min).toEqual([-1, 0, 0]);
+    expect(mirrored?.rgb).toEqual(plain?.rgb);
+    expect(plain && isRedish(plain.rgb)).toBe(true);
+  });
+
+  test('a mesh without a material gets the default white, which never counts as red-ish', async () => {
+    const [plain] = (await readGlbSolid(twoTriangleGlb())).colours ?? [];
+    plain?.rgb.forEach((channel) => expect(channel).toBeCloseTo(1, 6));
+    expect(plain && isRedish(plain.rgb)).toBe(false);
   });
 });

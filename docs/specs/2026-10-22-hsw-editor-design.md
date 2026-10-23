@@ -204,3 +204,8 @@ Heavy jobs: `flock /tmp/3d-cli-heavy.lock systemd-run --user --scope -p MemoryMa
 - Default port 8794 (recorded in `~/.config/hsw-editor/config.json`); vite dev server 5194 proxies `/api` to it.
 - The workstation `runpod-offload-gate` hook blocks whole-suite runs (`bun run test`, directory-wide `bun test`, `pytest dir`);
   single test files run locally, whole suites run in CI.
+
+## Clarifications log
+- 2026-10-23 (user, tg#24294, #166): where the invalid part's own background is red (red-handled tools, `docs/references/user-levitating-tools-2026-10-22.jpg`),
+  the diagonal invalid-zone stripes are WHITE instead of red, everywhere stripes are drawn (viewport, legend swatches, photo-mode overlay, PNG export).
+  Rule implemented in `apps/web/src/scene/invalid-zones/stripeColour.ts`: red-ish base colour -> white, anything else (and unknown colour) -> red.

@@ -14,6 +14,7 @@ const region = (key: string, vertices: number, triangles: number): RegionMesh =>
   positions: Float32Array.from({ length: vertices * 3 }, (_, i) => i),
   indices: Uint32Array.from({ length: triangles * 3 }, (_, i) => i % vertices),
   edges: Float32Array.from({ length: 12 }, (_, i) => i),
+  stripe: 'red',
 });
 
 describe('buildRegionBatch', () => {
@@ -58,6 +59,8 @@ describe('stripe material', () => {
   test('the shader hooks target chunks and anchors that exist in this three.js version', () => {
     expect(ShaderChunk.opaque_fragment).toContain('gl_FragColor');
     expect(ShaderChunk.meshphysical_frag).toContain('#include <opaque_fragment>');
+    expect(ShaderChunk.meshphysical_frag).toContain('#include <color_fragment>');
+    expect(ShaderChunk.color_fragment).toContain('vColor');
     expect(ShaderChunk.meshphysical_frag).toContain('void main() {');
     expect(STRIPE_FRAGMENT).toContain('gl_FragCoord');
   });

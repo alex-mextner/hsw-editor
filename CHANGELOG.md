@@ -8,6 +8,9 @@ needs an entry here first.
 
 ### Added
 
+- Invalid-zone stripes turn white where the invalid part itself is red (red screwdriver handles etc., #166): the colour is chosen per region from
+  the GLB material colours (`stripeColour.ts`), the legend shows both swatches; photo overlay and PNG export inherit it. See
+  [docs/invalid-zones.md](docs/invalid-zones.md#rendering).
 - Tool Library (`apps/web/src/features/tools`, [docs/tools.md](docs/tools.md#ui-tool-library-and-add-from-photo), #46): the Tools tab lists
   built-in classes and the user's tools with generated thumbnails, grouped by type, searchable in ru/en and filterable by tag;
   click or drag a tool onto the wall; detail page with live 3D preview, parameters, materials and the holding interface; the

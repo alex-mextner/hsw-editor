@@ -33,16 +33,26 @@ import {
   type BoundsSide,
   type InvalidReason,
   type ItemKind,
+  type Mat4,
   type Pose,
   type ValidityTolerances,
 } from '@hsw-editor/core';
 import { LruCache } from './lru.ts';
 import { regionEdges } from './regionEdges.ts';
+import {
+  chooseStripeColour,
+  colourAt,
+  type ColourPart,
+  type Rgb,
+  type StripeColour,
+} from './stripeColour.ts';
 
 /** Triangle mesh in millimetres, item frame (origin = item pose origin). */
 export interface SolidMesh {
   readonly positions: Float32Array;
   readonly indices: Uint32Array;
+  /** Material colour of the parts of the solid (item frame), for the stripe colour; absent = unknown. */
+  readonly colours?: readonly ColourPart[];
 }
 
 export type SolidSpec =
@@ -69,6 +79,8 @@ export interface RegionMesh {
   readonly geometryKey: string;
   readonly positions: Float32Array;
   readonly indices: Uint32Array;
+  /** Stripe colour: white where the region covers red-ish material (red stripes would vanish), else red. */
+  readonly stripe: StripeColour;
   /** Outline segments (xyz pairs), computed once with the region so the render thread never has to. */
   readonly edges: Float32Array;
 }
@@ -91,6 +103,7 @@ interface Region {
   readonly positions: Float32Array;
   readonly indices: Uint32Array;
   readonly edges: Float32Array;
+  readonly stripe: StripeColour;
   readonly volumeMm3: number;
   /** Overlap: thinnest width of the region along the item axes; bounds: how far it reaches past the plane. */
   readonly depthMm: number;
@@ -99,6 +112,7 @@ interface Region {
 interface Solid {
   readonly manifold: Manifold;
   readonly localBox: Aabb;
+  readonly colours: readonly ColourPart[];
 }
 
 /** Smallest slab reach; it doubles until it covers the scene, so far-away items are still clipped and measured. */
@@ -204,6 +218,7 @@ export class InvalidZoneEngine {
           positions: region.positions,
           indices: region.indices,
           edges: region.edges,
+          stripe: region.stripe,
         });
       }
     }
@@ -254,6 +269,7 @@ export class InvalidZoneEngine {
         positions: region.positions,
         indices: region.indices,
         edges: region.edges,
+        stripe: region.stripe,
       });
     }
 
@@ -267,7 +283,7 @@ export class InvalidZoneEngine {
     };
   }
 
-  private boxSolid(box: Aabb): Solid {
+  private boxSolid(box: Aabb, colours: readonly ColourPart[] = []): Solid {
     const size: [number, number, number] = [
       box.max.x - box.min.x,
       box.max.y - box.min.y,
@@ -276,11 +292,12 @@ export class InvalidZoneEngine {
     const cube = this.wasm.Manifold.cube(size);
     const manifold = cube.translate([box.min.x, box.min.y, box.min.z]);
     cube.delete();
-    return { manifold, localBox: box };
+    return { manifold, localBox: box, colours };
   }
 
   private meshSolid(key: string, mesh: SolidMesh): Solid {
     const localBox = meshBox(mesh.positions);
+    const colours = mesh.colours ?? [];
     try {
       const wasmMesh = new this.wasm.Mesh({
         numProp: 3,
@@ -291,14 +308,14 @@ export class InvalidZoneEngine {
       wasmMesh.merge();
       const manifold = new this.wasm.Manifold(wasmMesh);
       if (manifold.status() === 'NoError' && manifold.volume() > 0) {
-        return { manifold, localBox };
+        return { manifold, localBox, colours };
       }
       manifold.delete();
     } catch {
       // Not a valid solid: fall through to the bounding box.
     }
     this.approximateSolids.add(key);
-    return this.boxSolid(localBox);
+    return this.boxSolid(localBox, colours);
   }
 
   /** Posed (world-frame) manifold of an item, cached per (solid, pose). */
@@ -324,7 +341,11 @@ export class InvalidZoneEngine {
       ...axisDirections(b.item.pose),
       ...centreDirections(a, b),
     ];
-    return this.takeRegion(shared, (positions) => thinnestWidth(positions, directions));
+    return this.takeRegion(
+      shared,
+      (positions) => thinnestWidth(positions, directions),
+      (positions) => stripeColourOf(positions, [a, b]),
+    );
   }
 
   private boundsRegion(
@@ -335,8 +356,10 @@ export class InvalidZoneEngine {
     side: BoundsSide,
   ): Region | null {
     const slab = this.slabManifold(board, reach, side);
-    return this.takeRegion(this.posedManifold(item, solid).intersect(slab), (_positions, box) =>
-      sideExtent(box, board, side),
+    return this.takeRegion(
+      this.posedManifold(item, solid).intersect(slab),
+      (_positions, box) => sideExtent(box, board, side),
+      (positions) => stripeColourOf(positions, [{ item, solid }]),
     );
   }
 
@@ -362,6 +385,7 @@ export class InvalidZoneEngine {
   private takeRegion(
     result: Manifold,
     depthOf: (positions: Float32Array, box: Aabb) => number,
+    stripeOf: (positions: Float32Array) => StripeColour,
   ): Region | null {
     const pieces = result.isEmpty() ? [] : result.decompose();
     result.delete();
@@ -398,6 +422,7 @@ export class InvalidZoneEngine {
       return {
         ...merged,
         edges: regionEdges(merged.positions, merged.indices),
+        stripe: stripeOf(merged.positions),
         volumeMm3,
         depthMm,
       };
@@ -405,6 +430,48 @@ export class InvalidZoneEngine {
       for (const piece of pieces) piece.delete();
     }
   }
+}
+
+/** At most this many region vertices are looked up per item: enough to tell a red handle from a grey shaft. */
+const MAX_COLOUR_SAMPLES = 48;
+
+/**
+ * Stripe colour of a region (world-frame positions): the base colour of each involved item at the region's
+ * vertices, found by carrying them back into the item frame.
+ */
+function stripeColourOf(
+  positions: Float32Array,
+  targets: readonly { item: EngineItem; solid: Solid }[],
+): StripeColour {
+  const count = positions.length / 3;
+  const step = Math.max(1, Math.floor(count / MAX_COLOUR_SAMPLES));
+  const samples: (Rgb | null)[] = [];
+  for (const { item, solid } of targets) {
+    if (solid.colours.length === 0) continue;
+    const m = poseMatrix(item.pose);
+    for (let v = 0; v < count; v += step) {
+      const [x, y, z] = toItemFrame(
+        m,
+        positions[v * 3] ?? 0,
+        positions[v * 3 + 1] ?? 0,
+        positions[v * 3 + 2] ?? 0,
+      );
+      samples.push(colourAt(solid.colours, x, y, z));
+    }
+  }
+  return chooseStripeColour(samples);
+}
+
+/** Inverse of a pose matrix applied to a world point. Poses are rigid (rotation + translation): the inverse is the transpose. */
+function toItemFrame(m: Mat4, x: number, y: number, z: number): [number, number, number] {
+  const dx = x - m[12];
+  const dy = y - m[13];
+  const dz = z - m[14];
+  return [
+    m[0] * dx + m[1] * dy + m[2] * dz,
+    m[4] * dx + m[5] * dy + m[6] * dz,
+    m[8] * dx + m[9] * dy + m[10] * dz,
+  ];
 }
 
 function concat<T extends Float32Array | Uint32Array>(
