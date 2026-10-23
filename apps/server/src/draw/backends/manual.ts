@@ -67,7 +67,7 @@ export class ManualBackend implements DrawBackend {
       }
       throw new DrawError(
         'manual_pending',
-        `Generate ${req.n} image(s) with the prompt in ${jobDir}/prompt.txt (refs alongside) and put them into ${inbox} (the newest file there is used: `touch` one you moved in by hand)`,
+        `Generate ${req.n} image(s) with the prompt in ${jobDir}/prompt.txt (refs alongside) and put them into ${inbox} (the newest file there is used: run touch on one you moved in by hand)`,
         { retryable: true, jobDir },
       );
     }
