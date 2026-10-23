@@ -21,7 +21,8 @@ needs an entry here first.
 - `bun run release`, `scripts/install.sh` (idempotent, offline when the agent-tools lib is present).
 - HSW element bank (`packages/bank`, `docs/bank.md`): element schema and validator, ru/en search, ingestion pipeline
   (`bun run bank:ingest|bank:verify|bank:build-variant`), 428 elements (144 from sources, 284 generated family rungs),
-  a 103-element redistributable seed under `packages/bank/seed`, and `createBankHandler` (`/api/bank/*`, `/bank/assets/*`).
+  a 103-element redistributable seed under `packages/bank/seed`, and `createBankHandler` (`/api/bank/*`, `/bank/assets/*`),
+  mounted in the daemon by `apps/server/src/bank-routes.ts`.
 
 ### Changed
 
