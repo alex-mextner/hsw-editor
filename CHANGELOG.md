@@ -8,6 +8,7 @@ needs an entry here first.
 
 ### Added
 
+- The embedded agent can build a wall for the user's tools (#217): host tools `wall_tools_search` (the tool library by tag, class and text, with suggested holders and the library's tags) and `wall_add_tool` (a library tool added as its real model and hung on a compatible holder with the editor's own `@hsw-editor/compat` placement, one undo step), and a "building a wall for the user's tools" recipe in the system prompt that proceeds with defaults instead of asking. `wall_analyse_hang` is now auto-approved like the other host tools; `toolDraftOps` (the model ref + tool item of an added tool), `toolInterfaceFromHolding` and `measuredDimensions` moved to `@hsw-editor/compat` so the editor and the daemon share them. See [docs/omp.md](docs/omp.md#host-tools).
 - Photo segmentation is 3.4x faster by default (hsw-editor #10): `segment.quality` `fast` (sidecar default; `POST /segment` 8.3 s -> 2.4 s warm on the GPU) or `accurate` (the former default), per request and as the `vision.segmentQuality` setting (palette, ru/en;
   the daemon adds it to every stage request). `threed-vision` bumped for it (3d-cli #543); measurements and a real-photo timing test in [docs/vision.md](docs/vision.md#segmentation-speed-quality-fast--accurate).
 - Physics on the generated tool models (#167 follow-up): the physics judges the model the scene draws (`resolveToolModel`, also a size rebuilt

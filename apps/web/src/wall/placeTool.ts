@@ -2,7 +2,7 @@
  * Adds a tool at a wall point the way dropping it there would: on a compatible mount of a holder under the point
  * when there is one, else free; a free tool then gets the best compatible holder from the bank next to it.
  */
-import { planAddHung } from '@hsw-editor/compat';
+import { planAddHung, toolDraftOps } from '@hsw-editor/compat';
 import type { BankElement } from '@hsw-editor/bank';
 import { applyOp, OpError, type LeafOp, type Wall } from '@hsw-editor/core';
 import { bankStore } from '@/bank/client.ts';
@@ -12,7 +12,7 @@ import { addHolderForTool, currentWall } from './actions.ts';
 import { planToolDrag } from './attach.ts';
 import { sessionStore, submitOps } from './session.ts';
 import { toolInterfaceOf } from './toolInterface.ts';
-import { toolDraftOps, type Dims3 } from './toolPresets.ts';
+import type { Dims3 } from './toolPresets.ts';
 
 export interface PlaceToolRequest {
   readonly toolClass: string;

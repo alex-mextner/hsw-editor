@@ -24,4 +24,6 @@ export {
   type ToolPlacement,
 } from './slots.ts';
 export * from './toolFilter.ts';
+export * from './toolDraft.ts';
+export * from './toolInterface.ts';
 export * from './types.ts';
