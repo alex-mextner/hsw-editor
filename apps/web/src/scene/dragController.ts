@@ -44,6 +44,8 @@ interface Origin {
   readonly rotZ: number;
   /** Rides along with its holder: shifted by the holder's displacement, never snapped itself. */
   readonly follows?: boolean;
+  /** The holder a follower hangs on, so it can ride that holder's snapped displacement. */
+  readonly parentId?: string;
 }
 
 export interface DragOutcome {
@@ -78,15 +80,27 @@ export function planMove(
     shift = { x: centre.x - primary.x, y: centre.y - primary.y };
   }
   for (const [id, origin] of origins) {
+    if (origin.follows) continue;
     const x = origin.x + shift.x;
     const y = origin.y + shift.y;
-    if (snap && !origin.follows) {
+    if (snap) {
       const cell = nearestCell(wall.board, x, y);
       const centre = cellCenter(wall.board, cell);
       poses.set(id, { x: centre.x, y: centre.y, rotZ: origin.rotZ, cell });
     } else {
       poses.set(id, { x, y, rotZ: origin.rotZ, cell: undefined });
     }
+  }
+  for (const [id, origin] of origins) {
+    if (!origin.follows) continue;
+    // A hung tool keeps its offset from the holder as the holder actually lands (snapped), not as the pointer asked.
+    const holderPose = origin.parentId === undefined ? undefined : poses.get(origin.parentId);
+    const holderOrigin = origin.parentId === undefined ? undefined : origins.get(origin.parentId);
+    const move =
+      holderPose && holderOrigin
+        ? { x: holderPose.x - holderOrigin.x, y: holderPose.y - holderOrigin.y }
+        : shift;
+    poses.set(id, { x: origin.x + move.x, y: origin.y + move.y, rotZ: origin.rotZ, cell: undefined });
   }
   return { poses, valid: isPlacementValid(wall, poses) };
 }
@@ -138,6 +152,54 @@ export interface PointerPress {
   readonly stopPropagation: () => void;
 }
 
+export interface DragItems {
+  /** Selected, unlocked items that move by themselves. */
+  readonly movable: readonly WallItem[];
+  /** Tools hanging on a moved holder that travel with it (even locked ones, which then block the move). */
+  readonly carried: readonly WallItem[];
+  /** The item that sets the snap; null when the press landed on something that is not being moved. */
+  readonly primaryId: string | null;
+}
+
+/** Splits a selection into what moves, what is carried along by a moved holder and which item leads the drag. */
+export function resolveDragItems(
+  wall: Wall,
+  selection: readonly string[],
+  pressedId: string,
+): DragItems {
+  const selected = wall.items.filter((item) => selection.includes(item.id) && !item.locked);
+  // A selected tool on a selected holder rides along with it instead of moving by itself.
+  const holderIds = new Set(selected.filter((item) => item.kind === 'holder').map((i) => i.id));
+  const movable = selected.filter(
+    (item) => !(item.parentId !== undefined && holderIds.has(item.parentId)),
+  );
+  const pressedItem = wall.items.find((item) => item.id === pressedId);
+  // Pressing a tool that rides on a selected holder drags that holder, tool included.
+  const primaryId = movable.some((item) => item.id === pressedId)
+    ? pressedId
+    : pressedItem?.parentId !== undefined && holderIds.has(pressedItem.parentId)
+      ? pressedItem.parentId
+      : null;
+  const carried = wall.items.filter(
+    (item) =>
+      item.parentId !== undefined && holderIds.has(item.parentId) && !movable.includes(item),
+  );
+  return { movable, carried, primaryId };
+}
+
+/** Where a tool released away from any mount lands: a lattice cell when snapping, else exactly under the pointer. */
+export function freeDropTarget(
+  board: Wall['board'],
+  pose: Vec2,
+  snap: boolean,
+  free: boolean,
+): { readonly cell: GridCell } | { readonly x: number; readonly y: number } {
+  // Snap on keeps tools on lattice cells like every other item; Alt always means "leave it free", also with snap off.
+  return snap && !free
+    ? { cell: nearestCell(board, pose.x, pose.y) }
+    : { x: pose.x, y: pose.y };
+}
+
 /** Item pointer-down: select, then start a move that only becomes real after a few pixels of travel. */
 export function beginItemDrag(id: string, event: PointerPress): void {
   const native = event.nativeEvent;
@@ -150,19 +212,8 @@ export function beginItemDrag(id: string, event: PointerPress): void {
   if (!wasSelected || additive) selectItem(id, additive);
 
   const selection = editorStore.get().selection;
-  const selected = wall.items.filter((item) => selection.includes(item.id) && !item.locked);
-  // A selected tool on a selected holder rides along with it instead of moving by itself.
-  const holderIds = new Set(selected.filter((item) => item.kind === 'holder').map((i) => i.id));
-  const movable = selected.filter(
-    (item) => !(item.parentId !== undefined && holderIds.has(item.parentId)),
-  );
+  const { movable, carried, primaryId } = resolveDragItems(wall, selection, id);
   const pressedItem = wall.items.find((item) => item.id === id);
-  // Pressing a tool that rides on a selected holder drags that holder, tool included.
-  const primaryId = movable.some((item) => item.id === id)
-    ? id
-    : pressedItem?.parentId !== undefined && holderIds.has(pressedItem.parentId)
-      ? pressedItem.parentId
-      : null;
   if (!selection.includes(id) || primaryId === null) return;
   const start = wallPointAt(native.clientX, native.clientY);
   if (!start) return;
@@ -176,12 +227,6 @@ export function beginItemDrag(id: string, event: PointerPress): void {
     });
     return;
   }
-  // Tools hanging in a moved holder travel with it (even locked ones, which then block the move).
-  const carried = wall.items.filter(
-    (item) =>
-      item.parentId !== undefined && holderIds.has(item.parentId) && !movable.includes(item),
-  );
-
   const origins = new Map<string, Origin>([
     ...movable.map((item): [string, Origin] => [
       item.id,
@@ -194,7 +239,14 @@ export function beginItemDrag(id: string, event: PointerPress): void {
     ]),
     ...carried.map((item): [string, Origin] => [
       item.id,
-      { x: item.pose.x, y: item.pose.y, cell: undefined, rotZ: item.pose.rotZ, follows: true },
+      {
+        x: item.pose.x,
+        y: item.pose.y,
+        cell: undefined,
+        rotZ: item.pose.rotZ,
+        follows: true,
+        ...(item.parentId === undefined ? {} : { parentId: item.parentId }),
+      },
     ]),
   ]);
   const startClient = { x: native.clientX, y: native.clientY };
@@ -349,10 +401,7 @@ function beginWallToolDrag(
         type: 'moveItem',
         id,
         // Snap on (Alt inverts it) keeps tools on lattice cells like every other item: they stay nudgeable and copyable.
-        to:
-          editorStore.get().snap !== outcome.free
-            ? { cell: nearestCell(live.board, outcome.pose.x, outcome.pose.y) }
-            : { x: outcome.pose.x, y: outcome.pose.y },
+        to: freeDropTarget(live.board, outcome.pose, editorStore.get().snap, outcome.free),
       },
     ];
     submitOps(ops, 'move-item');

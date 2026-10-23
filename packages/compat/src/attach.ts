@@ -444,7 +444,7 @@ export interface HangAudit {
   compat: Compatibility;
 }
 
-type SlotClaim = 'unique' | 'unslotted' | 'out-of-range' | 'collision';
+type SlotClaim = 'unique' | 'unslotted' | 'out-of-range' | 'collision' | 'misfit';
 
 /**
  * How each occupant of a holder stands towards the slot it names: the first tool claiming an in-range slot
@@ -458,7 +458,8 @@ function slotClaims(ctx: AttachContext, holder: HolderEntry): Map<string, SlotCl
     const fit = tool === undefined ? undefined : compatibility(tool, holder.spec);
     const slots = slotCount(fit?.ok ? matchedEntry(holder.spec, fit) : null);
     // A tool the mount does not take is flagged on its own; it must not make a fitting tool lose its slot.
-    if (item.slot === undefined || !fit?.ok) claims.set(item.id, 'unslotted');
+    if (!fit?.ok) claims.set(item.id, 'misfit');
+    else if (item.slot === undefined) claims.set(item.id, 'unslotted');
     else if (item.slot >= slots) claims.set(item.id, 'out-of-range');
     else if (claimed.has(item.slot)) claims.set(item.id, 'collision');
     else {
@@ -469,12 +470,16 @@ function slotClaims(ctx: AttachContext, holder: HolderEntry): Map<string, SlotCl
   return claims;
 }
 
-/** Lower ranks are judged first; the two surplus kinds share the last rank and keep wall order among themselves. */
+/**
+ * Lower ranks are judged first; tools the mount does not take go last so they never count towards the
+ * occupied slots of fitting ones, and the two surplus kinds share a rank and keep wall order among themselves.
+ */
 const CLAIM_RANK: Record<SlotClaim, number> = {
   unique: 0,
   unslotted: 1,
   'out-of-range': 2,
   collision: 2,
+  misfit: 3,
 };
 
 /**
