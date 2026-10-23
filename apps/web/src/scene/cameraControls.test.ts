@@ -8,7 +8,7 @@ import {
   type WallItem,
 } from '@hsw-editor/core';
 import { MOUSE, TOUCH } from 'three';
-import { editorStore, patchEditor } from '@/state/editor.ts';
+import { editorStore, patchEditor, type ToolMode } from '@/state/editor.ts';
 import { sessionStore } from '@/wall/session.ts';
 import { bindCameraLock, mouseButtonsFor, touchesFor } from './cameraControls.ts';
 import { beginItemDrag } from './dragController.ts';
@@ -46,28 +46,38 @@ describe('touchesFor', () => {
 
 describe('bindCameraLock', () => {
   test('orbit is disabled the moment an item is held, without waiting for a React render', () => {
-    const store = createValueStore({ holding: false });
+    const store = createValueStore({ holding: false, tool: 'select' as ToolMode });
     const controls = { enabled: true };
     const unbind = bindCameraLock(controls, store);
-    store.set({ holding: true });
+    store.set({ holding: true, tool: 'select' });
     expect(controls.enabled).toBe(false);
-    store.set({ holding: false });
+    store.set({ holding: false, tool: 'select' });
     expect(controls.enabled).toBe(true);
     unbind();
   });
 
   test('applies the current state when it binds (controls re-created while an item is held)', () => {
-    const store = createValueStore({ holding: true });
+    const store = createValueStore({ holding: true, tool: 'select' as ToolMode });
     const controls = { enabled: true };
     bindCameraLock(controls, store);
     expect(controls.enabled).toBe(false);
   });
 
+  test('a drawing tool owns the left drag, so orbit is off until the select tool returns', () => {
+    const store = createValueStore({ holding: false, tool: 'select' as ToolMode });
+    const controls = { enabled: true };
+    bindCameraLock(controls, store);
+    store.set({ holding: false, tool: 'measure' });
+    expect(controls.enabled).toBe(false);
+    store.set({ holding: false, tool: 'select' });
+    expect(controls.enabled).toBe(true);
+  });
+
   test('stops following the store after unbind', () => {
-    const store = createValueStore({ holding: false });
+    const store = createValueStore({ holding: false, tool: 'select' as ToolMode });
     const controls = { enabled: true };
     bindCameraLock(controls, store)();
-    store.set({ holding: true });
+    store.set({ holding: true, tool: 'select' });
     expect(controls.enabled).toBe(true);
   });
 });

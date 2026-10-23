@@ -74,8 +74,8 @@ export async function loadOpenRequests(wallId: string): Promise<void> {
     ];
     requestsStore.set({ wallId, status: 'ready', requests: sortRequests(merged) });
   } catch {
-    if (mine === generation)
-      requestsStore.set({ wallId, status: 'error', requests: requestsStore.get().requests });
+    // The cards kept for the reload are stale now: a failed refresh must not leave answerable ghosts behind.
+    if (mine === generation) requestsStore.set({ wallId, status: 'error', requests: [] });
   }
 }
 

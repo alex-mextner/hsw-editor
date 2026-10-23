@@ -2,9 +2,11 @@
  * Pointer bindings of the viewport camera. Left drag on the background orbits, middle drag pans,
  * the wheel zooms, one finger orbits and two fingers pan/zoom; the right button is deliberately
  * unbound because it opens the context menu. A press on an item belongs to the item (move/rotate),
- * so `bindCameraLock` switches the controls off for the duration of that press.
+ * so `bindCameraLock` switches the controls off for the duration of that press; the measure and
+ * calibrate tools own the left drag too, so the controls stay off while either is active.
  */
 import { MOUSE, TOUCH } from 'three';
+import type { ToolMode } from '@/state/editor.ts';
 import type { Store } from '@/state/types.ts';
 
 export interface NavigationMode {
@@ -35,17 +37,19 @@ export function touchesFor({ ortho }: NavigationMode): TouchBindings {
 }
 
 /**
- * Keeps `controls.enabled` equal to "no item is held". The store notifies synchronously, so the
+ * Keeps `controls.enabled` equal to "no item is held and the select tool is active"
+ * (the other tools own the left drag). The store notifies synchronously, so the
  * controls are already off when the item's pointer-down handler returns, before OrbitControls'
  * own pointer-down listener (or any React render) can start an orbit under the dragged item.
  * Returns the unbind function.
  */
 export function bindCameraLock(
   controls: { enabled: boolean },
-  store: Store<{ readonly holding: boolean }>,
+  store: Store<{ readonly holding: boolean; readonly tool: ToolMode }>,
 ): () => void {
   const sync = (): void => {
-    controls.enabled = !store.getSnapshot().holding;
+    const { holding, tool } = store.getSnapshot();
+    controls.enabled = !holding && tool === 'select';
   };
   sync();
   return store.subscribe(sync);
