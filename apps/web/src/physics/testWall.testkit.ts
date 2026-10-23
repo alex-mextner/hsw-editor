@@ -1,4 +1,4 @@
-/** A small wall with fake bank elements and a fake tool library for the physics tests. */
+/** A small wall with fake bank elements and fake tool models for the physics tests. */
 import type { BankElement } from '@hsw-editor/bank';
 import {
   createEmptyWall,
@@ -12,7 +12,7 @@ import { DISTURBANCES, type HangReport, type RankedSeat } from '@hsw-editor/phys
 import type { HolderSpec, ToolInterface } from '@hsw-editor/compat';
 import { bankElement } from '@/test/fixtures.ts';
 import { toolInterfaceOf } from '@/wall/toolInterface.ts';
-import type { AssetContext, ToolLibrary } from './assets.ts';
+import type { AssetContext, ToolModelSource } from './assets.ts';
 import type { PhysicsRanker } from './client.ts';
 import type { RankRequest } from './protocol.ts';
 import type { PostStepDeps } from './seat.ts';
@@ -37,43 +37,25 @@ export const HOOK_CAPPED: HolderSpec = {
   bboxMm: HOOK.bboxMm,
 };
 
-export const LIBRARY: ToolLibrary = {
-  classes: [
-    {
-      id: 'screwdriver',
-      bankClass: 'screwdriver',
-      schema: {
-        shaftDiameter: {
-          kind: 'num',
-          min: 2,
-          max: 10,
-          def: 5,
-          step: 0.1,
-          unit: 'mm',
-          label: { en: 'Shaft', ru: 'Стержень' },
-          dimension: true,
-        },
-        length: {
-          kind: 'num',
-          min: 50,
-          max: 400,
-          def: 200,
-          step: 1,
-          unit: 'mm',
-          label: { en: 'Length', ru: 'Длина' },
-          dimension: true,
-        },
-        grip: { kind: 'color', def: '#ff0000', label: { en: 'Grip', ru: 'Рукоять' } },
-      },
-    },
-    {
-      id: 'screwdriver-precision',
-      bankClass: 'screwdriver',
-      schema: {},
-    },
-  ],
-  tools: [{ id: 'mine', updatedAt: '2026-10-01T00:00:00Z' }],
-};
+/** Tool classes no generator draws (`resolveToolModel` answers null: such a tool stays a box and is not judged). */
+const NO_GENERATOR: ReadonlySet<string> = new Set(['saw']);
+
+/**
+ * What the editor's `resolveToolModel` gives a tool, faked: one model per tool class and parameter set, so equal tools
+ * share a key and a different shaft is another model.
+ */
+export function fakeToolModel(item: WallItem): ToolModelSource | null {
+  if (item.kind !== 'tool' || item.toolClass === undefined || NO_GENERATOR.has(item.toolClass)) {
+    return null;
+  }
+  const params = JSON.stringify(
+    Object.fromEntries(Object.entries(item.params).sort(([a], [b]) => (a < b ? -1 : 1))),
+  );
+  return {
+    key: `class|${item.toolClass}|${params}`,
+    path: `/api/tools/classes/${item.toolClass}/model.glb?lod=1&p=${encodeURIComponent(params)}`,
+  };
+}
 
 export const POSE: Pose = { x: 0, y: 0, z: 0, rotX: 0, rotY: 0, rotZ: 0 };
 
@@ -137,12 +119,15 @@ export function wallOf(
 
 export function contextOf(
   wall: Wall,
-  options: { readonly library?: ToolLibrary; readonly elements?: readonly BankElement[] } = {},
+  options: {
+    readonly toolModel?: AssetContext['toolModel'];
+    readonly elements?: readonly BankElement[];
+  } = {},
 ): AssetContext {
   const elements = options.elements ?? [RACK, HOOK];
   return {
     bank: new Map(elements.map((e) => [e.id, e])),
-    library: options.library ?? LIBRARY,
+    toolModel: options.toolModel ?? fakeToolModel,
     baseUrl: 'http://wall.test/app/',
     toolInterface: (item): ToolInterface | undefined => toolInterfaceOf(item, wall),
   };

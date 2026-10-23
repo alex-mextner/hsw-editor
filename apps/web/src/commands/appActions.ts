@@ -11,6 +11,7 @@ import {
   toggleSplit,
 } from '@/features/photo/photoActions.ts';
 import { checkPhysics } from '@/features/physics/checkPhysics.ts';
+import { seatPhysics } from '@/features/physics/seatPhysics.ts';
 import { bankStore } from '@/bank/client.ts';
 import { newWallDialogStore } from '@/features/wizard/NewWallDialog.tsx';
 import type { HistoryEntry } from '@hsw-editor/core';
@@ -137,6 +138,7 @@ export function createAppActions(deps: AppActionDeps): EditorActions {
       layoutStore.set({ ...layoutStore.get(), [PANEL_LAYOUT_KEY.inspector]: true });
       void checkPhysics();
     },
+    seatPhysics: () => void seatPhysics(),
     calibratePhoto: calibrateShownPhoto,
     togglePhotoVisible: togglePhotoHidden,
     togglePhotoSplit: toggleSplit,

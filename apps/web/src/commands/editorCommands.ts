@@ -33,6 +33,8 @@ export interface EditorActions {
   readonly findPhotoTools: () => void;
   /** Runs the wall physics check and opens its report list (the wall view of the inspector). */
   readonly checkPhysics: () => void;
+  /** Seats every hung tool in its holder as the physics says (one undo step). */
+  readonly seatPhysics: () => void;
   readonly calibratePhoto: () => void;
   readonly togglePhotoVisible: () => void;
   readonly togglePhotoSplit: () => void;
@@ -340,6 +342,15 @@ export function createEditorCommands(actions: EditorActions): readonly Command[]
       when: `hasWall && ${FREE}`,
       mutates: false,
       handler: effect(actions.checkPhysics),
+    }),
+    defineCommand({
+      id: 'physics.seat',
+      title: msg('physics.cmd.seat'),
+      keywords: ['physics', 'seat', 'hang', 'levitate', 'fix', 'физика', 'посадить', 'держатель'],
+      group: 'edit',
+      when: `hasWall && ${FREE}`,
+      mutates: true,
+      handler: effect(actions.seatPhysics),
     }),
     defineCommand({
       id: 'photo.calibrate',

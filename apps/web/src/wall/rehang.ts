@@ -1,20 +1,113 @@
 /**
  * A hung tool whose size changed no longer sits where it was placed: the grip point is measured from the butt, so a longer
  * shaft moves the tool in its holder. After the dimension edit, once the rebuilt model is known, the tool is placed again in
- * the slot it occupies (same maths as a drop) as one more undo step. A tool that no longer fits stays where it is: the
- * compatibility panel says why.
+ * the slot it occupies as one more undo step. The physics seats it (`seatTool`: the rebuilt model lowered into the real
+ * holder mesh, so a longer shaft goes deeper into its hole instead of floating above it); without a seat (physics checks off,
+ * a rotated holder, a tool the holder cannot take in the physics' eyes) the compatibility maths of a drop place it. A tool
+ * that no longer fits stays where it is: the compatibility panel says why.
  */
 import { evaluateHolders, planHang, resolveDrop } from '@hsw-editor/compat';
-import { bankStore } from '@/bank/client.ts';
 import { paramsKey } from '@/bank/models.ts';
+import { livePostStepDeps } from '@/physics/context.ts';
+import {
+  samePose,
+  seatOps,
+  seatToolInHolder,
+  stillHung,
+  warnSeatFailed,
+  type PostStepDeps,
+  type SeatOutcome,
+} from '@/physics/seat.ts';
 import { toolModelVersion } from '@/toolmodels/regen.ts';
 import { resolveToolModel } from '@/toolmodels/resolve.ts';
 import { attachContext } from './attach.ts';
 import { currentWall } from './actions.ts';
-import { submitOps } from './session.ts';
 
 /** How long a rebuild is waited for; a slower one leaves the tool where it is. */
 const MODEL_WAIT_MS = 8000;
+
+/** What the editor provides: the physics post-step inputs, and the wait for the rebuilt model. */
+export interface RehangDeps {
+  readonly post: PostStepDeps;
+  /** Resolves true when the model of the tool is no longer being rebuilt, false when that took too long. */
+  readonly settled: (itemId: string) => Promise<boolean>;
+}
+
+/**
+ * `seated`: moved to the physics' resting pose. `replaced`: moved by the compatibility maths (no seat). `unchanged`:
+ * already where it belongs, no undo step. `skipped`: not hung, locked, edited or moved meanwhile, no longer fits,
+ * or the rebuild did not finish.
+ */
+export type RehangStatus = 'seated' | 'replaced' | 'unchanged' | 'skipped';
+
+export async function rehangWith(deps: RehangDeps, itemId: string): Promise<RehangStatus> {
+  const { post } = deps;
+  const firstWall = post.wall();
+  const first = firstWall?.items.find((candidate) => candidate.id === itemId);
+  if (first?.kind !== 'tool' || first.parentId === undefined || first.slot === undefined) {
+    return 'skipped';
+  }
+  const editedFor = paramsKey(first.params);
+  if (!(await deps.settled(itemId))) return 'skipped';
+  const wall = post.wall();
+  const ctx = wall === null ? null : post.context(wall);
+  const item = wall?.items.find((candidate) => candidate.id === itemId);
+  if (
+    wall === null ||
+    wall.id !== firstWall?.id ||
+    ctx === null ||
+    item?.parentId === undefined ||
+    item.locked
+  ) {
+    return 'skipped';
+  }
+  // The edit was undone (or edited again) while the model was building: the tool is not this edit's to move. Compared by value:
+  // every acknowledgement and echo of the server hands out new, equal objects.
+  if (paramsKey(item.params) !== editedFor) return 'skipped';
+  // The tool must still be the one the edit was made on: it may have been moved or hung elsewhere while the model was building.
+  const { parentId, slot, pose: before } = item;
+  if (item.parentId !== first.parentId || item.slot !== first.slot) return 'skipped';
+  const attach = attachContext(wall, ctx.bank);
+  const own = evaluateHolders(attach, item)
+    .find((evaluation) => evaluation.holderId === parentId)
+    ?.freeSlots.find((free) => free.slot.index === slot);
+  if (!own) return 'skipped';
+  const resolution = resolveDrop(attach, item, { x: own.world[0], y: own.world[1] });
+  if (
+    resolution.kind !== 'attach' ||
+    resolution.target.holderId !== parentId ||
+    resolution.target.slot !== slot
+  ) {
+    return 'skipped';
+  }
+
+  let seat: SeatOutcome | null = null;
+  if (post.enabled()) {
+    try {
+      seat = await seatToolInHolder(itemId, parentId, post, slot);
+    } catch (error) {
+      warnSeatFailed(itemId, error);
+    }
+    // The worker took a moment: the user may have moved or edited the tool meanwhile.
+    const liveWall = post.wall();
+    const live = liveWall?.items.find((candidate) => candidate.id === itemId);
+    if (
+      liveWall?.id !== wall.id ||
+      liveWall.rev !== wall.rev ||
+      !stillHung(live, { parentId, slot, pose: before }) ||
+      paramsKey(live?.params ?? {}) !== editedFor
+    ) {
+      return 'skipped';
+    }
+  }
+
+  const pose = seat?.pose ?? resolution.target.placement.pose;
+  // Nothing moves (a library tool is never rebuilt, a failed rebuild keeps the default): no undo step for nothing.
+  if (samePose(pose, before)) return 'unchanged';
+  const ops = seat === null ? [planHang(item, resolution.target)] : [seatOps(itemId, pose)];
+  if (!post.submit(ops, 'rehang')) return 'skipped';
+  return seat === null ? 'replaced' : 'seated';
+}
 
 function modelSettled(itemId: string): boolean {
   const wall = currentWall();
@@ -41,47 +134,6 @@ function untilSettled(itemId: string): Promise<boolean> {
 
 /** Places the hung tool `itemId` again in its own slot; false when it is not hung, no longer fits or is locked. */
 export async function rehangResizedTool(itemId: string): Promise<boolean> {
-  const first = currentWall()?.items.find((candidate) => candidate.id === itemId);
-  if (first?.kind !== 'tool' || first.parentId === undefined || first.slot === undefined) {
-    return false;
-  }
-  const editedFor = paramsKey(first.params);
-  if (!(await untilSettled(itemId))) return false;
-  const wall = currentWall();
-  const bank = bankStore.get();
-  const item = wall?.items.find((candidate) => candidate.id === itemId);
-  if (!wall || bank.status !== 'ready' || item?.parentId === undefined || item.locked) {
-    return false;
-  }
-  // The edit was undone (or edited again) while the model was building: the tool is not this edit's to move. Compared by value:
-  // every acknowledgement and echo of the server hands out new, equal objects.
-  if (paramsKey(item.params) !== editedFor) return false;
-  const { parentId, slot } = item;
-  const ctx = attachContext(wall, bank.byId);
-  const own = evaluateHolders(ctx, item)
-    .find((evaluation) => evaluation.holderId === parentId)
-    ?.freeSlots.find((free) => free.slot.index === slot);
-  if (!own) return false;
-  const resolution = resolveDrop(ctx, item, { x: own.world[0], y: own.world[1] });
-  if (
-    resolution.kind !== 'attach' ||
-    resolution.target.holderId !== parentId ||
-    resolution.target.slot !== slot
-  ) {
-    return false;
-  }
-  // Nothing moves (a library tool is never rebuilt, a failed rebuild keeps the default): no undo step for nothing.
-  const { pose } = resolution.target.placement;
-  const same = (a: number, b: number): boolean => Math.abs(a - b) < 0.01;
-  if (
-    same(pose.x, item.pose.x) &&
-    same(pose.y, item.pose.y) &&
-    same(pose.z, item.pose.z) &&
-    same(pose.rotX, item.pose.rotX) &&
-    same(pose.rotY, item.pose.rotY) &&
-    same(pose.rotZ, item.pose.rotZ)
-  ) {
-    return false;
-  }
-  return submitOps([planHang(item, resolution.target)], 'rehang').ok;
+  const status = await rehangWith({ post: livePostStepDeps(), settled: untilSettled }, itemId);
+  return status === 'seated' || status === 'replaced';
 }

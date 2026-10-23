@@ -9,6 +9,7 @@
 import { apply, type Mat3, multiply, rotationX, rotationZ, type Vec3 } from '@hsw-editor/compat';
 import type { Manifold, ManifoldToplevel } from 'manifold-3d';
 import {
+  type Bounds,
   type Placement,
   type SolidBody,
   type ToolBody,
@@ -96,12 +97,31 @@ interface Pose {
 interface Path {
   liftMm: number;
   pullMm: number;
+  /** Unit direction of the lift: straight up, or along the tool's own axis for a tool resting tilted in its slot. */
+  dir: Vec3;
+  /** The rasters found nothing in the way: tried before the candidates only the exact booleans can judge. */
+  rasterClear: boolean;
   from: Pose;
   tilt: { axis: 'x' | 'z'; deg: number } | null;
 }
 
+/** Room above a tool, on top of one more tool length, that neighbours are collected in. */
+const SWEEP_ABOVE_MM = 40;
+/** How far in front of the holder a pulled tool's back goes before it counts as out. */
+const FRONT_MARGIN_MM = 20;
+const UP: Vec3 = [0, 1, 0];
+/** Leaning less than this (degrees) is upright: straight up is the axis. */
+const UPRIGHT_DEG = 0.5;
+/** A lift along a leaning axis travels a little farther than straight up to leave the same hole (1 / cos of the lean, rounded up). */
+const AXIS_STRETCH = 1.15;
+const AXIS_EXTRA_MM = 5;
+/** A tool leaning more than this does not come out along its axis: it lies in its holder rather than stands. */
+const MAX_AXIS_LEAN_DEG = 25;
+/** sin(MAX_AXIS_LEAN_DEG), rounded up: the sideways drift of a lift along a leaning axis per unit of way. */
+const AXIS_DRIFT = 0.43;
 const TOUCH_MM = 0.02;
-const OVERLAP_MM3 = 1;
+/** A scrape of a few cubic millimetres (a shaft brushing the rim of its hole) is wiggled through by a hand; a real collision is tens. */
+const OVERLAP_MM3 = 6;
 const VERIFY_STEP_MM = 12;
 const WALL_SIZE_MM = 20000;
 /** Rotation taking +Z to +Y: the column grid then measures motion along the wall normal. */
@@ -118,12 +138,18 @@ export class RemovalProbe {
     const options: RemovalOptions = { ...DEFAULT_REMOVAL_OPTIONS, ...input.options };
     const { tool, placement, holder } = input;
     const bounds = worldBounds(tool, placement);
+    const height = bounds.max[1] - bounds.min[1];
+    // The lift out of the holder is at most the holder's height above the tool's foot; along a leaning axis (up to
+    // MAX_AXIS_LEAN_DEG) it drifts sideways by sin(lean) of that, which the neighbours collected must cover.
+    const liftBound =
+      Math.max(0, holder.bounds().max[1] - bounds.min[1]) * AXIS_STRETCH + AXIS_EXTRA_MM;
+    const drift = 20 + AXIS_DRIFT * liftBound;
     const sweepBox = {
-      min: [bounds.min[0] - 20, bounds.min[1] - 20, bounds.min[2] - 20] as Vec3,
+      min: [bounds.min[0] - drift, bounds.min[1] - 20, bounds.min[2] - drift] as Vec3,
       max: [
-        bounds.max[0] + 20,
-        bounds.max[1] + bounds.max[1] - bounds.min[1] + 40,
-        bounds.max[2] + 250,
+        bounds.max[0] + drift,
+        bounds.max[1] + Math.max(height, liftBound) + SWEEP_ABOVE_MM,
+        bounds.max[2] + 250 + drift,
       ] as Vec3,
     };
     const neighbours = input.neighbours.filter(
@@ -178,19 +204,37 @@ export class RemovalProbe {
     const yTool = rasterize(tool.mesh, from.rotation, [0, 0, 0], CELL_MM);
     const di = Math.round(from.position[0] / CELL_MM);
     const dj = Math.round(from.position[2] / CELL_MM);
+    // What is above the tool, holder aside: the tool sits in the holder's own hole or slot, and the rasters cannot tell that
+    // wall from a lid (a rasterised shaft overlaps its rasterised hole by a cell). The exact sweep follows the lift up to
+    // the top of the holder's footprint, so a holder with a lid is still caught there.
     const rise = riseLimit(
       yTool,
-      bodies.map((b) => b.grid(CELL_MM)),
+      bodies.slice(1).map((b) => b.grid(CELL_MM)),
       di,
       dj,
       from.position[1],
     );
-    if (!Number.isFinite(rise)) {
+    // Straight up, and for a tool resting tilted in its slot along its own axis. The raster is conservative where a tool
+    // touches a wall (a rasterised shaft overlaps the rasterised hole by a cell), so a way out it calls blocked is still
+    // tried: the exact booleans of `verify` decide, the raster only orders the candidates. Such a way is a short lift
+    // out of the holder and then a pull forward (a tool is not lifted a whole tool length: the row above is in the way
+    // of that long before it matters), verified through its whole length.
+    const rasterClear = !Number.isFinite(rise);
+    const liftMm = clearance(holder.grid(CELL_MM), yTool, di, dj, from.position[1]);
+    const pullOutMm = Math.max(
+      0,
+      holder.bounds().max[2] - (from.position[2] + yTool.min[2]) + FRONT_MARGIN_MM,
+    );
+    out.push({ liftMm, pullMm: rasterClear ? 0 : pullOutMm, dir: UP, from, tilt, rasterClear });
+    const axis = upAlongAxis(from.rotation);
+    if (axis !== null) {
       out.push({
-        liftMm: clearance(holder.grid(CELL_MM), yTool, di, dj, from.position[1]),
-        pullMm: 0,
+        liftMm: liftMm * AXIS_STRETCH + AXIS_EXTRA_MM,
+        pullMm: rasterClear ? 0 : pullOutMm,
+        dir: axis,
         from,
         tilt,
+        rasterClear: false,
       });
     }
     // Pulls: with +Z "up" for the rasters, a lift of h moves the tool along the grid's depth axis.
@@ -204,13 +248,19 @@ export class RemovalProbe {
       const holderZ = zGrids[0];
       out.push({
         liftMm: lift,
+        dir: UP,
         pullMm: holderZ === undefined ? 0 : clearance(holderZ, zTool, zi, zj, from.position[2]),
         from,
         tilt,
+        rasterClear: true,
       });
       break;
     }
-    return out.sort((a, b) => a.liftMm + a.pullMm - (b.liftMm + b.pullMm));
+    return out.sort(
+      (a, b) =>
+        Number(b.rasterClear) - Number(a.rasterClear) ||
+        a.liftMm + a.pullMm - (b.liftMm + b.pullMm),
+    );
   }
 
   /** Is turning the tool by the tilt (in steps) free of the obstacles? */
@@ -246,13 +296,6 @@ export class RemovalProbe {
     options: RemovalOptions,
   ): Verified {
     const toolSolid = this.toolManifold(tool);
-    const solids = [
-      { id: holder.id, body: holder, solid: this.bodyManifold(holder), baseline: 0 },
-      ...neighbours.map((n) => ({ id: n.id, body: n, solid: this.bodyManifold(n), baseline: 0 })),
-      { id: 'board', body: null, solid: this.wallManifold(), baseline: 0 },
-    ];
-    for (const s of solids) s.baseline = this.overlap(toolSolid, path.from, s.solid);
-    let clearance = options.searchMm;
     const poses: Pose[] = [];
     const total = path.liftMm + path.pullMm;
     const steps = Math.max(1, Math.ceil(total / VERIFY_STEP_MM));
@@ -263,12 +306,60 @@ export class RemovalProbe {
       poses.push({
         rotation: path.from.rotation,
         position: [
-          path.from.position[0],
-          path.from.position[1] + lift,
-          path.from.position[2] + pull,
+          path.from.position[0] + path.dir[0] * lift,
+          path.from.position[1] + path.dir[1] * lift,
+          path.from.position[2] + path.dir[2] * lift + pull,
         ],
       });
     }
+    // Only what the tool's whole way (its bounds at both ends, and what lies between) comes near is worth a boolean.
+    let way: Bounds = worldBounds(tool, poses[0] ?? path.from);
+    for (const pose of poses.slice(1)) {
+      const b = worldBounds(tool, pose);
+      way = {
+        min: [
+          Math.min(way.min[0], b.min[0]),
+          Math.min(way.min[1], b.min[1]),
+          Math.min(way.min[2], b.min[2]),
+        ],
+        max: [
+          Math.max(way.max[0], b.max[0]),
+          Math.max(way.max[1], b.max[1]),
+          Math.max(way.max[2], b.max[2]),
+        ],
+      };
+    }
+    way = {
+      min: [
+        way.min[0] - options.searchMm,
+        way.min[1] - options.searchMm,
+        way.min[2] - options.searchMm,
+      ],
+      max: [
+        way.max[0] + options.searchMm,
+        way.max[1] + options.searchMm,
+        way.max[2] + options.searchMm,
+      ],
+    };
+    const solids = [
+      {
+        id: holder.id,
+        body: holder as SolidBody | null,
+        solid: this.bodyManifold(holder),
+        baseline: 0,
+      },
+      ...neighbours
+        .filter((n) => boundsOverlap(way, n.bounds(), 0))
+        .map((n) => ({
+          id: n.id,
+          body: n as SolidBody | null,
+          solid: this.bodyManifold(n),
+          baseline: 0,
+        })),
+      { id: 'board', body: null as SolidBody | null, solid: this.wallManifold(), baseline: 0 },
+    ];
+    for (const s of solids) s.baseline = this.overlap(toolSolid, path.from, s.solid);
+    let clearance = options.searchMm;
     for (const pose of poses) {
       const posed = toolSolid.transform(matrixOf(pose));
       try {
@@ -529,6 +620,14 @@ function tiltAbout(pose: Pose, pivot: Vec3, axis: 'x' | 'z', deg: number): Pose 
     rotation: multiply(turn, pose.rotation),
     position: [pivot[0] + offset[0], pivot[1] + offset[1], pivot[2] + offset[2]],
   };
+}
+
+/** The tool's own axis pointing up, or null when it is vertical already (or lies sideways: no way out along it). */
+function upAlongAxis(rotation: Mat3): Vec3 | null {
+  const axis = apply(rotation, UP);
+  const up: Vec3 = axis[1] >= 0 ? axis : [-axis[0], -axis[1], -axis[2]];
+  const lean = (Math.acos(Math.min(1, up[1])) * 180) / Math.PI;
+  return lean < UPRIGHT_DEG || lean > MAX_AXIS_LEAN_DEG ? null : up;
 }
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));

@@ -8,7 +8,10 @@ import { seatAfterHang } from './seat.ts';
 import { settleAfterDrop } from './suggest.ts';
 
 /** A tool was dropped at the wall point `at` and hangs on the nearest holder: seat it, or move it to a clearly better holder in reach. */
-export function seatAfterDrop(toolId: string, at: { readonly x: number; readonly y: number }): void {
+export function seatAfterDrop(
+  toolId: string,
+  at: { readonly x: number; readonly y: number },
+): void {
   void settleAfterDrop(toolId, at, livePostStepDeps());
 }
 

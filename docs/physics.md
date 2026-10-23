@@ -94,12 +94,15 @@ tool span and the obstacle span below it; a **rise** (lift) is the same upwards;
 
 ### Seating (`seatTool`)
 
-The tool is lowered from above over the real holder mesh in every sensible orientation (working end down or up, four quarter turns
+The tool is lowered from above its holder's own rim over the real holder mesh in every sensible orientation (working end down or up, four quarter turns
 about its own axis) and at every lateral position of the slot window; positions that rest on nothing are discarded, and the
 **lowest centre of gravity** wins (gravity: the tool falls as deep as the slot lets it). A coarse lattice pass (step grows for
 roomy cavities, a bounded settle prunes with a sparse subset of columns, which is a valid lower bound) is refined at 0.5 mm. So a
 shaft ends up inside the hole with the handle on the plate, a hammer hangs its head on the fork prongs with the handle through the
-gap, a drill stands in its tray, never on top of the holder. Tools with a hole or loop (`hang.kind`) are also hung on a free-standing
+gap, a drill stands in its tray, never on top of the holder. Only the holder must be clear where a lowering starts: a tool
+hanging over the slot (the holder of the row above, another tool) is not a floor to land on, and a neighbour that overlaps the start
+volume does not stop the fall; where the tool ends up inside it, the hang analysis reports `penetrates` instead of the search
+hiding the collision by choosing another start. Tools with a hole or loop (`hang.kind`) are also hung on a free-standing
 rod of the holder (`findPegs`: blobs of the holder's slice at depth z narrower than the hole): the hole is put concentric
 with the rod, rotated so that the centre of gravity is below the hole, and lowered until the hole's top rests on the rod. The tool's
 natural end (compat's tip-down classes) and facing win unless they cannot be held and the alternative can. A tool that rests
@@ -131,7 +134,9 @@ largest disturbance in g (bisection) towards left, right, outward, inward, up, d
 
 `score` is 0..1 (1 solid; a hinge `0.95 - 0.45 * min(1, sway / 150 mm)`; failures cap it), `status` is stable >= 0.8, marginal >= 0.45,
 else unstable. The reference disturbances (0.3 g bump about a shoulder brushing past, 0.15 g pull) and the friction coefficient are
-options (`HangOptions`); wall lean (`wallTiltDeg`) presses the tool towards the board.
+options (`HangOptions`); wall lean (`wallTiltDeg`) presses the tool towards the board. The reference bump and pull are conventions,
+not cliffs: a margin within 10 % of the reference (0.29 g where 0.3 g is asked, which is where friction alone often caps it) is
+not reported.
 
 ### Removal ergonomics (`RemovalProbe`)
 
@@ -140,7 +145,11 @@ a lift, a pull, or a short lift (4-120 mm) followed by a pull, each optionally a
 x or z). Straight motions along the wall axes are decided exactly on the column rasters (a rise or a pull is stopped by the first
 obstacle span in its way); the cheapest free path is then verified with **manifold-3d**: the tool is posed every 12 mm along the
 path, `minGap` measures the clearance to neighbours and the boolean intersection volume (above the volume the seat already
-shares with the holder by rounding) is the collision test. Verdicts: `free`, `needs_tilt`, `needs_two_hands` (tool heavier than
+shares with the holder by rounding, and above 6 mm^3: a shaft brushing the rim of its hole is wiggled through by a hand, a real
+collision is tens) is the collision test. The rasters only order the candidates: what they see above the tool is judged without the holder itself (a rasterised
+shaft overlaps its rasterised hole by a cell, which says nothing about a lid), and a way out they call blocked is still verified
+exactly, as a short lift followed by a pull forward. A tool resting tilted in its slot is also lifted along its own axis, which
+is how it went in. Verdicts: `free`, `needs_tilt`, `needs_two_hands` (tool heavier than
 2.5 kg, a neighbour closer than 12 mm to the grip, or more than 450 mm of lift), `blocked` (with the ids in the way).
 `convenience` is 0.6 + 0.4 * clearance / 40 mm for a free path, 0.5 with a tilt, 0.3 with two hands, 0 blocked.
 
@@ -182,13 +191,15 @@ sends it. `workerCore.ts` runs `analyseWallPhysics` with manifold-3d (`RemovalPr
 `running` (keeping the last report as `previous`), then `ready` or `error`. One check is in flight at a time and the newest wall wins:
 the answer to a superseded wall is dropped, so a report never shows for a wall that has already changed. An unforced run of an
 unchanged scene is skipped. `usePhysicsLive()` (mounted next to `useInvalidZones`) re-runs 400 ms after the last change to the wall,
-the bank, the tool library or a regenerated variant, and not while an item is dragged. The persisted setting `physics checks`
+the bank, the tool model index, a rebuilt tool model or a regenerated variant, and not while an item is dragged. The persisted setting `physics checks`
 (`hsw-editor.physics`, default on, `physicsEnabledStore`) switches the worker, the report and the seating off; off also clears the
 report. The worker keeps the last 150 loaded models and 400 posed solids (LRU).
 
 **Which model is a tool.** Only a generated model is analysed: a stand-in box would have an invented centre of gravity.
-`toolModelSource(item, wall, library)` resolves it from the item's model reference: `tool:<id>` is a library tool's stored
-`model-lod1.glb`, `gen:<class>` is that generator class, anything else the class of the item's bank class. The GLB carries
+`resolveToolModel(item, wall)` (`apps/web/src/toolmodels`, the one answer the scene, the selection frame and the invalid zones
+share) gives it: a library tool's stored model, a generator class, or the model rebuilt for the size the item asks for (its
+`lod1` GLB under the scene's key). A model still being built for the item's size is not judged (the scene draws the class default
+meanwhile, and judging that would judge a tool nobody sees); the live check runs again when it lands (`toolModelVersion`). The GLB carries
 `extras.physics` (mass, centre of gravity); a model without it, or one that cannot be downloaded, leaves the tool out of the report.
 Holders and board parts use the bank GLB at lod 0, the same file and key as the invalid zones. The load a slot carries is the matched
 `fitsTool` entry's `maxLoadG`, else `defaultLoadCapacityG(category)`. Those defaults are an assumption (PETG printed parts on M3
@@ -200,6 +211,18 @@ A moment later the worker lowers the tool into the real holder mesh (`seatTool`:
 window half the slot pitch capped at 14 mm, `tipDown` from `prefersTipDown`). The result is one extra undo step, a batch labelled
 `seat` (`rotateItem` then `moveItem`). If the wall changed meanwhile nothing is submitted; if no seat exists the compatibility pose
 stays and the check flags it. Only upright holders are seated.
+
+**Resize.** After a dimension edit, `rehangResizedTool` (`wall/rehang.ts`) waits for the rebuilt model and then seats it in its own
+slot as one undo step labelled `rehang` (the compatibility pose of a drop when there is no seat: physics off, a rotated holder),
+so a longer shaft goes deeper into its hole instead of floating above it.
+
+**Seat tools.** The Physics section's "Seat tools" button and the palette command `physics.seat` ("Seat tools in their holders")
+run `seatAllTools`: every hung tool, one after the other, each among the holders and the tools already dealt with (the ones still
+waiting hang at the poses the wall was built with, often sunk into their holders, and would only block the slots the physics is
+about to use), applied as ONE undo step labelled `seat all`. Locked tools and tools without a slot number (reported as not
+seated: which slot they take is anybody's guess) are left alone and stay obstacles for the others; a tool that is already where
+the physics puts it makes no move, but is hidden from the tools seated before it until its turn. This is how a wall built before physics existed, or by an agent from
+compatibility poses, ends up with its tools inside their holders.
 
 **Auto-hang picks the stable holder.** After a drop, `settleAfterDrop` takes every compatible holder with a free slot within the snap
 radius (120 mm), runs `rankHolders` on them in the worker, and moves the tool to another holder only if its `combined` rank is at

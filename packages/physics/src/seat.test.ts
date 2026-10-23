@@ -115,4 +115,88 @@ describe('seating', () => {
     expect(seat.pose.z).toBeGreaterThan(5);
     expect(seat.report.status).not.toBe('unstable');
   });
+
+  test('a ring hung on a peg keeps out of a neighbour that overlaps the middle of the rod', () => {
+    const mesh = union(
+      box([-30, 0, -5], [-20, 100, 5]),
+      box([20, 0, -5], [30, 100, 5]),
+      box([-30, 0, -5], [30, 10, 5]),
+      box([-30, 90, -5], [30, 100, 5]),
+    );
+    const ring: ToolBody = {
+      id: 'ring',
+      mesh,
+      massG: 80,
+      comMm: [0, 50, 0],
+      hang: { point: [0, 50, 0], kind: 'hole', diameterMm: 40 },
+    };
+    const peg = solid('peg', rodZ(0, 0, 4, 0, 70), box([-20, -40, -4], [20, 40, 0]));
+    // A plate across the middle of the rod (z 33..45): the middle of the rod is the tie-break, but it is taken.
+    const plate = solid('plate', box([-40, -200, 33], [40, 200, 45]));
+    const seat = seatTool({
+      tool: ring,
+      holder: peg,
+      neighbours: [plate],
+      anchor: [0, 0, 4],
+      halfWidthMm: 10,
+      tipDown: false,
+    });
+    expect(seat).not.toBeNull();
+    expect(seat?.report.reasons.map((r) => r.code)).not.toContain('penetrates');
+    // The ring is 10 mm thick: its centre keeps 5 mm clear of the plate on one side or the other.
+    const z = seat?.pose.z ?? 39;
+    expect(z <= 28.5 || z >= 49.5).toBe(true);
+  });
+
+  test('something hanging far above the slot is not a floor: the bar still ends up in the slot', () => {
+    // A plate above the slot, in the same columns (the holder of the row above, a tool hanging over this one). Lowering
+    // from the top of the world used to land the bar on it.
+    const holder = slotBlock('slot', { halfX: 11, z0: 4, z1: 16, height: 40, floorMm: 4 });
+    const above = solid('above', box([-30, 300, 0], [30, 310, 30]));
+    const seat = seatTool({
+      tool: barTool(),
+      holder,
+      neighbours: [above],
+      anchor: [0, 40, 10],
+      halfWidthMm: 14,
+      tipDown: false,
+    });
+    expect(seat).not.toBeNull();
+    expect(seat?.pose.y).toBeCloseTo(4, 0);
+    expect(seat?.report.status).toBe('stable');
+  });
+
+  test('a neighbour overlapping the start volume does not stop the fall; it is reported where the tool ends up', () => {
+    const holder = slotBlock('slot', { halfX: 11, z0: 4, z1: 16, height: 40, floorMm: 4 });
+    // A plate across the bar's top part: the bar still goes to the floor of the slot and the hang says it collides.
+    const across = solid('across', box([-30, 150, 0], [30, 160, 30]));
+    const seat = seatTool({
+      tool: barTool(),
+      holder,
+      neighbours: [across],
+      anchor: [0, 40, 10],
+      halfWidthMm: 14,
+      tipDown: false,
+    });
+    expect(seat?.pose.y).toBeCloseTo(4, 0);
+    expect(seat?.report.reasons.map((r) => r.code)).toContain('penetrates');
+  });
+
+  test('a position under a neighbour that pokes over the slot loses to a clean one beside it', () => {
+    // A wide slot (the bar may stand anywhere in +-20 mm) and a neighbour's handle overhanging its right half 100 mm up:
+    // every position falls to the same floor, so only the overlap tells them apart.
+    const holder = slotBlock('slot', { halfX: 30, z0: 4, z1: 16, height: 40, floorMm: 4 });
+    const handle = solid('handle', box([2, 100, 0], [60, 110, 30]));
+    const seat = seatTool({
+      tool: barTool(),
+      holder,
+      neighbours: [handle],
+      anchor: [0, 40, 10],
+      halfWidthMm: 20,
+      tipDown: false,
+    });
+    expect(seat).not.toBeNull();
+    expect(seat?.report.reasons.map((r) => r.code)).not.toContain('penetrates');
+    expect(seat?.pose.x).toBeLessThanOrEqual(-8);
+  });
 });

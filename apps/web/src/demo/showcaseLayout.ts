@@ -33,7 +33,7 @@ export const SHOWCASE_LAYOUT: readonly ShowcaseHolder[] = [
   {
     id: 'sc-measure',
     bankId: 'refit-tape-measure-cradle',
-    cell: { col: 12, row: 22 },
+    cell: { col: 12, row: 25 },
     tools: [{ classId: 'tape-measure' }],
   },
   {

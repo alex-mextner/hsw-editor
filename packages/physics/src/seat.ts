@@ -20,7 +20,7 @@ import type { Pose } from '@hsw-editor/core';
 import { CELL_MM, type Placement, type SolidBody, type ToolBody } from './body.ts';
 import { rasterize, spanRange, topOf, type ColumnGrid } from './columns.ts';
 import { analyseHangPose, type HangOptions, type HangReport } from './hang.ts';
-import { settle, settleBelow } from './settle.ts';
+import { scanAll, settle, settleBelow } from './settle.ts';
 
 export interface SeatRequest {
   tool: ToolBody;
@@ -67,6 +67,10 @@ interface Orientation {
 const LATTICE_BUDGET = 1200;
 const X_PENALTY_PER_MM = 0.01;
 const TOP_CANDIDATES = 3;
+/** Obstacles that must be clear at the start of a lowering: the holder alone (it is `obstacles[0]`). */
+const HOLDER_ONLY = 1;
+/** Centre-of-gravity height (mm) a seat is charged per mm it ends up inside a neighbour. */
+const NEIGHBOUR_OVERLAP_MM_PER_MM = 6;
 /** Centre-of-gravity height (mm) a seat is allowed to lose to keep the class's natural end down / up and the tool facing front. */
 const UNPREFERRED_FLIP_MM = 30;
 /** Facing penalty per quarter turn about the axis: a tool faces front unless the slot demands otherwise. */
@@ -125,9 +129,9 @@ function searchOrientation(
   const holderGrid = request.holder.grid(cellMm);
   const rim = holderGrid.max[1];
   const comLocalY = apply(orientation.rotation, request.tool.comMm)[1];
-  let top = -Infinity;
-  for (const g of grids) top = Math.max(top, g.max[1]);
-  const startY = top - tool.min[1] + 2;
+  // The tool is lowered into the holder from above its own rim; whatever else hangs over that spot (another tool, the
+  // holder of a row above) is not a floor it could land on.
+  const startY = rim - tool.min[1] + 2;
 
   const iFrom = Math.ceil(window.x0 / cellMm);
   const iTo = Math.floor(window.x1 / cellMm);
@@ -166,9 +170,16 @@ function searchOrientation(
       dj,
       startY,
       (best === null ? Infinity : best.comY) - extra,
+      HOLDER_ONLY,
     );
     if (s === null || s.startPenetrationMm > 0.01 || !Number.isFinite(s.y)) return;
-    const comY = s.y + extra;
+    // A position that ends inside a neighbour (a handle poking over the slot) loses to a clean one beside it, even when
+    // both fall to the same floor: the overlap counts against the seat like a taller centre of gravity.
+    const overlap =
+      grids.length > HOLDER_ONLY
+        ? scanAll(tool, grids.slice(HOLDER_ONLY), di, dj, s.y).penetrationMm
+        : 0;
+    const comY = s.y + extra + overlap * NEIGHBOUR_OVERLAP_MM_PER_MM;
     if (best === null || comY < best.comY) {
       best = {
         rotation: orientation.rotation,
@@ -365,10 +376,19 @@ function seatByHole(request: SeatRequest, obstacles: readonly SolidBody[]): Cand
         const startY = peg[1] - h[1];
         const tool = rasterize(request.tool.mesh, rotation, [0, 0, 0], CELL_MM);
         if (tool.nx === 0 || dj * CELL_MM + tool.min[2] < -0.01) continue;
-        const s = settle(tool, grids, di, dj, startY);
+        const s = settle(tool, grids, di, dj, startY, HOLDER_ONLY);
         if (s.startPenetrationMm > 0.05 || !Number.isFinite(s.y)) continue;
-        // Ties (every depth along a plain rod rests alike) go to the middle of the rod.
-        const comY = s.y + apply(rotation, request.tool.comMm)[1] + Math.abs(fraction - 0.5) * 0.2;
+        // Ties (every depth along a plain rod rests alike) go to the middle of the rod; a hang inside a neighbour is charged
+        // like a slot seat is.
+        const overlap =
+          grids.length > HOLDER_ONLY
+            ? scanAll(tool, grids.slice(HOLDER_ONLY), di, dj, s.y).penetrationMm
+            : 0;
+        const comY =
+          s.y +
+          apply(rotation, request.tool.comMm)[1] +
+          Math.abs(fraction - 0.5) * 0.2 +
+          overlap * NEIGHBOUR_OVERLAP_MM_PER_MM;
         out.push({
           rotation,
           angles: { rotX: 0, rotY: 0, rotZ: ((deg % 360) + 360) % 360 },

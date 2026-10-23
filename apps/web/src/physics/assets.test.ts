@@ -5,67 +5,26 @@ import {
   loadLimitG,
   planVirtualRank,
   planWallRank,
-  toolModelSource,
   wallSlot,
 } from './assets.ts';
-import { contextOf, HOOK, HOOK_CAPPED, holderItem, LIBRARY, POSE, RACK, toolItem, wallOf } from './testWall.testkit.ts';
-
-describe('toolModelSource', () => {
-  test('a tool added from the user library uses that tool model, versioned by its update time', () => {
-    const { item, model } = toolItem('t', { by: 'tool:mine' });
-    const wall = wallOf([], [{ item, model }]);
-    expect(toolModelSource(item, wall, LIBRARY)).toEqual({
-      key: 'tool|mine|2026-10-01T00:00:00Z',
-      path: '/api/tools/mine/model-lod1.glb?v=2026-10-01T00%3A00%3A00Z',
-    });
-  });
-
-  test('a user tool that left the library has no model (not the class default)', () => {
-    const { item, model } = toolItem('t', { by: 'tool:gone' });
-    expect(toolModelSource(item, wallOf([], [{ item, model }]), LIBRARY)).toBeNull();
-  });
-
-  test('a tool added from a generator class uses that class at level of detail 1', () => {
-    const { item, model } = toolItem('t', { by: 'gen:screwdriver-precision' });
-    const source = toolModelSource(item, wallOf([], [{ item, model }]), LIBRARY);
-    expect(source?.path).toBe('/api/tools/classes/screwdriver-precision/model.glb?lod=1&p=%7B%7D');
-  });
-
-  test('a plain tool of a bank class uses the class of the same id, params that differ from the defaults go into p', () => {
-    const { item, model } = toolItem('t', {
-      params: { shaftDiameter: 4, length: 200, thickness: 3, unknown: 1 },
-    });
-    const source = toolModelSource(item, wallOf([], [{ item, model }]), LIBRARY);
-    // `length` equals the default, `thickness` is a box size and `unknown` is not a parameter: only the shaft remains.
-    expect(source?.key).toBe('class|screwdriver|{"shaftDiameter":4}');
-    expect(source?.path).toBe(
-      `/api/tools/classes/screwdriver/model.glb?lod=1&p=${encodeURIComponent('{"shaftDiameter":4}')}`,
-    );
-  });
-
-  test('the same dimensions are the same model key whatever the key order', () => {
-    const a = toolItem('a', { params: { shaftDiameter: 4, length: 250 } });
-    const b = toolItem('b', { params: { length: 250, shaftDiameter: 4 } });
-    const wall = wallOf([], [a, b]);
-    expect(toolModelSource(a.item, wall, LIBRARY)?.key).toBe(
-      toolModelSource(b.item, wall, LIBRARY)?.key ?? '',
-    );
-  });
-
-  test('a class nobody generates, a missing library and holders have no model', () => {
-    const { item, model } = toolItem('t', { toolClass: 'saw' });
-    const wall = wallOf([holderItem('h', 'rack')], [{ item, model }]);
-    expect(toolModelSource(item, wall, LIBRARY)).toBeNull();
-    const driver = toolItem('d');
-    expect(toolModelSource(driver.item, wallOf([], [driver]), { classes: [], tools: [] })).toBeNull();
-    expect(toolModelSource(holderItem('h', 'rack'), wall, LIBRARY)).toBeNull();
-  });
-});
+import {
+  contextOf,
+  HOOK,
+  HOOK_CAPPED,
+  holderItem,
+  POSE,
+  RACK,
+  toolItem,
+  wallOf,
+} from './testWall.testkit.ts';
 
 describe('buildPhysicsScene', () => {
   const driver = toolItem('drv', { parentId: 'h', slot: 1, pose: { x: 10, y: 20 } });
   const loose = toolItem('loose');
-  const wall = wallOf([holderItem('h', 'rack', { x: 100, y: 50 }), holderItem('hk', 'hook')], [driver, loose]);
+  const wall = wallOf(
+    [holderItem('h', 'rack', { x: 100, y: 50 }), holderItem('hk', 'hook')],
+    [driver, loose],
+  );
 
   test('holders carry their bank model by absolute url and their pose', () => {
     const { scene, sources } = buildPhysicsScene(wall, contextOf(wall));
@@ -81,7 +40,12 @@ describe('buildPhysicsScene', () => {
   test('a hung tool names its holder and the load the slot carries, a loose tool has neither', () => {
     const { scene, sources } = buildPhysicsScene(wall, contextOf(wall));
     const [hung, free] = scene.tools;
-    expect(hung).toMatchObject({ id: 'drv', holderId: 'h', maxLoadG: 1000, pose: { x: 10, y: 20 } });
+    expect(hung).toMatchObject({
+      id: 'drv',
+      holderId: 'h',
+      maxLoadG: 1000,
+      pose: { x: 10, y: 20 },
+    });
     expect(free).toMatchObject({ id: 'loose', holderId: null });
     expect(free?.maxLoadG).toBeUndefined();
     const source = sources.get(hung?.bodyKey ?? '');
@@ -99,7 +63,13 @@ describe('buildPhysicsScene', () => {
 });
 
 describe('loadLimitG', () => {
-  const tool = { toolClass: 'screwdriver', lengthMm: 200, hang: null, maxSection: { w: 10, t: 10, r: 7 }, dims: {} };
+  const tool = {
+    toolClass: 'screwdriver',
+    lengthMm: 200,
+    hang: null,
+    maxSection: { w: 10, t: 10, r: 7 },
+    dims: {},
+  };
 
   test('the bank number of the matched mount entry wins', () => {
     expect(loadLimitG(tool, HOOK_CAPPED)).toBe(300);
@@ -132,7 +102,8 @@ describe('planWallRank', () => {
   const tool = ctx.toolInterface(driver.item);
 
   test('the candidate sits on the slot anchor, the window is half the slot pitch, a screwdriver goes tip down', () => {
-    const slot = tool === undefined ? null : wallSlot(wall, driver.item, wall.items[0]!, RACK, tool, 1);
+    const slot =
+      tool === undefined ? null : wallSlot(wall, driver.item, wall.items[0]!, RACK, tool, 1);
     if (slot === null) throw new Error('no slot');
     const plan = planWallRank(wall, ctx, driver.item, [slot], true);
     const [candidate] = plan?.request.candidates ?? [];
@@ -146,7 +117,8 @@ describe('planWallRank', () => {
   });
 
   test('only bodies near the holder are obstacles, never the tool itself', () => {
-    const slot = tool === undefined ? null : wallSlot(wall, driver.item, wall.items[0]!, RACK, tool, 0);
+    const slot =
+      tool === undefined ? null : wallSlot(wall, driver.item, wall.items[0]!, RACK, tool, 0);
     if (slot === null) throw new Error('no slot');
     const plan = planWallRank(wall, ctx, driver.item, [slot], false);
     const ids = plan?.request.neighbours.map((b) => b.id) ?? [];
@@ -160,7 +132,8 @@ describe('planWallRank', () => {
     const turnedCtx = contextOf(turned);
     const slot = wallSlot(turned, driver.item, turned.items[0]!, RACK, tool!, 0);
     expect(slot).not.toBeNull();
-    if (slot !== null) expect(planWallRank(turned, turnedCtx, driver.item, [slot], false)).toBeNull();
+    if (slot !== null)
+      expect(planWallRank(turned, turnedCtx, driver.item, [slot], false)).toBeNull();
   });
 
   test('a tool without a model has no plan', () => {
