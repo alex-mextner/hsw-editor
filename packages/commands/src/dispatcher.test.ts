@@ -17,6 +17,7 @@ import {
 import type { Platform } from './keys.ts';
 import type { Context } from './when.ts';
 import { keyEvent, type KeyOptions, sampleCommands } from './testkit.ts';
+import { type Command, defineCommand } from './registry.ts';
 
 interface Harness {
   readonly dispatcher: KeyDispatcher;
@@ -28,8 +29,12 @@ interface Harness {
   press(code: string, options?: KeyOptions, typing?: boolean): boolean;
 }
 
-function harness(platform: Platform = 'linux', user: UserKeymap = EMPTY_USER_KEYMAP): Harness {
-  const keymap: Keymap = buildKeymap(sampleCommands(), user, platform);
+function harness(
+  platform: Platform = 'linux',
+  user: UserKeymap = EMPTY_USER_KEYMAP,
+  commands: readonly Command[] = sampleCommands(),
+): Harness {
+  const keymap: Keymap = buildKeymap(commands, user, platform);
   const timers: { at: number; callback: () => void; live: boolean }[] = [];
   const state: Harness = {
     ran: [],
@@ -250,6 +255,125 @@ describe('chords', () => {
     expect(h.dispatcher.pendingChord).not.toBeNull();
     h.press('KeyS', { ctrl: true });
     expect(h.ran).toEqual(['app.settings']);
+  });
+
+  test('a repeat:true command on a multi-stroke chord repeats while its last key is held', () => {
+    const h = harness('linux', EMPTY_USER_KEYMAP, [
+      defineCommand({
+        id: 'edit.nudgeRight',
+        title: { en: 'Nudge right', ru: 'Сдвиг вправо' },
+        group: 'edit',
+        keybindings: { all: ['mod+e mod+n'] },
+        repeat: true,
+        mutates: true,
+        handler: () => undefined,
+      }),
+    ]);
+    h.press('KeyE', { ctrl: true });
+    h.press('KeyN', { ctrl: true });
+    expect(h.ran).toEqual(['edit.nudgeRight']);
+    expect(h.press('KeyN', { ctrl: true, repeat: true })).toBe(true);
+    expect(h.press('KeyN', { ctrl: true, repeat: true })).toBe(true);
+    expect(h.ran).toEqual(['edit.nudgeRight', 'edit.nudgeRight', 'edit.nudgeRight']);
+  });
+
+  describe('repeats of a completed repeat:true chord', () => {
+    function nudgeHarness(): Harness {
+      const h = harness('linux', EMPTY_USER_KEYMAP, [
+        defineCommand({
+          id: 'edit.nudgeRight',
+          title: { en: 'Nudge right', ru: 'Сдвиг вправо' },
+          group: 'edit',
+          when: 'selection',
+          keybindings: { all: ['mod+e mod+n'] },
+          repeat: true,
+          mutates: true,
+          handler: () => undefined,
+        }),
+      ]);
+      h.context = { selection: true };
+      h.press('KeyE', { ctrl: true });
+      h.press('KeyN', { ctrl: true });
+      return h;
+    }
+
+    test('stop running once the when-clause no longer holds, yet stay swallowed', () => {
+      const h = nudgeHarness();
+      h.context = {};
+      expect(h.press('KeyN', { ctrl: true, repeat: true })).toBe(true);
+      expect(h.ran).toEqual(['edit.nudgeRight']);
+    });
+
+    test('stop running while a text field has focus, yet stay swallowed', () => {
+      const h = nudgeHarness();
+      expect(h.press('KeyN', { ctrl: true, repeat: true }, true)).toBe(true);
+      expect(h.ran).toEqual(['edit.nudgeRight']);
+    });
+
+    test('stop repeating after reset() (a dialog opened) but never leak to the browser', () => {
+      const h = nudgeHarness();
+      h.dispatcher.reset();
+      expect(h.press('KeyN', { ctrl: true, repeat: true })).toBe(true);
+      expect(h.ran).toEqual(['edit.nudgeRight']);
+    });
+
+    test('stop once another key arrives', () => {
+      const h = nudgeHarness();
+      h.press('KeyA');
+      expect(h.press('KeyN', { ctrl: true, repeat: true })).toBe(false);
+      expect(h.ran).toEqual(['edit.nudgeRight']);
+    });
+  });
+
+  test('a reset caused by the chord itself (it opened a dialog) keeps swallowing the held key', () => {
+    const h = harness();
+    h.press('KeyE', { ctrl: true });
+    h.press('KeyS', { ctrl: true });
+    h.dispatcher.reset();
+    expect(h.press('KeyS', { ctrl: true, repeat: true })).toBe(true);
+    expect(h.ran).toEqual(['app.settings']);
+  });
+
+  test('a reset while a chord is pending does not let the held first key start it again', () => {
+    const h = harness();
+    h.press('KeyE', { ctrl: true });
+    h.dispatcher.reset();
+    expect(h.dispatcher.pendingChord).toBeNull();
+    expect(h.press('KeyE', { ctrl: true, repeat: true })).toBe(true);
+    expect(h.dispatcher.pendingChord).toBeNull();
+    h.press('KeyS', { ctrl: true });
+    expect(h.ran).toEqual([]);
+  });
+
+  test('holding the first key of a chord past the timeout does not restart the chord', () => {
+    const h = harness();
+    h.press('KeyE', { ctrl: true });
+    h.advance(DEFAULT_CHORD_TIMEOUT_MS + 10);
+    expect(h.dispatcher.pendingChord).toBeNull();
+    expect(h.press('KeyE', { ctrl: true, repeat: true })).toBe(true);
+    expect(h.dispatcher.pendingChord).toBeNull();
+    h.press('KeyS', { ctrl: true });
+    expect(h.ran).toEqual([]);
+    // Pressing the first key again (not a repeat) starts the chord afresh.
+    h.press('KeyE', { ctrl: true });
+    expect(h.dispatcher.pendingChord?.typed).toEqual(['ctrl+e']);
+  });
+
+  test('a later chord stroke bound to Escape completes the chord instead of cancelling it', () => {
+    const h = harness('linux', EMPTY_USER_KEYMAP, [
+      defineCommand({
+        id: 'app.closeAll',
+        title: { en: 'Close all', ru: 'Закрыть всё' },
+        group: 'app',
+        keybindings: { all: ['mod+e escape'] },
+        mutates: false,
+        handler: () => undefined,
+      }),
+    ]);
+    h.press('KeyE', { ctrl: true });
+    expect(h.press('Escape', { key: 'Escape' })).toBe(true);
+    expect(h.ran).toEqual(['app.closeAll']);
+    expect(h.dispatcher.pendingChord).toBeNull();
   });
 });
 
