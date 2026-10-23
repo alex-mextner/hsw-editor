@@ -6,16 +6,18 @@ import type {
   BankIndex,
   FitsTool,
   MOUNTING_KINDS,
+  ToolClass,
   Vec3,
 } from './schema.ts';
 import { buildSearchIndex, loadSearchIndex, runSearch, type SearchHit } from './search.ts';
-import { toolClassVocabulary } from './toolClasses.ts';
+import { acceptedToolClasses, toolClassVocabulary } from './toolClasses.ts';
 
 export type MountingKind = (typeof MOUNTING_KINDS)[number];
 
 export interface ElementFilter {
   /** Category id; includes everything below it ("holders" matches "holders/pliers"). */
   category?: string;
+  /** Elements about this class or a coarser one it refines (`ToolClass.broader`). */
   toolClass?: string;
   family?: string;
   mounting?: MountingKind;
@@ -27,7 +29,8 @@ export interface ElementFilter {
   generated?: boolean;
   redistributable?: boolean;
   /**
-   * Compatibility with a measured object: elements that list `toolClass` in `fitsTool` and whose dim
+   * Compatibility with a measured object: elements that list `toolClass` (or a coarser class it refines,
+   * `ToolClass.broader`) in `fitsTool` and whose dim
    * ranges contain every given value (keys the element does not constrain are ignored).
    */
   fits?: { toolClass: string; dims?: Record<string, number> };
@@ -61,19 +64,39 @@ export interface Bank {
   categories(): readonly BankCategory[];
 }
 
-function fitsMatches(fits: FitsTool, wanted: NonNullable<ElementFilter['fits']>): boolean {
-  if (fits.toolClass !== wanted.toolClass) return false;
-  if (!wanted.dims || !fits.dims) return true;
-  for (const [key, value] of Object.entries(wanted.dims)) {
+/** The tool classes a filter accepts, resolved once per call (a holder of a coarser class takes the object). */
+interface AcceptedClasses {
+  readonly toolClass: readonly string[] | undefined;
+  readonly fits: readonly string[] | undefined;
+}
+
+function acceptedClasses(f: ElementFilter, vocabulary: readonly ToolClass[]): AcceptedClasses {
+  return {
+    toolClass: f.toolClass === undefined ? undefined : acceptedToolClasses(f.toolClass, vocabulary),
+    fits: f.fits === undefined ? undefined : acceptedToolClasses(f.fits.toolClass, vocabulary),
+  };
+}
+
+function fitsMatches(
+  fits: FitsTool,
+  dims: Readonly<Record<string, number>> | undefined,
+  accepted: readonly string[],
+): boolean {
+  if (!accepted.includes(fits.toolClass)) return false;
+  if (!dims || !fits.dims) return true;
+  for (const [key, value] of Object.entries(dims)) {
     const range = fits.dims[key];
     if (range && (value < range.min || value > range.max)) return false;
   }
   return true;
 }
 
-function matches(e: BankElement, f: ElementFilter): boolean {
+function matches(e: BankElement, f: ElementFilter, accepted: AcceptedClasses): boolean {
   if (f.category !== undefined && !isInCategory(e.category, f.category)) return false;
-  if (f.toolClass !== undefined && !e.toolClasses.includes(f.toolClass)) return false;
+  const aboutClass = accepted.toolClass;
+  if (aboutClass !== undefined && !e.toolClasses.some((id) => aboutClass.includes(id))) {
+    return false;
+  }
   if (f.family !== undefined && e.family !== f.family) return false;
   if (f.mounting !== undefined && e.mounting.kind !== f.mounting) return false;
   if (f.generated !== undefined && e.generated !== f.generated) return false;
@@ -86,9 +109,10 @@ function matches(e: BankElement, f: ElementFilter): boolean {
     if (max !== undefined && e.dimsMm[axis] > max) return false;
     if (min !== undefined && e.dimsMm[axis] < min) return false;
   }
-  if (f.fits !== undefined) {
-    const wanted = f.fits;
-    if (!e.fitsTool.some((t) => fitsMatches(t, wanted))) return false;
+  const fitsClasses = accepted.fits;
+  if (f.fits !== undefined && fitsClasses !== undefined) {
+    const dims = f.fits.dims;
+    if (!e.fitsTool.some((t) => fitsMatches(t, dims, fitsClasses))) return false;
   }
   return true;
 }
@@ -107,11 +131,12 @@ export function createBank(index: BankIndex, serializedSearch?: string): Bank {
   const loaded: MiniSearch | null = serializedSearch
     ? loadSearchIndex(serializedSearch, index.contentHash)
     : null;
+  const vocabulary = toolClassVocabulary(index.toolClasses);
   const search =
     loaded ??
     buildSearchIndex(index.elements, {
       categories: categoryVocabulary(index.categories),
-      toolClasses: toolClassVocabulary(index.toolClasses),
+      toolClasses: vocabulary,
     });
   const families = new Map<string, BankElement[]>();
   for (const e of index.elements) {
@@ -127,7 +152,8 @@ export function createBank(index: BankIndex, serializedSearch?: string): Bank {
     listElements(options = {}) {
       const { sort, offset: requestedOffset = 0, limit, ...filter } = options;
       const offset = Math.max(0, requestedOffset);
-      const all = index.elements.filter((e) => matches(e, filter));
+      const accepted = acceptedClasses(filter, vocabulary);
+      const all = index.elements.filter((e) => matches(e, filter, accepted));
       if (sort) all.sort(SORTERS[sort]);
       return {
         total: all.length,
@@ -136,8 +162,9 @@ export function createBank(index: BankIndex, serializedSearch?: string): Bank {
     },
     search(query, filter = {}, limit = 50) {
       const hasFilter = Object.keys(filter).length > 0;
+      const accepted = acceptedClasses(filter, vocabulary);
       const allowed = hasFilter
-        ? new Set(index.elements.filter((e) => matches(e, filter)).map((e) => e.id))
+        ? new Set(index.elements.filter((e) => matches(e, filter, accepted)).map((e) => e.id))
         : null;
       const hits = runSearch(search, query, allowed);
       const results: SearchResult[] = [];

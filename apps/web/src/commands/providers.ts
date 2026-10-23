@@ -3,7 +3,14 @@
  * elements and tools, history entries, help pages and go-to targets. Everything the app owns is
  * passed in, so the sources run (and are tested) without the scene, the network or the DOM.
  */
-import type { BankElement, BankIndex, ToolClass } from '@hsw-editor/bank';
+import {
+  finerToolClasses,
+  toolClassVocabulary,
+  toolClassWords,
+  type BankElement,
+  type BankIndex,
+  type ToolClass,
+} from '@hsw-editor/bank';
 import type { LocalizedText, PaletteItem, PaletteProvider } from '@hsw-editor/commands';
 import type { ChangeEntry, HistoryEntry, WallItem, WallSummary } from '@hsw-editor/core';
 import { describeOp } from '@/features/timeline/describeOp.ts';
@@ -99,18 +106,17 @@ export function wallItemsProvider(deps: ProviderDeps): PaletteProvider {
 }
 
 function bankItems(index: BankIndex, deps: ProviderDeps): readonly PaletteItem[] {
-  const toolClassById = new Map(index.toolClasses.map((entry) => [entry.id, entry] as const));
+  const vocabulary = toolClassVocabulary(index.toolClasses);
+  const toolClassById = new Map(vocabulary.map((entry) => [entry.id, entry] as const));
+  const finerByBroader = finerToolClasses(index.toolClasses);
   const elements = index.elements.map((element): PaletteItem => {
+    // A holder of a coarse class also holds the finer ones, so their words find it too.
     const synonyms = element.toolClasses.flatMap((id) => {
       const toolClass = toolClassById.get(id);
-      return toolClass === undefined
-        ? []
-        : [
-            toolClass.name.en,
-            toolClass.name.ru,
-            ...toolClass.synonyms.en,
-            ...toolClass.synonyms.ru,
-          ];
+      return [
+        ...(toolClass === undefined ? [] : toolClassWords(toolClass)),
+        ...(finerByBroader.get(id) ?? []).flatMap(toolClassWords),
+      ];
     });
     return {
       id: `bank:${element.id}`,
@@ -122,7 +128,7 @@ function bankItems(index: BankIndex, deps: ProviderDeps): readonly PaletteItem[]
       run: () => deps.addBankElement(element),
     };
   });
-  const tools = index.toolClasses.map((toolClass): PaletteItem => ({
+  const tools = vocabulary.map((toolClass): PaletteItem => ({
     id: `tool:${toolClass.id}`,
     kind: 'tool',
     title: toolClass.name,

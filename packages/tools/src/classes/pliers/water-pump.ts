@@ -51,7 +51,7 @@ export const waterPumpPliers = defineToolClass({
   id: 'water-pump-pliers',
   family: 'pliers',
   name: L('Water pump pliers', 'Переставные клещи (сантехнические)'),
-  bankClass: 'pliers',
+  bankClass: 'water-pump-pliers',
   keywords: {
     en: [
       'water pump pliers',

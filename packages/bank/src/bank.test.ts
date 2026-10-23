@@ -1,9 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { createBank } from './bank.ts';
 import { buildSearchIndex, loadSearchIndex, serializeSearchIndex } from './search.ts';
-import { BankIndexSchema } from './schema.ts';
+import { BankIndexSchema, type ToolClass } from './schema.ts';
 import { makeElement, makeIndex } from './testing.ts';
 import { stemTerm } from './text.ts';
+import { TOOL_CLASSES } from './toolClasses.ts';
 import { validateBankIndex } from './validate.ts';
 
 const elements = [
@@ -101,6 +102,8 @@ describe('search ranking', () => {
   });
 
   test('tool-class synonyms are searchable', () => {
+    expect(bank.search('combination pliers').map((r) => r.element.id)).toEqual(['pliers-saddle']);
+    // A word of a finer class (long-nose-pliers) finds the holder of the coarse class it refines.
     expect(bank.search('long nose pliers').map((r) => r.element.id)).toEqual(['pliers-saddle']);
   });
 
@@ -156,6 +159,46 @@ describe('listElements', () => {
     expect(b.listElements({ fits: { toolClass: 'pliers' } }).total).toBe(0);
   });
 
+  test('a holder of the coarse class is found by the words of its finer classes', () => {
+    const sawRack = makeElement({
+      id: 'saw-rack',
+      ru: 'Стойка',
+      en: 'Rack',
+      category: 'holders/saws',
+      toolClasses: ['saw'],
+    });
+    const b = createBank(makeIndex([sawRack]));
+    expect(b.search('hacksaw').map((r) => r.element.id)).toEqual(['saw-rack']);
+    expect(b.search('ножовка по металлу').map((r) => r.element.id)).toEqual(['saw-rack']);
+  });
+
+  test('the toolClass filter keeps the holders of the coarser class a finer class refines', () => {
+    const knifeBlock = makeElement({
+      id: 'knife-block',
+      ru: 'Н',
+      en: 'Knife block',
+      category: 'holders/knives',
+      toolClasses: ['knife'],
+    });
+    const b = createBank(makeIndex([knifeBlock]));
+    expect(b.listElements({ toolClass: 'chisel' }).total).toBe(1);
+    expect(b.listElements({ toolClass: 'hacksaw' }).total).toBe(0);
+  });
+
+  test('fits filter also matches holders of the coarser class a finer class refines', () => {
+    const knifeBlock = makeElement({
+      id: 'knife-block',
+      ru: 'Н',
+      en: 'Knife block',
+      category: 'holders/knives',
+      toolClasses: ['knife'],
+      fitsTool: [{ toolClass: 'knife' }],
+    });
+    const b = createBank(makeIndex([knifeBlock]));
+    expect(b.listElements({ fits: { toolClass: 'chisel' } }).total).toBe(1);
+    expect(b.listElements({ fits: { toolClass: 'hacksaw' } }).total).toBe(0);
+  });
+
   test('family members are returned together', () => {
     const cup = bank.getElement('cup-round');
     expect(cup && bank.familyOf(cup).map((e) => e.id)).toEqual(['cup-round', 'cup-round-b']);
@@ -202,6 +245,28 @@ describe('validateBankIndex', () => {
     expect(sameGeometry.ok).toBe(false);
     if (!sameGeometry.ok) expect(sameGeometry.errors.join('\n')).toContain('duplicate');
     expect(validateBankIndex(makeIndex([a, { ...a }])).ok).toBe(false);
+  });
+
+  test('a broader link must name a declared class that is not itself refined', () => {
+    const toolClasses = (links: Record<string, string>): ToolClass[] =>
+      TOOL_CLASSES.map((t) => {
+        const broader = links[t.id];
+        return broader === undefined ? t : { ...t, broader };
+      });
+    const errors = (index: ReturnType<typeof makeIndex>): string => {
+      const result = validateBankIndex(index);
+      return result.ok ? '' : result.errors.join('\n');
+    };
+    const base = makeIndex([]);
+    expect(errors({ ...base, toolClasses: toolClasses({}) })).toBe('');
+    expect(errors({ ...base, toolClasses: toolClasses({ knife: 'nowhere' }) })).toContain(
+      'unknown broader class nowhere',
+    );
+    // chisel -> knife is built in; knife -> saw would make a chain.
+    expect(errors({ ...base, toolClasses: toolClasses({ knife: 'saw' }) })).toContain('no chains');
+    // An index that declares only some classes: the built-in chisel -> knife link is checked too.
+    const declared = toolClasses({ knife: 'saw' }).filter((t) => t.id !== 'chisel');
+    expect(errors({ ...base, toolClasses: declared })).toContain('chisel');
   });
 
   test('a non-redistributable licence cannot be flagged redistributable', () => {

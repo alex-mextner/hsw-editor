@@ -32,7 +32,7 @@ export const lockingPliers = defineToolClass({
   id: 'locking-pliers',
   family: 'pliers',
   name: L('Locking pliers', 'Зажимные плоскогубцы (вайсгрипы)'),
-  bankClass: 'pliers',
+  bankClass: 'locking-pliers',
   keywords: {
     en: ['locking pliers', 'vise grip', 'vise-grip', 'mole grip', 'locking wrench'],
     ru: ['зажимные плоскогубцы', 'вайсгрип', 'клещи зажимные', 'самозажимные плоскогубцы'],

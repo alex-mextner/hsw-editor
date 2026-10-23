@@ -135,7 +135,10 @@ export function rankHoldersForTools(
   );
 }
 
-/** Class-level filter (no measurements): elements whose `fitsTool` names any of the classes. */
+/**
+ * Class-level filter (no measurements): elements whose `fitsTool` names any of the classes, exactly; expand a finer
+ * class with its `broader` first (`expandToolClasses` in `@hsw-editor/bank`) to keep the holders of the coarse one.
+ */
 export function holdersForClasses(
   holders: readonly HolderSpec[],
   classes: readonly string[],

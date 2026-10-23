@@ -223,6 +223,11 @@ export const ToolClassSchema = z.object({
   name: LocalizedTextSchema,
   /** Words that name this class in ru/en; the recogniser maps detector labels onto the class through them. */
   synonyms: z.object({ ru: z.array(z.string()), en: z.array(z.string()) }),
+  /**
+   * The coarser class this one is a refinement of (`chisel` -> `knife`). Holders listing only the coarser
+   * class still take, suggest and filter for this one; never chained (the target has no `broader`).
+   */
+  broader: slugSchema.optional(),
 });
 export type ToolClass = z.infer<typeof ToolClassSchema>;
 

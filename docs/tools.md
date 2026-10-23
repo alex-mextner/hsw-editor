@@ -29,6 +29,8 @@ const glb = exportGlb(model); // Uint8Array, millimetres
   axis (handle / shaft / head ...), the cross-section extents sampled every 2 mm (`w`, `t`, `r` = farthest point from the
   axis), the maximum section and class-specific `dims` (`shaftDiameter`, `handleDiameter`, `jawOpening`, ...). This is what
   a holder has to fit; it feeds the bank `fitsTool` hints and the holder suggestion.
+- **`bankClass`**: the bank vocabulary id of the class (`TOOL_CLASSES`, `docs/bank.md`); a test fails when it names an unknown id. Use the finest
+  honest id (`chisel`, not `knife`); the coarser class follows from its `broader` link.
 - GLB: one node and mesh per part, materials with `extras.kind`/`extras.grip`, scene `extras` with `classId`, `params`,
   `holding`.
 

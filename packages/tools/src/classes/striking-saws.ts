@@ -240,7 +240,7 @@ export const hacksaw = defineToolClass({
   id: 'hacksaw',
   family: 'striking',
   name: L('Hacksaw', 'Ножовка по металлу'),
-  bankClass: 'saw',
+  bankClass: 'hacksaw',
   keywords: {
     en: ['hacksaw', 'metal saw', 'saw', 'junior hacksaw'],
     ru: ['ножовка по металлу', 'ножовка', 'пила по металлу'],

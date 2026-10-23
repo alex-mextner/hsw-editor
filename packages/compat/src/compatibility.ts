@@ -22,12 +22,18 @@ const SCORE_BASE = 0.6;
 const SCORE_DIMS = 0.3;
 const SCORE_CLASS_ONLY = 0.15;
 const SCORE_DEDICATED = 0.1;
+/**
+ * Taken off the score when the entry lists only a coarser class of the tool. It equals the whole dedicated bonus, so
+ * a holder that names the tool's class always outranks one that only lists a coarser class, whatever else it holds.
+ */
+export const SCORE_BROADER_PENALTY = SCORE_DEDICATED;
 
 function evaluateEntry(
   tool: ToolInterface,
   entry: MountEntry,
   entryCount: number,
   occupied: number,
+  isBroader: boolean,
 ): Omit<Compatibility, 'entryIndex'> {
   const reasons: Reason[] = [];
   const clearances: Clearance[] = [];
@@ -82,7 +88,10 @@ function evaluateEntry(
     fits.length === 0
       ? SCORE_CLASS_ONLY
       : (SCORE_DIMS * fits.reduce((a, b) => a + b, 0)) / fits.length;
-  const score = roundTo(SCORE_BASE + dimsScore + SCORE_DEDICATED / entryCount, 4);
+  const score = roundTo(
+    SCORE_BASE + dimsScore + SCORE_DEDICATED / entryCount - (isBroader ? SCORE_BROADER_PENALTY : 0),
+    4,
+  );
   return { ok, score, reasons, clearances };
 }
 
@@ -103,9 +112,10 @@ export function compatibility(
   const occupied = options.occupied ?? 0;
   let best: (Omit<Compatibility, 'entryIndex'> & { entryIndex: number }) | null = null;
   for (const [index, entry] of holder.fitsTool.entries()) {
-    if (entry.toolClass !== tool.toolClass) continue;
+    const exact = entry.toolClass === tool.toolClass;
+    if (!exact && !tool.broader?.includes(entry.toolClass)) continue;
     const result = {
-      ...evaluateEntry(tool, entry, holder.fitsTool.length, occupied),
+      ...evaluateEntry(tool, entry, holder.fitsTool.length, occupied, !exact),
       entryIndex: index,
     };
     const fewerProblems =

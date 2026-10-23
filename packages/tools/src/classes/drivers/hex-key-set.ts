@@ -53,7 +53,7 @@ export const hexKeySet = defineToolClass({
   id: 'hex-key-set',
   family: 'drivers',
   name: L('Folding hex key set', 'Складной набор шестигранников'),
-  bankClass: 'hex-key',
+  bankClass: 'hex-key-set',
   keywords: {
     en: ['folding hex key set', 'allen key set', 'fan hex key set', 'folding allen keys'],
     ru: ['набор шестигранников', 'складной набор шестигранников', 'набор имбусовых ключей'],

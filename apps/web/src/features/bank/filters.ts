@@ -59,6 +59,11 @@ export function activeFilterCount(filters: BankFilters): number {
 export interface FilterOptions {
   /** Skip the category test: used to count elements per category under all the other filters. */
   readonly ignoreCategory?: boolean;
+  /**
+   * The tool classes to match instead of `filters.toolClasses`: the ticked classes plus the coarser classes they
+   * refine (`expandToolClasses`), so ticking `chisel` also keeps the holders made for `knife`. Computed once by the caller.
+   */
+  readonly toolClassScope?: readonly string[];
 }
 
 export function matchesFilters(
@@ -73,11 +78,9 @@ export function matchesFilters(
   ) {
     return false;
   }
-  if (
-    filters.toolClasses.length > 0 &&
-    !filters.toolClasses.some((id) => element.toolClasses.includes(id))
-  ) {
-    return false;
+  if (filters.toolClasses.length > 0) {
+    const wanted = options.toolClassScope ?? filters.toolClasses;
+    if (!wanted.some((id) => element.toolClasses.includes(id))) return false;
   }
   if (filters.size !== null && sizeBucket(element.footprint.cells.length) !== filters.size) {
     return false;
@@ -136,6 +139,21 @@ export function usedToolClasses(elements: readonly FilterTarget[]): Set<string> 
   const used = new Set<string>();
   for (const element of elements) for (const id of element.toolClasses) used.add(id);
   return used;
+}
+
+/**
+ * The tool classes the filter can offer: the ones elements list plus the finer classes of those (`chisel` when
+ * a `knife` holder exists), since the filter keeps the coarse holders for a finer class.
+ */
+export function selectableToolClasses(
+  elements: readonly FilterTarget[],
+  finerByBroader: ReadonlyMap<string, readonly { readonly id: string }[]>,
+): Set<string> {
+  const selectable = usedToolClasses(elements);
+  for (const id of [...selectable]) {
+    for (const finer of finerByBroader.get(id) ?? []) selectable.add(finer.id);
+  }
+  return selectable;
 }
 
 export interface CategoryNode {

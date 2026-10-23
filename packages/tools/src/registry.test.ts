@@ -2,7 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { analyzeMesh } from './mesh.ts';
 import { exportGlb } from './glb.ts';
 import { type Lod } from './model.ts';
-import { generate, hasToolClass, listToolClasses, presetValues } from './registry.ts';
+import { TOOL_CLASSES } from '@hsw-editor/bank';
+import { generate, getToolClass, hasToolClass, listToolClasses, presetValues } from './registry.ts';
 import './classes/index.ts';
 import { type AnyValues } from './params.ts';
 
@@ -83,4 +84,40 @@ describe('tool registry', () => {
       });
     });
   }
+});
+
+describe('bank vocabulary', () => {
+  const vocabulary = new Map(TOOL_CLASSES.map((entry) => [entry.id, entry]));
+
+  test('every generator class maps to a class of the bank vocabulary', () => {
+    const unknown = listToolClasses()
+      .filter((cls) => !vocabulary.has(cls.bankClass))
+      .map((cls) => `${cls.id} -> ${cls.bankClass}`);
+    expect(unknown).toEqual([]);
+  });
+
+  test('every `broader` target exists and is not itself refined (no chains)', () => {
+    const problems: string[] = [];
+    for (const entry of TOOL_CLASSES) {
+      if (entry.broader === undefined) continue;
+      const target = vocabulary.get(entry.broader);
+      if (target === undefined) problems.push(`${entry.id}: unknown target ${entry.broader}`);
+      else if (target.broader !== undefined) problems.push(`${entry.id}: chain via ${target.id}`);
+    }
+    expect(problems).toEqual([]);
+  });
+
+  test('the finer generator classes use their own bank class', () => {
+    const bankClassOf = (id: string): string => getToolClass(id).bankClass;
+    expect(bankClassOf('chisel')).toBe('chisel');
+    expect(bankClassOf('punch')).toBe('punch');
+    expect(bankClassOf('hacksaw')).toBe('hacksaw');
+    expect(bankClassOf('spirit-level')).toBe('level');
+    expect(bankClassOf('square-try')).toBe('square');
+    expect(bankClassOf('pliers-long-nose')).toBe('long-nose-pliers');
+    expect(bankClassOf('locking-pliers')).toBe('locking-pliers');
+    expect(bankClassOf('water-pump-pliers')).toBe('water-pump-pliers');
+    expect(bankClassOf('crimper-stripper')).toBe('crimper');
+    expect(bankClassOf('hex-key-set')).toBe('hex-key-set');
+  });
 });

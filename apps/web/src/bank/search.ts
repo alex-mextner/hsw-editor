@@ -1,5 +1,12 @@
 import MiniSearch from 'minisearch';
-import type { BankElement, BankIndex } from '@hsw-editor/bank';
+import {
+  finerToolClasses,
+  toolClassVocabulary,
+  toolClassWords,
+  type BankElement,
+  type BankIndex,
+  type ToolClass,
+} from '@hsw-editor/bank';
 
 /** Lowercase, ё -> е, strip combining marks: "Отвёртка" and "отвертка" are the same word. */
 export function normalizeTerm(term: string): string {
@@ -20,17 +27,24 @@ interface SearchDocument {
   readonly variant: string;
 }
 
-function toDocument(element: BankElement, index: BankIndex): SearchDocument {
+function toDocument(
+  element: BankElement,
+  index: BankIndex,
+  toolClassById: ReadonlyMap<string, ToolClass>,
+  finerByBroader: ReadonlyMap<string, readonly ToolClass[]>,
+): SearchDocument {
   const categoryNames = element.category
     .split('/')
     .map((_, depth, parts) => parts.slice(0, depth + 1).join('/'))
     .map((id) => index.categories.find((category) => category.id === id))
     .flatMap((category) => (category ? [category.name.ru, category.name.en] : []));
+  // A holder of a coarse class also holds the finer ones, so their words match it too.
   const classNames = element.toolClasses.flatMap((id) => {
-    const toolClass = index.toolClasses.find((candidate) => candidate.id === id);
-    return toolClass
-      ? [toolClass.name.ru, toolClass.name.en, ...toolClass.synonyms.ru, ...toolClass.synonyms.en]
-      : [];
+    const own = toolClassById.get(id);
+    return [
+      ...(own === undefined ? [] : toolClassWords(own)),
+      ...(finerByBroader.get(id) ?? []).flatMap(toolClassWords),
+    ];
   });
   return {
     id: element.id,
@@ -61,7 +75,11 @@ export function createBankSearch(index: BankIndex): BankSearch {
       combineWith: 'AND',
     },
   });
-  engine.addAll(index.elements.map((element) => toDocument(element, index)));
+  const toolClassById = new Map(toolClassVocabulary(index.toolClasses).map((t) => [t.id, t]));
+  const finerByBroader = finerToolClasses(index.toolClasses);
+  engine.addAll(
+    index.elements.map((element) => toDocument(element, index, toolClassById, finerByBroader)),
+  );
   return {
     search(query) {
       const trimmed = query.trim();

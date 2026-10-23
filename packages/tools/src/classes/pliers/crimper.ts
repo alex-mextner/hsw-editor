@@ -51,7 +51,7 @@ export const crimperStripper = defineToolClass({
   id: 'crimper-stripper',
   family: 'pliers',
   name: L('Wire stripper / crimper', 'Стриппер / обжимник'),
-  bankClass: 'pliers',
+  bankClass: 'crimper',
   keywords: {
     en: ['wire stripper', 'crimper', 'crimping pliers', 'wire stripper crimper', 'cable stripper'],
     ru: ['стриппер', 'обжимные клещи', 'обжимник', 'инструмент для снятия изоляции'],

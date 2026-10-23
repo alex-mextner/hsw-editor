@@ -16,8 +16,8 @@ export const TOOL_CLASSES: readonly ToolClass[] = [
     'pliers',
     'Плоскогубцы',
     'Pliers',
-    ['плоскогубцы', 'пассатижи', 'длинногубцы', 'утконосы', 'обжимка', 'клещи'],
-    ['pliers', 'long nose pliers', 'crimper', 'stripper'],
+    ['плоскогубцы', 'пассатижи', 'клещи'],
+    ['pliers', 'combination pliers'],
   ),
   tc(
     'snips',
@@ -68,8 +68,8 @@ export const TOOL_CLASSES: readonly ToolClass[] = [
     'knife',
     'Нож',
     'Utility knife',
-    ['нож', 'канцелярский нож', 'стамеска'],
-    ['knife', 'utility knife', 'box cutter', 'chisel'],
+    ['нож', 'канцелярский нож'],
+    ['knife', 'utility knife', 'box cutter'],
   ),
   tc(
     'clamp',
@@ -99,7 +99,7 @@ export const TOOL_CLASSES: readonly ToolClass[] = [
     ['напильник', 'надфиль', 'рашпиль'],
     ['file', 'rasp', 'needle file'],
   ),
-  tc('saw', 'Ножовка', 'Saw', ['ножовка', 'пила', 'лобзик'], ['saw', 'hand saw', 'hacksaw']),
+  tc('saw', 'Ножовка', 'Saw', ['ножовка', 'пила', 'лобзик'], ['saw', 'hand saw']),
   tc('brush', 'Кисть / щётка', 'Brush', ['кисть', 'щетка', 'щётка'], ['brush', 'paint brush']),
   tc(
     'pen',
@@ -108,7 +108,7 @@ export const TOOL_CLASSES: readonly ToolClass[] = [
     ['ручка', 'маркер', 'карандаш'],
     ['pen', 'marker', 'pencil'],
   ),
-  tc('ruler', 'Линейка', 'Ruler', ['линейка', 'угольник'], ['ruler', 'square', 'straight edge']),
+  tc('ruler', 'Линейка', 'Ruler', ['линейка'], ['ruler', 'straight edge']),
   tc(
     'spool',
     'Катушка',
@@ -191,6 +191,88 @@ export const TOOL_CLASSES: readonly ToolClass[] = [
     ['клеевой пистолет', 'термоклей'],
     ['glue gun', 'hot glue gun'],
   ),
+  // Finer classes of the tools above. `broader` names the coarser class they stay compatible with, so a holder
+  // that lists only the coarse class (a knife block, a pliers rack) still takes and suggests them.
+  tc(
+    'chisel',
+    'Стамеска',
+    'Chisel',
+    ['стамеска', 'стамески', 'долото'],
+    ['chisel', 'wood chisel', 'cold chisel'],
+    'knife',
+  ),
+  tc(
+    'punch',
+    'Бородок',
+    'Punch',
+    ['бородок', 'кернер', 'пробойник'],
+    ['punch', 'pin punch', 'center punch'],
+    'screwdriver',
+  ),
+  tc(
+    'hacksaw',
+    'Ножовка по металлу',
+    'Hacksaw',
+    ['ножовка по металлу', 'слесарная ножовка'],
+    ['hacksaw', 'metal saw'],
+    'saw',
+  ),
+  tc(
+    'level',
+    'Уровень',
+    'Spirit level',
+    ['уровень', 'пузырьковый уровень', 'ватерпас'],
+    ['level', 'spirit level', 'bubble level'],
+    'ruler',
+  ),
+  tc(
+    'square',
+    'Угольник',
+    'Square',
+    ['угольник', 'столярный угольник', 'слесарный угольник'],
+    ['square', 'try square', 'combination square'],
+    'ruler',
+  ),
+  tc(
+    'long-nose-pliers',
+    'Длинногубцы',
+    'Long-nose pliers',
+    ['длинногубцы', 'утконосы', 'тонкогубцы'],
+    ['long nose pliers', 'needle nose pliers'],
+    'pliers',
+  ),
+  tc(
+    'locking-pliers',
+    'Зажимные плоскогубцы',
+    'Locking pliers',
+    ['зажимные плоскогубцы', 'самозажимные клещи', 'вайс-грипс'],
+    ['locking pliers', 'vise grips', 'vice grips'],
+    'pliers',
+  ),
+  tc(
+    'water-pump-pliers',
+    'Переставные клещи',
+    'Water-pump pliers',
+    ['переставные клещи', 'сантехнические клещи'],
+    ['water pump pliers', 'slip joint pliers', 'tongue and groove pliers'],
+    'pliers',
+  ),
+  tc(
+    'crimper',
+    'Обжимные клещи',
+    'Crimper / stripper',
+    ['обжимка', 'обжимные клещи', 'стриппер'],
+    ['crimper', 'crimping pliers', 'wire stripper', 'stripper'],
+    'pliers',
+  ),
+  tc(
+    'hex-key-set',
+    'Набор шестигранников',
+    'Hex key set',
+    ['набор шестигранников', 'набор имбусовых ключей'],
+    ['hex key set', 'allen key set'],
+    'hex-key',
+  ),
   tc(
     'battery-pack',
     'Аккумулятор инструмента',
@@ -200,14 +282,85 @@ export const TOOL_CLASSES: readonly ToolClass[] = [
   ),
 ];
 
-function tc(id: string, ru: string, en: string, synRu: string[], synEn: string[]): ToolClass {
-  return { id, name: { ru, en }, synonyms: { ru: synRu, en: synEn } };
+function tc(
+  id: string,
+  ru: string,
+  en: string,
+  synRu: string[],
+  synEn: string[],
+  broader?: string,
+): ToolClass {
+  const base: ToolClass = { id, name: { ru, en }, synonyms: { ru: synRu, en: synEn } };
+  return broader === undefined ? base : { ...base, broader };
 }
 
 const BY_ID = new Map(TOOL_CLASSES.map((t) => [t.id, t]));
-/** The tool classes an index declares; the built-in list when it declares none. */
+type VocabularyEntry = Pick<ToolClass, 'id' | 'broader'>;
+
+/**
+ * One rule for every vocabulary lookup, the same as `toolClassVocabulary`: the classes an index declares win,
+ * a class it does not declare (an index written before the class existed) comes from the built-in list.
+ */
+function entryOf(id: string, vocabulary: readonly VocabularyEntry[]): VocabularyEntry | undefined {
+  return vocabulary.find((t) => t.id === id) ?? BY_ID.get(id);
+}
+
+/** Coarser class ids a tool of `toolClass` also fits (empty when the class has none; links are never chained). */
+export function broaderToolClasses(
+  toolClass: string,
+  vocabulary?: readonly VocabularyEntry[],
+): string[] {
+  const broader = entryOf(toolClass, vocabulary ?? TOOL_CLASSES)?.broader;
+  return broader === undefined ? [] : [broader];
+}
+
+/** `toolClass` itself first, then the coarser classes: every class whose holders take a tool of `toolClass`. */
+export function acceptedToolClasses(
+  toolClass: string,
+  vocabulary?: readonly VocabularyEntry[],
+): string[] {
+  return [toolClass, ...broaderToolClasses(toolClass, vocabulary)];
+}
+
+/** The classes plus the coarser classes they refine, deduplicated, in first-seen order. */
+export function expandToolClasses(
+  classes: readonly string[],
+  vocabulary?: readonly VocabularyEntry[],
+): string[] {
+  return [...new Set(classes.flatMap((id) => acceptedToolClasses(id, vocabulary)))];
+}
+
+/**
+ * The finer classes by the coarse class they refine (`knife` -> [`chisel`]): what a holder of that class also
+ * holds. Built once per vocabulary, not per element.
+ */
+export function finerToolClasses(
+  declared: readonly ToolClass[],
+): ReadonlyMap<string, readonly ToolClass[]> {
+  const finer = new Map<string, ToolClass[]>();
+  for (const toolClass of toolClassVocabulary(declared)) {
+    if (toolClass.broader === undefined) continue;
+    const list = finer.get(toolClass.broader) ?? [];
+    list.push(toolClass);
+    finer.set(toolClass.broader, list);
+  }
+  return finer;
+}
+
+/** Every word that names the class: both names and all synonyms. */
+export function toolClassWords(toolClass: ToolClass): string[] {
+  return [toolClass.name.ru, toolClass.name.en, ...toolClass.synonyms.ru, ...toolClass.synonyms.en];
+}
+
+/**
+ * The tool classes an index works with: the ones it declares, then the built-in classes it does not
+ * declare. An index that declares none gets the built-in list.
+ */
 export function toolClassVocabulary(declared: readonly ToolClass[]): readonly ToolClass[] {
-  return declared.length > 0 ? declared : TOOL_CLASSES;
+  if (declared.length === 0) return TOOL_CLASSES;
+  const known = new Set(declared.map((t) => t.id));
+  const missing = TOOL_CLASSES.filter((t) => !known.has(t.id));
+  return missing.length === 0 ? declared : [...declared, ...missing];
 }
 
 export function getToolClass(id: string): ToolClass | undefined {
