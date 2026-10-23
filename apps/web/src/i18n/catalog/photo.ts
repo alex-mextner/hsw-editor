@@ -120,6 +120,8 @@ export const photoEn = {
   'photo.clean.show': 'Show the cleaned wall (click for the original photo)',
   'photo.clean.hide': 'Show the original photo (click for the cleaned wall)',
   'photo.clean.make': 'Clean the wall under the board',
+  'photo.clean.auto.on': 'Auto-clean the background under the board: on (click to turn off)',
+  'photo.clean.auto.off': 'Auto-clean the background under the board: off (click to turn on)',
   'photo.clean.needsCalibration':
     'Calibrate the photo first: the cleaning follows the board footprint.',
   'photo.clean.running': 'Cleaning the wall…',
@@ -268,6 +270,8 @@ export const photoRu: FeatureRu<typeof photoEn> = {
   'photo.clean.show': 'Показана чистая стена (нажмите, чтобы увидеть исходное фото)',
   'photo.clean.hide': 'Показано исходное фото (нажмите, чтобы увидеть чистую стену)',
   'photo.clean.make': 'Очистить стену под доской',
+  'photo.clean.auto.on': 'Автоочистка фона под доской: включена (нажмите, чтобы выключить)',
+  'photo.clean.auto.off': 'Автоочистка фона под доской: выключена (нажмите, чтобы включить)',
   'photo.clean.needsCalibration': 'Сначала откалибруйте фото: очистка следует контуру доски.',
   'photo.clean.running': 'Очищаю стену…',
   'photo.clean.basic': 'базовая очистка',

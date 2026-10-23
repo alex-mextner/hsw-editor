@@ -1,18 +1,19 @@
 import {
   Columns2,
-  Download,
   Contrast,
+  Download,
   Eraser,
-  ScanSearch,
   Eye,
   EyeOff,
+  ImageIcon,
   ImageOff,
   ImagePlus,
-  ImageIcon,
   Layers,
   Move,
   RotateCw,
   Ruler,
+  ScanSearch,
+  WandSparkles,
 } from 'lucide-react';
 import { IconButton } from '@/components/IconButton.tsx';
 import { Slider } from '@/components/ui/slider.tsx';
@@ -36,11 +37,12 @@ import {
   exportPhotoPng,
   findPhotoTools,
   isGridCalibrated,
+  toggleAutoClean,
   togglePhotoMode,
 } from './photoActions.ts';
 import { findToolsStore } from './findTools.ts';
 import { choosePhotoFile } from './photoImport.ts';
-import { cleanStore, type AiState, type CleanState } from './cleanBackground.ts';
+import { autoCleanStore, cleanStore, type AiState, type CleanState } from './cleanBackground.ts';
 
 const WEB_CONTRAST_LABEL = {
   auto: 'photo.webContrast.auto',
@@ -99,6 +101,7 @@ export function PhotoToolbar() {
   const photoId = photo.photoId;
   const tools = useStore(findToolsStore);
   const clean = useStore(cleanStore);
+  const autoClean = useStore(autoCleanStore);
   const variant = wall?.photos.find((entry) => entry.cleanOf === photoId);
   const note = cleanNote(clean, photoId, variant?.backend ?? null, t);
   // A grid-detected calibration sits on the real lattice: turning the board would take it off.
@@ -155,6 +158,13 @@ export function PhotoToolbar() {
             onClick={variant === undefined ? cleanPhotoBackground : toggleShowCleaned}
           >
             <Eraser />
+          </IconButton>
+          <IconButton
+            label={autoClean ? t('photo.clean.auto.on') : t('photo.clean.auto.off')}
+            pressed={autoClean}
+            onClick={toggleAutoClean}
+          >
+            <WandSparkles />
           </IconButton>
           {note.text === null ? null : (
             <span
