@@ -69,14 +69,20 @@ export async function storeResponse(
       throw retry;
     }
   }
-  await deps.registry.record({
-    url: request.url,
-    cache: route.cache,
-    category: route.category,
-    bytes,
-    evictable: route.evictable,
-    ...(options.pinned === undefined ? {} : { pinned: options.pinned }),
-  });
+  try {
+    await deps.registry.record({
+      url: request.url,
+      cache: route.cache,
+      category: route.category,
+      bytes,
+      evictable: route.evictable,
+      ...(options.pinned === undefined ? {} : { pinned: options.pinned }),
+    });
+  } catch (error) {
+    // An entry the registry does not know can never be evicted or counted: undo the put rather than leak it.
+    await cache.delete(request);
+    throw error;
+  }
   if (route.evictable) await evict(deps, route.cache, 1, new Set([request.url]));
   return bytes;
 }
