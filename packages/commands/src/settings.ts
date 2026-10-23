@@ -126,16 +126,24 @@ export class SettingsStore {
     return this.byId.get(id);
   }
 
-  get(id: string): SettingValue {
+  /**
+   * An id no definition declares is a programming error, so `get`, `set`, `toggle`, `reset` and
+   * `isDefault` all throw on it; only a value that is not acceptable is a runtime outcome
+   * (`set` and `toggle` return false).
+   */
+  private require(id: string): SettingDefinition {
     const definition = this.byId.get(id);
     if (definition === undefined) throw new Error(`unknown setting '${id}'`);
-    return this.values.get(id) ?? definition.default;
+    return definition;
+  }
+
+  get(id: string): SettingValue {
+    return this.values.get(id) ?? this.require(id).default;
   }
 
   /** Validates and stores `raw`; returns false (and changes nothing) when it is not acceptable. */
   set(id: string, raw: unknown): boolean {
-    const definition = this.byId.get(id);
-    if (definition === undefined) return false;
+    const definition = this.require(id);
     const value = coerceSetting(definition, raw);
     if (value === undefined) return false;
     if (value === this.get(id)) return true;
@@ -146,17 +154,18 @@ export class SettingsStore {
   }
 
   reset(id: string): void {
+    this.require(id);
     if (this.values.delete(id)) this.emit(id);
   }
 
   isDefault(id: string): boolean {
+    this.require(id);
     return !this.values.has(id);
   }
 
-  /** Flips a boolean, or steps a choice to its next option (wrapping). */
+  /** Flips a boolean, or steps a choice to its next option (wrapping). False for a number. */
   toggle(id: string): boolean {
-    const definition = this.byId.get(id);
-    if (definition === undefined) return false;
+    const definition = this.require(id);
     const current = this.get(id);
     if (definition.type === 'boolean') return this.set(id, !current);
     if (definition.type === 'choice') {
@@ -231,7 +240,8 @@ export function settingCommands(store: SettingsStore): readonly Command[] {
       group: 'settings' as const,
       mutates: true,
       hidden: true,
-      ...(definition.aiHidden === true ? { aiHidden: true } : {}),
+      // Hidden from the palette (its settings provider lists them), but the AI reaches them here.
+      aiHidden: definition.aiHidden === true,
     };
     if (definition.type !== 'number') {
       commands.push(

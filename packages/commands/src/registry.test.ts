@@ -172,4 +172,54 @@ describe('command registry', () => {
     expect(notified).toBe(1);
     expect(registry.version()).toBe(1);
   });
+
+  test('runChecked runs already validated arguments without parsing them again', async () => {
+    let parses = 0;
+    const command = defineCommand({
+      id: 'wall.count',
+      title: { en: 'Count', ru: 'Счёт' },
+      group: 'wall',
+      when: 'selection',
+      mutates: false,
+      args: z.object({ n: z.number() }).transform((value) => {
+        parses += 1;
+        return value;
+      }),
+      handler: ({ n }) => n * 2,
+    });
+    const registry = new CommandRegistry();
+    registry.register(command);
+    const checked = command.validateArgs({ n: 4 });
+    if (!checked.ok) throw new Error('args should be valid');
+    expect(await registry.runChecked(command, checked, { selection: true })).toEqual({
+      ok: true,
+      value: 8,
+    });
+    expect(parses).toBe(1);
+    // The when-clause is still enforced at run time: the context may change while a prompt is open.
+    const disabled = await registry.runChecked(command, checked, {});
+    expect(disabled.ok === false && disabled.reason).toBe('disabled');
+  });
+
+  test('runChecked refuses a command that was unregistered or replaced after validation', async () => {
+    const spec = {
+      id: 'wall.count',
+      title: { en: 'Count', ru: 'Счёт' },
+      group: 'wall',
+      mutates: false,
+      args: z.object({ n: z.number() }),
+    } as const;
+    const original = defineCommand({ ...spec, handler: ({ n }) => n });
+    const replacement = defineCommand({ ...spec, handler: ({ n }) => n * 100 });
+    const registry = new CommandRegistry();
+    const dispose = registry.register(original);
+    const checked = original.validateArgs({ n: 1 });
+    if (!checked.ok) throw new Error('args should be valid');
+    dispose();
+    const gone = await registry.runChecked(original, checked, {});
+    expect(gone.ok === false && gone.reason).toBe('unknown');
+    registry.register(replacement);
+    const replaced = await registry.runChecked(original, checked, {});
+    expect(replaced.ok === false && replaced.reason).toBe('unknown');
+  });
 });

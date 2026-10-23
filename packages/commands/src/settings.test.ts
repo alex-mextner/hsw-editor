@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { CommandRegistry } from './registry.ts';
+import { CommandRegistry, isAiHidden } from './registry.ts';
 import {
   coerceSetting,
   defineSettings,
@@ -106,12 +106,23 @@ describe('settings store and persistence', () => {
     expect(store.toggle('editor.nudgeMm')).toBe(false);
   });
 
-  test('invalid values and unknown ids are refused without changing anything', () => {
+  test('invalid values are refused without changing anything', () => {
     const store = new SettingsStore(DEFINITIONS);
     expect(store.set('appearance.theme', 'neon')).toBe(false);
-    expect(store.set('ghost.setting', true)).toBe(false);
     expect(store.get('appearance.theme')).toBe('dark');
-    expect(() => store.get('ghost.setting')).toThrow('unknown setting');
+  });
+
+  test('an unknown id throws from every accessor, not just get', () => {
+    const store = new SettingsStore(DEFINITIONS);
+    const seen: string[] = [];
+    store.subscribe((id) => seen.push(id));
+    expect(() => store.get('ghost.setting')).toThrow("unknown setting 'ghost.setting'");
+    expect(() => store.set('ghost.setting', true)).toThrow("unknown setting 'ghost.setting'");
+    expect(() => store.toggle('ghost.setting')).toThrow("unknown setting 'ghost.setting'");
+    expect(() => store.reset('ghost.setting')).toThrow("unknown setting 'ghost.setting'");
+    expect(() => store.isDefault('ghost.setting')).toThrow("unknown setting 'ghost.setting'");
+    expect(seen).toEqual([]);
+    expect(store.overrides()).toEqual({});
   });
 
   test('only non-default values persist, and they reload identically', () => {
@@ -227,5 +238,29 @@ describe('setting commands', () => {
     expect(range.ok === false && range.reason).toBe('invalid_args');
     expect(store.get('editor.nudgeMm')).toBe(5);
     expect(registry.get('settings.set.appearance.theme')?.mutates).toBe(true);
+  });
+
+  test('setting commands are hidden from the palette but stay AI-callable unless aiHidden', () => {
+    const store = new SettingsStore([
+      ...DEFINITIONS,
+      {
+        id: 'ai.approval',
+        type: 'boolean',
+        default: true,
+        group: 'ai',
+        aiHidden: true,
+        title: { en: 'AI approval', ru: 'Подтверждение ИИ' },
+      },
+    ]);
+    const commands = settingCommands(store);
+    expect(commands.every((command) => command.hidden === true)).toBe(true);
+    const aiCallable = commands.filter((command) => !isAiHidden(command));
+    expect(aiCallable.map((command) => command.id).sort()).toEqual([
+      'settings.set.appearance.theme',
+      'settings.set.editor.nudgeMm',
+      'settings.set.editor.snapToGrid',
+      'settings.toggle.appearance.theme',
+      'settings.toggle.editor.snapToGrid',
+    ]);
   });
 });
