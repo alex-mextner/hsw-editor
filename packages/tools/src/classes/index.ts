@@ -12,3 +12,4 @@ import './battery-pack.ts';
 import './cordless-drill.ts';
 import './consumables.ts';
 import './striking.ts';
+import './pliers.ts';
