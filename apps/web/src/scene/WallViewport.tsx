@@ -2,9 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Stats } from '@react-three/drei';
 import type { Wall } from '@hsw-editor/core';
-import { AttachHint } from '@/features/viewport/AttachHint.tsx';
 import { ViewportContextMenu } from '@/features/viewport/ViewportContextMenu.tsx';
-import { api } from '@/api/http.ts';
 import { bankStore } from '@/bank/client.ts';
 import { variantVersion } from '@/bank/models.ts';
 import { itemNamer } from '@/features/invalid-zones/itemNames.ts';
@@ -23,14 +21,17 @@ import { beginItemDrag } from './dragController.ts';
 import { FpsProbe } from './FpsProbe.tsx';
 import { GhostItem } from './GhostItem.tsx';
 import { ItemsLayer } from './ItemsLayer.tsx';
+import { AttachHint } from '@/features/viewport/AttachHint.tsx';
 import { photoStore } from '@/state/photo.ts';
 import { MountHighlights } from './MountHighlights.tsx';
 import { dragOverTool, dropTool, leaveToolViewport } from './toolDrop.ts';
 import { measureClick, MeasureOverlay } from './MeasureTool.tsx';
-import { ModelBoundary } from './ModelBoundary.tsx';
 import { scenePalette } from './palette.ts';
 import { PlacementMarker } from './PlacementMarker.tsx';
-import { PhotoOverlay } from './PhotoOverlay.tsx';
+import { PhotoBoard } from './PhotoBoard.tsx';
+import { PhotoCameraRig } from './PhotoCameraRig.tsx';
+import { PhotoFrame } from './PhotoStage.tsx';
+import { photoViewState } from './photoView.ts';
 import { SelectionFrames } from './SelectionFrames.tsx';
 import { boardSizeMm } from '@hsw-editor/core';
 import { DimensionLayer } from '@/widgets/DimensionLayer.tsx';
@@ -50,6 +51,12 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
   const zonesEnabled = useStore(invalidZonesEnabledStore);
   const variants = useStore(variantVersion);
   const photoMode = useStore(photoStore);
+  const photoState = photoViewState(
+    wall,
+    photoMode.calibrating ? null : photoMode.photoId,
+    photoMode.draft,
+  );
+  const photoView = photoState.status === 'ready' ? photoState.view : null;
   const theme = useStore(themeStore);
   const bankState = useStore(bankStore);
   const session = useStore(sessionStore);
@@ -128,81 +135,77 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
       }}
     >
       <AttachHint />
-      <Canvas
-        frameloop={bench ? 'always' : 'demand'}
-        dpr={[1, 2]}
-        gl={{ antialias: true, powerPreference: 'high-performance' }}
-        onPointerMissed={(event) => {
-          // Only a primary click on the background clears the selection; right-click opens the menu.
-          if (event.button === 0 && editorStore.get().tool === 'select') setSelection([]);
-        }}
-        aria-label="3D"
-      >
-        <ambientLight intensity={theme === 'dark' ? 0.9 : 1.1} />
-        <directionalLight position={[0.8, 1.6, 2.4]} intensity={theme === 'dark' ? 1.6 : 1.3} />
-        <directionalLight position={[-1.2, 0.4, 1.2]} intensity={0.5} />
-        <BridgeInstaller />
-        <OmpViewportInstaller widthMm={size.width} heightMm={size.height} />
-        <CameraRig
-          view={editor.view}
-          widthMm={size.width}
-          heightMm={size.height}
-          fitToken={editor.fitToken}
-        />
-        <BoardMesh board={wall.board} palette={palette} occupied={occupied} />
-        {photoMode.photoId && !photoMode.calibrating ? (
-          // A photo that fails to load must not blank the viewport: draw nothing, toast once.
-          <ModelBoundary
-            url={api.photoUrl(wall.id, photoMode.photoId)}
-            name={t('asset.photo')}
-            placeholder={() => null}
-          >
-            <PhotoOverlay
-              wall={wall}
-              photoId={photoMode.photoId}
-              opacity={photoMode.overlayOpacity}
+      <PhotoFrame wall={wall} view={photoView}>
+        <Canvas
+          frameloop={bench ? 'always' : 'demand'}
+          dpr={[1, 2]}
+          gl={{ antialias: true, powerPreference: 'high-performance' }}
+          onPointerMissed={(event) => {
+            // Only a primary click on the background clears the selection; right-click opens the menu.
+            if (event.button === 0 && editorStore.get().tool === 'select') setSelection([]);
+          }}
+          aria-label="3D"
+        >
+          <ambientLight intensity={theme === 'dark' ? 0.9 : 1.1} />
+          <directionalLight position={[0.8, 1.6, 2.4]} intensity={theme === 'dark' ? 1.6 : 1.3} />
+          <directionalLight position={[-1.2, 0.4, 1.2]} intensity={0.5} />
+          <BridgeInstaller />
+          <OmpViewportInstaller widthMm={size.width} heightMm={size.height} />
+          {photoView ? (
+            <PhotoCameraRig camera={photoView.camera.three} />
+          ) : (
+            <CameraRig
+              view={editor.view}
+              widthMm={size.width}
+              heightMm={size.height}
+              fitToken={editor.fitToken}
             />
-          </ModelBoundary>
-        ) : null}
-        <ItemsLayer
-          wall={wall}
-          bank={bank}
-          bankReady={bankState.status === 'ready'}
-          palette={palette}
-          onItemPointerDown={beginItemDrag}
-        />
-        <InvalidZones result={zones} theme={theme} describeRegion={describeRegion} />
-        <SelectionFrames wall={wall} bank={bank} palette={palette} invalidIds={invalidIds} />
-        <MountHighlights wall={wall} bank={bank} palette={palette} />
-        <PlacementMarker point={editor.placeAt} color={palette.ghostOk} />
-        <DimensionLayer wall={wall} bank={bank} palette={palette} />
-        {editor.ghost && ghostElement ? (
-          <GhostItem
-            element={ghostElement}
-            xMm={editor.ghost.x}
-            yMm={editor.ghost.y}
-            rotZ={0}
-            color={editor.ghost.valid ? palette.ghostOk : palette.ghostBad}
+          )}
+          {photoView ? (
+            <PhotoBoard board={wall.board} />
+          ) : (
+            <BoardMesh board={wall.board} palette={palette} occupied={occupied} />
+          )}
+          <ItemsLayer
+            wall={wall}
+            bank={bank}
+            bankReady={bankState.status === 'ready'}
+            palette={palette}
+            onItemPointerDown={beginItemDrag}
           />
-        ) : null}
-        <MeasureOverlay palette={palette} />
-        {editor.tool === 'measure' ? (
-          <mesh
-            position={[size.width / 2000, size.height / 2000, 0.002]}
-            onPointerDown={measureClick}
-          >
-            <planeGeometry
-              args={[
-                (Math.max(size.width, 4000) / 1000) * 4,
-                (Math.max(size.height, 4000) / 1000) * 4,
-              ]}
+          <InvalidZones result={zones} theme={theme} describeRegion={describeRegion} />
+          <SelectionFrames wall={wall} bank={bank} palette={palette} invalidIds={invalidIds} />
+          <MountHighlights wall={wall} bank={bank} palette={palette} />
+          <PlacementMarker point={editor.placeAt} color={palette.ghostOk} />
+          <DimensionLayer wall={wall} bank={bank} palette={palette} />
+          {editor.ghost && ghostElement ? (
+            <GhostItem
+              element={ghostElement}
+              xMm={editor.ghost.x}
+              yMm={editor.ghost.y}
+              rotZ={0}
+              color={editor.ghost.valid ? palette.ghostOk : palette.ghostBad}
             />
-            <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-          </mesh>
-        ) : null}
-        {bench ? <FpsProbe /> : null}
-        {showStats ? <Stats className="!left-auto !right-2 !top-14" /> : null}
-      </Canvas>
+          ) : null}
+          <MeasureOverlay palette={palette} />
+          {editor.tool === 'measure' ? (
+            <mesh
+              position={[size.width / 2000, size.height / 2000, 0.002]}
+              onPointerDown={measureClick}
+            >
+              <planeGeometry
+                args={[
+                  (Math.max(size.width, 4000) / 1000) * 4,
+                  (Math.max(size.height, 4000) / 1000) * 4,
+                ]}
+              />
+              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+            </mesh>
+          ) : null}
+          {bench ? <FpsProbe /> : null}
+          {showStats ? <Stats className="!left-auto !right-2 !top-14" /> : null}
+        </Canvas>
+      </PhotoFrame>
     </ViewportContextMenu>
   );
 }

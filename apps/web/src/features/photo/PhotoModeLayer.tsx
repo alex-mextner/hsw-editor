@@ -2,11 +2,13 @@ import { useEffect, useState } from 'react';
 import { ImagePlus, Loader2 } from 'lucide-react';
 import type { Wall } from '@hsw-editor/core';
 import { isTypingTarget } from '@/commands/typing.ts';
+import { Button } from '@/components/ui/button.tsx';
 import { useI18n } from '@/i18n/index.ts';
 import { useStore } from '@/state/react.ts';
 import { CalibrationWizard } from '@/widgets/CalibrationWizard.tsx';
 import { firstImage, importPhotoFile, importStore } from './photoImport.ts';
-import { finishCalibration, leavePhotoMode, photoStore } from '@/state/photo.ts';
+import { photoViewState } from '@/scene/photoView.ts';
+import { finishCalibration, leavePhotoMode, photoStore, startCalibration } from '@/state/photo.ts';
 
 function carriesFiles(event: DragEvent): boolean {
   return event.dataTransfer?.types.includes('Files') ?? false;
@@ -84,8 +86,23 @@ export function PhotoModeLayer({ wall }: { readonly wall: Wall }) {
     if (missing) leavePhotoMode();
   }, [missing]);
 
+  // Photo mode is on but the photo cannot be drawn: say so and offer the wizard instead of an unexplained orbit view.
+  const view = photoViewState(wall, photo.calibrating ? null : photo.photoId, photo.draft);
+  const stuck = view.status === 'unusable' || view.status === 'uncalibrated' ? view.photo : null;
+
   return (
     <>
+      {stuck ? (
+        <div className="absolute inset-x-0 top-16 z-20 flex justify-center px-4">
+          <div className="pointer-events-auto flex max-w-md flex-col gap-2 rounded-lg border border-border bg-panel/95 p-3 text-sm shadow-lg backdrop-blur">
+            <strong>{t('photo.unusable.title')}</strong>
+            <p className="text-xs text-muted-foreground">{t('photo.unusable.body')}</p>
+            <Button size="sm" onClick={() => startCalibration(stuck.id)}>
+              {t('photo.unusable.action')}
+            </Button>
+          </div>
+        </div>
+      ) : null}
       {photo.calibrating && target ? (
         <section
           aria-label={t('calibration.title')}
