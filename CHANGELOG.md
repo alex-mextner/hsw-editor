@@ -123,9 +123,8 @@ needs an entry here first.
 
 ### Changed
 
-- Removal analysis is 100-200x faster on dense racks (#196): boxes decide before the exact `minGap`/boolean, the gap search shrinks to the nearest
-  neighbour, a tool cramped at rest is not measured along its way (it needs two hands anyway). The showcase wall: 55 s -> 1.5 s, a rack of three
-  screwdrivers 26 s -> 0.15 s per tool, same verdicts. The rest gap and the clearance now look at everything within the 60 mm search distance (they only saw
+- Removal analysis is 20-100x faster on dense racks (#196): boxes decide before the exact `minGap`/boolean, a gap is asked in growing steps (8 -> 60 mm), a tool cramped
+  at rest is not measured along its way (it needs two hands anyway). The showcase wall: 54 s -> 3 s, a rack of three screwdrivers 26 s -> 0.3-0.6 s per tool, same verdicts. The rest gap and the clearance now look at everything within the 60 mm search distance (they only saw
   what lay in the sweep box before), so a tool with another one 25 mm below it has a clearance of 25 mm, not 60: its convenience (and so a holder's rating) can be a little lower.
 - A tool hung on a holder may overhang the board edge without an `out_of_board` layout warning (its origin lies outside when a long tool or a can sits low).
 - The showcase wall is laid out as the physics says it works (#196): the side-cutters (82 mm of open handles) have their own rack, the three screwdrivers are slim

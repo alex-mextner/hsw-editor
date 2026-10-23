@@ -367,7 +367,7 @@ export class RemovalProbe {
           const apart = boundsGap(near, s.bounds);
           // The gap is looked for no farther than the closest neighbour seen so far: a smaller search is a cheaper one.
           if (measured && s.counts && apart < clearance && clearance > TOUCH_MM) {
-            clearance = Math.min(clearance, posed.minGap(s.solid, clearance));
+            clearance = Math.min(clearance, gapWithin(posed, s.solid, clearance));
           }
           if (apart > TOUCH_MM) continue;
           const shared = posed.intersect(s.solid);
@@ -495,7 +495,7 @@ export class RemovalProbe {
       if (gap >= fingerRoomMm) {
         for (const { body, apart } of ordered) {
           if (apart >= gap) continue;
-          gap = Math.min(gap, posed.minGap(this.bodyManifold(body), gap));
+          gap = Math.min(gap, gapWithin(posed, this.bodyManifold(body), gap));
         }
       }
     } finally {
@@ -653,6 +653,21 @@ function upAlongAxis(rotation: Mat3): Vec3 | null {
   const up: Vec3 = axis[1] >= 0 ? axis : [-axis[0], -axis[1], -axis[2]];
   const lean = (Math.acos(Math.min(1, up[1])) * 180) / Math.PI;
   return lean < UPRIGHT_DEG || lean > MAX_AXIS_LEAN_DEG ? null : up;
+}
+
+/** First search distance (mm) of `gapWithin`; it doubles until the gap is found or the limit is reached. */
+const GAP_RAMP_START_MM = 8;
+
+/**
+ * `minGap` up to `limit`, asked in growing steps: a search is as expensive as the pairs of triangles within its distance, so
+ * two dense meshes a few millimetres apart answer a search of 16 mm in a millisecond and one of 60 mm in most of a second.
+ * The answer is the same: the gap when it is below `limit`, else `limit`.
+ */
+function gapWithin(posed: Manifold, other: Manifold, limit: number): number {
+  for (let reach = Math.min(limit, GAP_RAMP_START_MM); ; reach = Math.min(limit, reach * 2)) {
+    const gap = posed.minGap(other, reach);
+    if (gap < reach || reach >= limit) return Math.min(gap, limit);
+  }
 }
 
 /** A solid the sweep tests the tool against: `counts` = a neighbour whose gap is the path's clearance (not the holder, not the board). */
