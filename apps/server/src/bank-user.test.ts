@@ -1,11 +1,14 @@
 /** `/api/bank/user/*` + the `bank.user.import` job on the real daemon (temp data home, real mesh tool). */
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { BankElement, BankIndex, Conversion, Upload, UserElementMeta } from '@hsw-editor/bank';
 import { bankPaths, createBankHandler } from '@hsw-editor/bank/node';
 import { startServer, type RunningServer } from './server.ts';
+
+// the real converter needs uv and the bank python environment, which CI's test job does not have
+const converterAvailable = Bun.which('uv') !== null && existsSync(bankPaths().venvDir);
 
 let root: string;
 let home: string;
@@ -130,33 +133,37 @@ describe('uploads and previews', () => {
     ).toBe(404);
   });
 
-  test('upload -> preview returns a conversion and a fetchable GLB; bad settings are 400', async () => {
-    const up = await upload(boxStl(40, 30, 20), 'Test holder.stl');
-    expect(up.parts[0]?.dimsMm).toEqual({ x: 40, y: 30, z: 20 });
-    const preview = await api(`/api/bank/user/uploads/${up.id}/preview`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ orient: { out: '+z', up: '+y' } }),
-    });
-    expect(preview.status).toBe(200);
-    const { conversion } = await body<{ conversion: Conversion }>(preview);
-    expect(conversion.dimsMm).toEqual({ x: 40, y: 30, z: 20 });
-    expect(conversion.footprint.length).toBeGreaterThan(0);
-    const glb = await api(conversion.glbUrl);
-    expect(glb.status).toBe(200);
-    expect(new TextDecoder().decode((await glb.arrayBuffer()).slice(0, 4))).toBe('glTF');
-    const bad = await api(`/api/bank/user/uploads/${up.id}/preview`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ orient: { out: '+z', up: '+z' } }),
-    });
-    expect(bad.status).toBe(400);
-    expect((await api(`/api/bank/user/uploads/${up.id}`, { method: 'DELETE' })).status).toBe(200);
-    expect((await api(conversion.glbUrl)).status).toBe(404);
-  }, 60_000);
+  test.skipIf(!converterAvailable)(
+    'upload -> preview returns a conversion and a fetchable GLB; bad settings are 400',
+    async () => {
+      const up = await upload(boxStl(40, 30, 20), 'Test holder.stl');
+      expect(up.parts[0]?.dimsMm).toEqual({ x: 40, y: 30, z: 20 });
+      const preview = await api(`/api/bank/user/uploads/${up.id}/preview`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ orient: { out: '+z', up: '+y' } }),
+      });
+      expect(preview.status).toBe(200);
+      const { conversion } = await body<{ conversion: Conversion }>(preview);
+      expect(conversion.dimsMm).toEqual({ x: 40, y: 30, z: 20 });
+      expect(conversion.footprint.length).toBeGreaterThan(0);
+      const glb = await api(conversion.glbUrl);
+      expect(glb.status).toBe(200);
+      expect(new TextDecoder().decode((await glb.arrayBuffer()).slice(0, 4))).toBe('glTF');
+      const bad = await api(`/api/bank/user/uploads/${up.id}/preview`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ orient: { out: '+z', up: '+z' } }),
+      });
+      expect(bad.status).toBe(400);
+      expect((await api(`/api/bank/user/uploads/${up.id}`, { method: 'DELETE' })).status).toBe(200);
+      expect((await api(conversion.glbUrl)).status).toBe(404);
+    },
+    60_000,
+  );
 });
 
-describe('import job, bank index, edit, delete', () => {
+describe.skipIf(!converterAvailable)('import job, bank index, edit, delete', () => {
   test('an imported element is in the bank index, assets, search and the user routes; it survives a fresh handler', async () => {
     const before = await api('/api/bank/index');
     const beforeHash = (await body<BankIndex>(before)).contentHash;

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { bankPaths, type BankPaths } from '../paths.ts';
 import { convertMesh, probeMesh, resolveSettings, sniffMesh, UserElementError } from './convert.ts';
-import { boxes3mf, boxesStl, boxGlb, boxStl } from './meshfixtures.ts';
+import { boxes3mf, boxesStl, boxGlb, boxStl, converterAvailable } from './meshfixtures.ts';
 
 let work: string;
 let paths: BankPaths;
@@ -43,7 +43,7 @@ describe('sniffMesh', () => {
   });
 });
 
-describe('probe and convert', () => {
+describe.skipIf(!converterAvailable)('probe and convert', () => {
   test('an STL box is probed, normalised to the wall frame (z = 0 on the wall) and thumbnailed', async () => {
     const file = await write('box.stl', boxStl([40, 30, 20], { origin: [5, 5, 5] }));
     const probe = await probeMesh(paths, file);

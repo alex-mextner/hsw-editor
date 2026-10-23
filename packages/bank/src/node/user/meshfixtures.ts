@@ -1,5 +1,13 @@
 /** Test-only: tiny STL / GLB / 3MF files built in memory (millimetres, Z-up like real CAD output). */
 import { Document, NodeIO } from '@gltf-transform/core';
+import { existsSync } from 'node:fs';
+import { bankPaths } from '../paths.ts';
+
+/**
+ * The real converter needs `uv` and the bank python environment (built by `bank:ingest` / `uv sync`). CI's test
+ * job has neither, so the tests that run the mesh tool are skipped there and run on a developer machine.
+ */
+export const converterAvailable = Bun.which('uv') !== null && existsSync(bankPaths().venvDir);
 
 type Vec = [number, number, number];
 

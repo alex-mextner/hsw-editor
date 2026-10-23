@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { bankPaths, type BankPaths } from '../paths.ts';
 import { verifyBank } from '../verify.ts';
 import { UserElementError } from './convert.ts';
-import { boxesStl, boxStl } from './meshfixtures.ts';
+import { boxesStl, boxStl, converterAvailable } from './meshfixtures.ts';
 import { createUserBank, fillName, slugifyName, type UserBank } from './store.ts';
 
 let work: string;
@@ -57,28 +57,32 @@ describe('uploads', () => {
     expect(await readdir(join(paths.userDir, 'uploads')).catch(() => [])).toEqual([]);
   });
 
-  test('an upload is probed once, previewed per settings (cached) and can be deleted', async () => {
-    const upload = await bank.createUpload(boxStl([40, 30, 20]), 'my_box-holder.stl');
-    expect(upload).toMatchObject({ format: 'stl', suggestedName: 'my box holder' });
-    expect(upload.parts[0]?.dimsMm).toEqual({ x: 40, y: 30, z: 20 });
-    const first = await bank.previewUpload(upload.id, { orient: { out: '+z', up: '+y' } });
-    expect(first.glbUrl).toMatch(
-      new RegExp(`^/api/bank/user/uploads/${upload.id}/preview/[0-9a-f]{16}\\.glb$`),
-    );
-    const file = bank.previewFile(
-      upload.id,
-      first.glbUrl.split('/').pop()?.replace('.glb', '') ?? '',
-    );
-    expect(file && (await Bun.file(file).exists())).toBe(true);
-    const again = await bank.previewUpload(upload.id, { orient: { out: '+z', up: '+y' } });
-    expect(again).toEqual(first);
-    expect(await bank.deleteUpload(upload.id)).toBe(true);
-    await expectError(bank.previewUpload(upload.id, undefined), 404, 'upload_not_found');
-    expect(bank.previewFile('../etc', '0123456789abcdef')).toBeNull();
-  }, 90_000);
+  test.skipIf(!converterAvailable)(
+    'an upload is probed once, previewed per settings (cached) and can be deleted',
+    async () => {
+      const upload = await bank.createUpload(boxStl([40, 30, 20]), 'my_box-holder.stl');
+      expect(upload).toMatchObject({ format: 'stl', suggestedName: 'my box holder' });
+      expect(upload.parts[0]?.dimsMm).toEqual({ x: 40, y: 30, z: 20 });
+      const first = await bank.previewUpload(upload.id, { orient: { out: '+z', up: '+y' } });
+      expect(first.glbUrl).toMatch(
+        new RegExp(`^/api/bank/user/uploads/${upload.id}/preview/[0-9a-f]{16}\\.glb$`),
+      );
+      const file = bank.previewFile(
+        upload.id,
+        first.glbUrl.split('/').pop()?.replace('.glb', '') ?? '',
+      );
+      expect(file && (await Bun.file(file).exists())).toBe(true);
+      const again = await bank.previewUpload(upload.id, { orient: { out: '+z', up: '+y' } });
+      expect(again).toEqual(first);
+      expect(await bank.deleteUpload(upload.id)).toBe(true);
+      await expectError(bank.previewUpload(upload.id, undefined), 404, 'upload_not_found');
+      expect(bank.previewFile('../etc', '0123456789abcdef')).toBeNull();
+    },
+    90_000,
+  );
 });
 
-describe('import, edit, remove', () => {
+describe.skipIf(!converterAvailable)('import, edit, remove', () => {
   test('imports a verified user element: assets, sidecar, original, index', async () => {
     const upload = await bank.createUpload(boxStl([40, 30, 20]), 'Box.stl');
     const steps: string[] = [];
