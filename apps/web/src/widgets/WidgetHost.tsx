@@ -103,11 +103,11 @@ function RequestCard({
   const title = request.title ?? t(`request.title.${request.kind}`);
 
   return (
-    <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 flex justify-center p-2 sm:p-3">
+    <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-center p-2 sm:p-3">
       <section
         aria-label={title}
         className={cn(
-          'pointer-events-auto flex max-h-[min(82dvh,48rem)] w-full flex-col gap-3 overflow-y-auto rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-lg',
+          'pointer-events-auto flex max-h-full w-full flex-col gap-3 overflow-y-auto rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-lg',
           WIDE_KINDS.has(request.kind) ? 'max-w-5xl' : 'max-w-xl',
         )}
       >
