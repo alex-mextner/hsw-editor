@@ -61,6 +61,9 @@ export const WARNING_CODES = [
   'missing_parent',
   'missing_photo',
   'missing_model',
+  'parent_not_holder',
+  'slot_collision',
+  'slot_without_parent',
 ] as const;
 export type WarningCode = (typeof WARNING_CODES)[number];
 
@@ -136,6 +139,8 @@ function applyLeaf(wall: Wall, op: LeafOp): LeafResult {
       return setVariant(wall, op);
     case 'lock':
       return lock(wall, op);
+    case 'attachItem':
+      return attachItem(wall, op);
     case 'addPhoto':
       return addPhoto(wall, op);
     case 'removePhoto':
@@ -343,6 +348,32 @@ function lock(wall: Wall, op: Narrow<'lock'>): LeafResult {
   return { wall: withItem(wall, index, { ...item, locked: op.locked }), inverse, changed: true };
 }
 
+function attachItem(wall: Wall, op: Narrow<'attachItem'>): LeafResult {
+  const { item, index } = editableItem(wall, op.id);
+  if (item.kind !== 'tool') {
+    throw new OpError('invalid_op', `${op.id}: only tools hang on holders (kind is ${item.kind})`);
+  }
+  // The parent is not validated (like `addItem`): removing a holder leaves its tools pointing at it, and an id can
+  // be reused by a non-holder, so undoing a later re-attach must be able to restore any stored parent. A missing
+  // or non-holder parent shows up as `missing_parent` / `parent_not_holder` warnings.
+  const inverse: LeafOp = {
+    type: 'attachItem',
+    id: op.id,
+    parentId: item.parentId ?? null,
+    slot: item.slot ?? null,
+  };
+  const { parentId: _parent, slot: _slot, ...rest } = item;
+  const slot = op.slot ?? undefined;
+  // `parentId: null` with a slot restores a stored slot-without-parent item (the inverse of detaching one).
+  const next: WallItem = {
+    ...rest,
+    ...(op.parentId === null ? {} : { parentId: op.parentId }),
+    ...(slot === undefined ? {} : { slot }),
+  };
+  if (sameJson(next, item)) return noop(wall, inverse);
+  return { wall: withItem(wall, index, next), inverse, changed: true };
+}
+
 // ---- photos ----------------------------------------------------------------------------------------
 
 function photoIndex(wall: Wall, id: string): number {
@@ -489,10 +520,11 @@ const POSE_EPSILON_MM = 1e-6;
 export function checkWall(wall: Wall): WallWarning[] {
   const warnings: WallWarning[] = [];
   const size = boardSizeMm(wall.board);
-  const itemIds = new Set(wall.items.map((item) => item.id));
   const photoIds = new Set(wall.photos.map((photo) => photo.id));
   const modelIds = new Set(wall.models.map((model) => model.id));
   const byCell = new Map<string, string[]>();
+  const kindById = new Map(wall.items.map((item) => [item.id, item.kind]));
+  const bySlot = new Map<string, string[]>();
   for (const item of wall.items) {
     if (item.cell !== undefined) {
       if (!cellInBoard(wall.board, item.cell)) {
@@ -532,10 +564,31 @@ export function checkWall(wall: Wall): WallWarning[] {
         itemIds: [item.id],
       });
     }
-    if (item.parentId !== undefined && !itemIds.has(item.parentId)) {
+    if (item.parentId !== undefined) {
+      const parentKind = kindById.get(item.parentId);
+      if (parentKind === undefined) {
+        warnings.push({
+          code: 'missing_parent',
+          message: `item ${item.id} refers to missing holder ${item.parentId}`,
+          itemIds: [item.id],
+        });
+      } else if (parentKind !== 'holder') {
+        warnings.push({
+          code: 'parent_not_holder',
+          message: `item ${item.id} hangs on ${item.parentId}, which is a ${parentKind}, not a holder`,
+          itemIds: [item.id, item.parentId],
+        });
+      }
+      if (item.slot !== undefined) {
+        const key = `${item.parentId}#${item.slot}`;
+        const group = bySlot.get(key);
+        if (group === undefined) bySlot.set(key, [item.id]);
+        else group.push(item.id);
+      }
+    } else if (item.slot !== undefined) {
       warnings.push({
-        code: 'missing_parent',
-        message: `item ${item.id} refers to missing holder ${item.parentId}`,
+        code: 'slot_without_parent',
+        message: `item ${item.id} claims mount slot ${item.slot} but hangs on no holder`,
         itemIds: [item.id],
       });
     }
@@ -562,6 +615,15 @@ export function checkWall(wall: Wall): WallWarning[] {
       warnings.push({
         code: 'cell_collision',
         message: `cell ${cell} is occupied by ${ids.join(', ')}`,
+        itemIds: ids,
+      });
+    }
+  }
+  for (const [slot, ids] of bySlot) {
+    if (ids.length > 1) {
+      warnings.push({
+        code: 'slot_collision',
+        message: `mount slot ${slot} holds ${ids.join(', ')}`,
         itemIds: ids,
       });
     }

@@ -89,6 +89,8 @@ const SAMPLE_OPS: readonly Op[] = [
   { type: 'setVariant', id: 'h1', variantId: 'short', bankId: 'hsw-clip' },
   { type: 'setVariant', id: 't1', variantId: 'x', bankId: 'tool-hammer' },
   { type: 'lock', id: 'h1', locked: true },
+  { type: 'attachItem', id: 't1', parentId: 'h2', slot: 1 },
+  { type: 'attachItem', id: 't1', parentId: null },
   {
     type: 'addPhoto',
     photo: {
@@ -169,7 +171,7 @@ function randomOp(wall: Wall, random: () => number, counter: number): Op | null 
   const pick = <T>(list: readonly T[]): T | undefined => list[Math.floor(random() * list.length)];
   const item = pick(wall.items) ?? { id: 'none' }; // refused with item_not_found, which the test tolerates
   const cell = { col: Math.floor(random() * 14), row: Math.floor(random() * 8) };
-  switch (Math.floor(random() * 10)) {
+  switch (Math.floor(random() * 11)) {
     case 0:
       return { type: 'addItem', item: holder(`r${counter}`, cell.col, cell.row) };
     case 1:
@@ -214,6 +216,18 @@ function randomOp(wall: Wall, random: () => number, counter: number): Op | null 
       };
     case 8:
       return { type: 'rename', name: `wall ${Math.floor(random() * 3)}` };
+    case 10: {
+      const holderItems = wall.items.filter((candidate) => candidate.kind === 'holder');
+      const parent = random() < 0.25 ? undefined : pick(holderItems);
+      return (
+        item && {
+          type: 'attachItem',
+          id: item.id,
+          parentId: parent?.id ?? null,
+          slot: parent === undefined ? null : Math.floor(random() * 3),
+        }
+      );
+    }
     default:
       return (
         item && {
@@ -481,5 +495,111 @@ describe('parsing and migration', () => {
       JSON.stringify({ ...wall, items: [...wall.items, ...wall.items] }),
     );
     expect(() => parseWall(duplicated)).toThrow(/duplicate item/);
+  });
+});
+
+describe('attachItem', () => {
+  test('sets and clears parentId and slot; the wall stays free of warnings', () => {
+    const attached = applyOp(fixture(), { type: 'attachItem', id: 't1', parentId: 'h2', slot: 2 });
+    expect(attached.wall.items.find((item) => item.id === 't1')).toMatchObject({
+      parentId: 'h2',
+      slot: 2,
+    });
+    expect(attached.warnings.filter((w) => w.code !== 'out_of_board')).toEqual([]);
+    const detached = applyOp(attached.wall, { type: 'attachItem', id: 't1', parentId: null });
+    const tool = detached.wall.items.find((item) => item.id === 't1');
+    expect(tool?.parentId).toBeUndefined();
+    expect(tool?.slot).toBeUndefined();
+  });
+
+  test('only tools hang, a non-holder parent is flagged (not refused), and never when locked', () => {
+    const wall = fixture();
+    expect(() => applyOp(wall, { type: 'attachItem', id: 'h1', parentId: 'h2' })).toThrow(OpError);
+    const toTool = applyOp(wall, { type: 'attachItem', id: 't1', parentId: 't1' });
+    expect(toTool.warnings.map((w) => w.code)).toContain('parent_not_holder');
+    expect(content(applyOp(toTool.wall, toTool.inverse).wall)).toEqual(content(wall));
+    const locked = applyOp(wall, { type: 'lock', id: 't1', locked: true }).wall;
+    expect(() => applyOp(locked, { type: 'attachItem', id: 't1', parentId: 'h2' })).toThrow(
+      /locked/,
+    );
+  });
+
+  test('re-attaching to the same holder and slot is a no-op', () => {
+    const once = applyOp(fixture(), { type: 'attachItem', id: 't1', parentId: 'h2', slot: 0 });
+    const again = applyOp(once.wall, { type: 'attachItem', id: 't1', parentId: 'h2', slot: 0 });
+    expect(again.changed).toBe(false);
+  });
+
+  test('two tools in one slot are flagged', () => {
+    const base = fixture();
+    const withSecond = applyOp(base, {
+      type: 'addItem',
+      item: WallItemSchema.parse({
+        id: 't2',
+        kind: 'tool',
+        bankId: 'tool-x',
+        parentId: 'h1',
+        slot: 0,
+      }),
+    }).wall;
+    const result = applyOp(withSecond, { type: 'attachItem', id: 't1', parentId: 'h1', slot: 0 });
+    expect(result.warnings.map((w) => w.code)).toContain('slot_collision');
+  });
+
+  test('a non-holder parent is flagged when the stored wall says so', () => {
+    const wall = fixture();
+    const bent: Wall = {
+      ...wall,
+      items: wall.items.map((item) => (item.id === 't1' ? { ...item, parentId: 'h1' } : item)),
+    };
+    const asTool: Wall = {
+      ...bent,
+      items: bent.items.map((item) =>
+        item.id === 'h1' ? { ...item, kind: 'tool' as const } : item,
+      ),
+    };
+    expect(applyOp(asTool, { type: 'rename', name: 'x' }).warnings.map((w) => w.code)).toContain(
+      'parent_not_holder',
+    );
+  });
+});
+
+describe('attachItem edge cases', () => {
+  test('a slot without a holder is accepted (old data stays loadable) and flagged', () => {
+    const item = WallItemSchema.parse({ id: 't9', kind: 'tool', bankId: 'x', slot: 4 });
+    const added = applyOp(fixture(), { type: 'addItem', item });
+    expect(added.warnings.map((w) => w.code)).toContain('slot_without_parent');
+  });
+
+  test('hanging and detaching a stored slot-without-parent tool is undone exactly', () => {
+    const item = WallItemSchema.parse({ id: 't9', kind: 'tool', bankId: 'x', slot: 4 });
+    const legacy = applyOp(fixture(), { type: 'addItem', item }).wall;
+    const hung = applyOp(legacy, { type: 'attachItem', id: 't9', parentId: 'h1', slot: 0 });
+    expect(content(applyOp(hung.wall, hung.inverse).wall)).toEqual(content(legacy));
+    const detached = applyOp(legacy, { type: 'attachItem', id: 't9', parentId: null });
+    expect(detached.changed).toBe(true);
+    expect(content(applyOp(detached.wall, detached.inverse).wall)).toEqual(content(legacy));
+  });
+
+  test('moving to another slot of the same holder changes only the slot; detaching a free tool is a no-op', () => {
+    const first = applyOp(fixture(), { type: 'attachItem', id: 't1', parentId: 'h1', slot: 0 });
+    const second = applyOp(first.wall, { type: 'attachItem', id: 't1', parentId: 'h1', slot: 2 });
+    expect(second.changed).toBe(true);
+    expect(content(applyOp(second.wall, second.inverse).wall)).toEqual(content(first.wall));
+    const detached = applyOp(second.wall, { type: 'attachItem', id: 't1', parentId: null });
+    expect(applyOp(detached.wall, { type: 'attachItem', id: 't1', parentId: null }).changed).toBe(
+      false,
+    );
+  });
+
+  test('a holder that no longer exists is flagged, and re-attaching away from it is undone exactly', () => {
+    const orphaned = applyOp(fixture(), { type: 'removeItem', id: 'h1' }).wall;
+    expect(applyOp(orphaned, { type: 'rename', name: 'x' }).warnings.map((w) => w.code)).toContain(
+      'missing_parent',
+    );
+    const rehung = applyOp(orphaned, { type: 'attachItem', id: 't1', parentId: 'h2', slot: 1 });
+    expect(content(applyOp(rehung.wall, rehung.inverse).wall)).toEqual(content(orphaned));
+    const toGhost = applyOp(fixture(), { type: 'attachItem', id: 't1', parentId: 'nope' });
+    expect(toGhost.warnings.map((w) => w.code)).toContain('missing_parent');
   });
 });
