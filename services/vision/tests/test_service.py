@@ -200,3 +200,33 @@ def test_concurrent_requests_for_one_photo_share_the_lock_across_cache_objects(t
     for t in threads:
         t.join()
     assert len(computed) == 1
+
+
+def test_segmentation_quality_defaults_to_fast_is_part_of_the_cache_identity_and_reaches_the_stage(
+    tmp_path: Path, photo: Path
+) -> None:
+    assert SegmentParams().quality == "fast"
+    with pytest.raises(ValueError):
+        SegmentParams(quality="turbo")  # type: ignore[arg-type]
+    service, calls = make_service(tmp_path)
+    img = service.open(ImageRef(image_path=photo, work_dir=tmp_path / "w"))
+    fast = service.segment(img, SegmentParams())
+    accurate = service.segment(img, SegmentParams(quality="accurate"))
+    assert calls.segment == 2 and fast["dir"] != accurate["dir"]
+    service.segment(img, SegmentParams(quality="accurate"))
+    assert calls.segment == 2  # the accurate result is cached on its own key
+    assert calls.segment_kwargs[0]["quality"] == "fast" and calls.segment_kwargs[1]["quality"] == "accurate"
+
+
+def test_the_segment_stage_rejects_an_unknown_quality_before_touching_a_model(tmp_path: Path) -> None:
+    with pytest.raises(BadRequest, match="quality"):
+        stage_segment.segment(np.zeros((8, 8, 3), np.uint8), tmp_path, manager=None, quality="turbo")  # type: ignore[arg-type]
+
+
+def test_u2net_requests_that_differ_only_in_quality_share_one_cache_entry(tmp_path: Path, photo: Path) -> None:
+    assert SegmentParams(method="u2net", quality="accurate").quality == "fast"
+    service, calls = make_service(tmp_path)
+    img = service.open(ImageRef(image_path=photo, work_dir=tmp_path / "w"))
+    service.segment(img, SegmentParams(method="u2net", quality="accurate"))
+    service.segment(img, SegmentParams(method="u2net"))
+    assert calls.segment == 1

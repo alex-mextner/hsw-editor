@@ -23,6 +23,7 @@ import {
   type FitResult,
   type PhotoToObjectsResult,
   type PhotoToWallResult,
+  type SegmentQuality,
   type SegmentResult,
   type StreamEvent,
   VisionError,
@@ -287,7 +288,7 @@ class FakeWalls implements JobWalls {
 
 let home = '';
 
-function harness(): Harness {
+function harness(segmentQuality?: () => Promise<SegmentQuality | undefined>): Harness {
   const wallDir = join(home, 'walls', WALL_ID);
   const imageDir = join(home, 'image-dir');
   mkdirSync(join(wallDir, 'photos'), { recursive: true });
@@ -303,6 +304,7 @@ function harness(): Harness {
       client,
       wallDir: () => wallDir,
       bankIndex: async () => ({ contentHash: 'h1', toolClasses: [], elements: [] }),
+      ...(segmentQuality === undefined ? {} : { segmentQuality }),
     },
     registry,
   );
@@ -518,6 +520,20 @@ describe('vision.photo_to_wall', () => {
     h.client.results.push(okResult(h.imageDir, []));
     await h.run('vision.photo_to_wall', { wallId: WALL_ID, photoId: PHOTO_ID, refresh: true });
     expect(h.client.photoToWallCalls).toHaveLength(3);
+  });
+
+  test('changing the segmentation quality setting misses the stored result', async () => {
+    let quality: SegmentQuality | undefined = 'fast';
+    const h = harness(async () => quality);
+    h.client.results.push(okResult(h.imageDir, [proposalItem(1, 0.9, false)]));
+    await h.run('vision.photo_to_wall', { wallId: WALL_ID, photoId: PHOTO_ID });
+    const again = objectOf(await h.run('vision.photo_to_wall', { wallId: WALL_ID, photoId: PHOTO_ID }));
+    expect(again['cached']).toBe(true);
+    quality = 'accurate';
+    h.client.results.push(okResult(h.imageDir, [proposalItem(1, 0.9, false)]));
+    const other = objectOf(await h.run('vision.photo_to_wall', { wallId: WALL_ID, photoId: PHOTO_ID }));
+    expect(other['cached']).toBe(false);
+    expect(h.client.photoToWallCalls).toHaveLength(2);
   });
 
   test('a stored result whose asset was deleted is recomputed', async () => {

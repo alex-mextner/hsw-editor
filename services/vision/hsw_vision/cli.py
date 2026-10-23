@@ -115,6 +115,7 @@ def add_photo_options(parser: argparse.ArgumentParser, *, out_help: str) -> None
     parser.add_argument("--distance", type=float, metavar="MM", help="... and their real distance in mm")
     parser.add_argument("--mm-per-px", type=float, help="manual scale")
     parser.add_argument("--method", choices=("sam2", "sam2-dense", "u2net"), default="sam2")
+    parser.add_argument("--quality", choices=("fast", "accurate"), default="fast", help="segmentation quality (default fast)")
     parser.add_argument("--fill", choices=("owlv2", "none"), default="owlv2")
     parser.add_argument("--categories", help="classes to recognise: a file or comma list (threed_vision.recognise.load_categories)")
     parser.add_argument("--max-objects", type=int, default=60)
@@ -181,7 +182,7 @@ def cmd_photo_to_wall(args: argparse.Namespace, config: VisionConfig) -> int:
         work_dir=args.out,
         photo_id=args.photo_id,
         calibrate=calibration_params(args),
-        segment=SegmentParams(method=args.method, fill=args.fill),
+        segment=SegmentParams(method=args.method, quality=args.quality, fill=args.fill),
         bank_index=load_bank_index(args.bank_index),
         categories=args.categories,
         auto_apply_confidence=args.auto_apply,
@@ -216,7 +217,7 @@ def cmd_photo_to_objects(args: argparse.Namespace, config: VisionConfig) -> int:
         work_dir=args.out / "cache",
         out_dir=args.out,
         calibrate=calibration_params(args),
-        segment=SegmentParams(method=args.method, fill=args.fill),
+        segment=SegmentParams(method=args.method, quality=args.quality, fill=args.fill),
         bank_index=load_bank_index(args.bank_index),
         categories=args.categories,
         max_objects=args.max_objects,

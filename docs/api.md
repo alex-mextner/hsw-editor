@@ -342,6 +342,9 @@ Merge is per namespace: a listed namespace is replaced wholesale, `null` deletes
 `{ error, settings: <current document>, currentRev }` and nothing is written. Without `baseRev` it is last-writer-wins.
 Concurrent PUTs are serialized by the daemon.
 
+The daemon itself reads one key of the `settings` namespace: `vision.segmentQuality` (`"fast"` | `"accurate"`), the default `segment.quality` of every vision stage request
+(docs/vision.md, "Segmentation speed"); a missing or unknown value means the sidecar default `fast`.
+
 | Status | `error.code`       | When                                                                              |
 | ------ | ------------------ | --------------------------------------------------------------------------------- |
 | 400    | `invalid_json`     | Body is not JSON                                                                  |

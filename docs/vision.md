@@ -80,7 +80,7 @@ All bodies are `application/json`; `image_path` is an absolute path on this mach
 | `GET /health` | | `{ok, name, version}` (never loads models) |
 | `GET /models/status` | | `{manager: {device, free_vram_mb, vram_budget_mb, resident_gpu_mb, engines{loaded, device, idle_s, ...}}, models: {models_dir, models{name: {installed, verified, files...}}}, gpu: {free_vram_mb, ort}}` |
 | `POST /calibrate` | `{image_path, calibrate: {mode?, points_px?, distance_mm?, reference_instance?, reference_length_mm?, mm_per_px?, f_px?, f_ratio?}}` | calibration (below); `ok: false, needs: "scale"` when there is nothing to go on |
-| `POST /segment` | `{image_path, segment: {method: sam2\|sam2-dense\|u2net, fill: owlv2\|none, reject_bg, points_per_side}, include_masks?}` | `{instances: [{id, source, bbox_xywh, area_px, bg_prob, stability, polygon, mask}], method, device, timing_s, overlay, dir, imageDir, masks_png_base64?}` |
+| `POST /segment` | `{image_path, segment: {method: sam2\|sam2-dense\|u2net, quality: fast\|accurate, fill: owlv2\|none, reject_bg, points_per_side}, include_masks?}` | `{instances: [{id, source, bbox_xywh, area_px, bg_prob, stability, polygon, mask}], method, device, timing_s, overlay, dir, imageDir, masks_png_base64?}` |
 | `POST /recognise` | `{image_path, segment, instances?, bank_index?, categories?, topk?}` | `{classes, objects: {"<id>": {tool_class, label, score, prob, topk[], bank_topk[]}}}` |
 | `POST /fit` | `{image_path, calibrate, segment, instance, fixed_dims?, template?, planar?, max_tries?, device?}` | `{instance, fit: {kind, params, dims_mm, pose, confidence, views, glb, ...}, dimensionsMm, confidence, residual, dimsFixed}` |
 | `POST /multiview` | `{fit, views: [{mask \| mask_path, K, R, t, name?}], generated_views?: [{image_path, view \| azimuth_deg + elevation_deg, name?}], flag_below, generated_flag_below}` | `{mode, views: [{iou, flag, azimuth_deg, elevation_deg}], min_iou, status, needs_views[], sanity, confidence, threshold, request_view, generatedViews[], multiView}`; see "Multi-view check" |
@@ -191,8 +191,9 @@ for the whole one. Real generated drawings were not run (they need the user's Ch
   refresh never rewrites masks another request is decoding; a refresh recomputes each stage once however many later stages need it. Recognise and
   fit results are keyed by the segmentation's directory AND content (ids, boxes, areas). The `vision.*` jobs add a
   job-level cache (`vision/jobs/`): the same photo + parameters return the stored proposal and do not store the model files twice.
-- **CPU-only mode** (`HSW_VISION_DEVICE=cpu`): the same pipeline, slower (measured spike numbers: SAM2 AMG 85-92 s, soft fit ~5 s/object, 3-view fit 13-17 s).
-  `u2net` (`segment.method`) is the single-object fast path (0.4 s CPU) and is useless for multi-object photos.
+- **CPU-only mode** (`HSW_VISION_DEVICE=cpu`): the same pipeline, slower (measured: segmentation 41 s warm with the default `fast` quality, soft fit ~5 s/object,
+  3-view fit 13-17 s; the stock SAM2 generator needs 85-92 s there and is not used). `u2net` (`segment.method`) is the single-object fast path (0.4 s CPU) and is
+  useless for multi-object photos. See [Segmentation speed](#segmentation-speed-quality-fast--accurate).
 
 ### onnxruntime-gpu pin
 
@@ -332,9 +333,43 @@ Result (`<out>/objects.json`, also the return value):
 - `confidence`/`needsView(s)`: the single policy above. `status`: `ok` (confidence >= `min_confidence`), `needs_confirmation`, `no_scale`, `fit_failed` (recorded in
   `diagnostics.failures`; when every fit fails the call raises instead of returning an empty list).
 
+## Segmentation speed (quality fast / accurate)
+
+`segment.quality` (`fast` default, `accurate`) picks the SAM2 pipeline of `threed_vision.segment.Segmenter` (3d-cli `docs/commands/segment.md` has the full measurements and the
+variants that did not help). `fast` filters the SAM2 grid masks on the decoder's 256x256 logits with a resident fp16 decoder and only prompts grid points near an object (OWLv2
+objectness), `accurate` is the stock automatic mask generator. `method: u2net` stays the single-object path (0.05 s GPU / 0.5 s CPU) and ignores `quality`.
+
+Measured on the 2000x1500 carpet photo (RTX 4060 8 GB shared with other processes, load average 4-7, models resident; `threed-vision` e672ca7, 3d-cli #543). "library" is `Segmenter.run`,
+"`/segment` stage" the whole `stages.segment.segment` call the service makes (library run + mask PNGs + polygons + overlay):
+
+| path | cold (library, models built in the call) | warm, library | warm, `/segment` stage | instances | 33 labelled crops found (bbox IoU 0.5) | masks of `accurate` GPU reproduced (IoU 0.7) |
+|---|---|---|---|---|---|---|
+| GPU `accurate` (the former default) | 11.5 s | 5.7 s | 7.0-7.2 s (8.3 s before the faster PNG writing) | 98 | 33/33 (the labels come from this run) | 100 % |
+| **GPU `fast` (default)** | 2.2-7.6 s | **1.6-1.9 s** | **2.4 s** | 91 | 30/33 | 89 % |
+| CPU, former default (boxes only on a 1024 px copy) | 11.5 s | 9.0 s | - | 65 | 13/33 | 41 % |
+| **CPU `fast` (default), full resolution** | 50 s | **38.7 s** | - | 93 | 30/33 | 89 % |
+
+The ticket's budget (< 3 s per photo) holds on the GPU only: the CPU default takes 39 s (3d-cli #545 tracks the decoder-bound part), and the cold first request pays 3-9 s more for building the models.
+
+The three crops `fast` does not match (two pliers, one tape roll) are objects it returns whole where the label marks a part. `fast` drops the carpet patches the stock generator keeps,
+and finds neither the adjustable wrench nor the hammer head (3d-cli #479). The sidecar's cached results are keyed by the parameters, so `fast` and `accurate` results of one photo coexist.
+
+**Switch.** The user's choice is the `vision.segmentQuality` setting (`fast` | `accurate`, group "Advanced" of the settings palette, ru/en). The daemon reads it from the `settings` namespace of
+`<home>/settings.json` and adds it to the `segment` parameters of every stage request that does not name a `quality` itself (`HttpVisionClient`, `segmentQuality` option; the tool import and the
+`vision.*` jobs go through it; the click/box edit routes run no automatic segmentation). An explicit `segment.quality` in a job input or request wins; with no setting the sidecar default (`fast`) applies. CLI:
+`python -m hsw_vision photo-to-wall|photo-to-objects ... --quality fast|accurate`.
+
+**Timing regression.** `services/vision/tests/test_segment_real_photo.py` (`real_photo`, opt-in with `HSW_VISION_REAL_TIMING=1`, needs the private photo, the models and a free GPU) fails when the
+warm default segmentation stage of the carpet photo takes 3 s or more or finds fewer than 80 instances. Run it under the heavy-run wrapper:
+
+```bash
+cd services/vision && HSW_VISION_REAL_TIMING=1 flock /tmp/3d-cli-heavy.lock systemd-run --user --scope -q -p MemoryMax=6G -p MemorySwapMax=0 \
+  -p CPUQuota=600% nice -n 10 uv run pytest tests/test_segment_real_photo.py -q
+```
+
 ## Editing a result: merge, split, reprofile, add
 
-The review grid of the tool import corrects the segmentation without re-running SAM2 on the whole photo (15 s GPU, 80 s CPU).
+The review grid of the tool import corrects the segmentation without re-running SAM2 on the whole photo (1.7 s GPU with the default `fast` quality, 41 s CPU).
 Each op works on a finished `photo_to_objects` directory (`objects.json` + files), analyses only the objects it creates or re-fits
 with the functions the run used (recognise, fit, crops, colours, embedding), takes the scale and the class vocabulary the run stored
 in `objects.json` (`request`), rewrites `objects.json` atomically and returns the full updated record(s). One op at a time per
@@ -390,6 +425,6 @@ or `--mm-per-px`), 127 missing model/dependency (names the fix). Options: `--dev
 
 ## Remaining gaps
 
-See the per-issue status in the PR description. Known: SAM2 on the CPU takes ~90 s; flat/boxy multi-view fits are ambiguous (the check flags them); no UI for
+See the per-issue status in the PR description. Known: the default segmentation takes ~39 s on the CPU (3d-cli #545); flat/boxy multi-view fits are ambiguous (the check flags them); no UI for
 mask delete, scale widget, anchor, or the request_view flow in the wizard (web app, #9/#10 UI criteria; the draw call path is `POST /api/tools/drafts/:id/objects/:key/draw-view`, docs/draw.md); no tool-model bank for image retrieval; the
 embedding index for retrieval is not built at ingestion; OWLv2 as a separate user-facing detector endpoint is not exposed (it runs inside the segmenter fill).

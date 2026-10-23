@@ -8,6 +8,8 @@ needs an entry here first.
 
 ### Added
 
+- Photo segmentation is 3.4x faster by default (hsw-editor #10): `segment.quality` `fast` (sidecar default; `POST /segment` 8.3 s -> 2.4 s warm on the GPU) or `accurate` (the former default), per request and as the `vision.segmentQuality` setting (palette, ru/en;
+  the daemon adds it to every stage request). `threed-vision` bumped for it (3d-cli #543); measurements and a real-photo timing test in [docs/vision.md](docs/vision.md#segmentation-speed-quality-fast--accurate).
 - Physics on the generated tool models (#167 follow-up): the physics judges the model the scene draws (`resolveToolModel`, also a size rebuilt
   for the item), the amber marks follow that model, a dimension edit re-seats the tool (`rehang`), and "Seat tools" (Physics section, palette
   `physics.seat`) puts every hung tool inside its holder as one undo step (`seatAllTools`). Seating starts from the holder's own rim, so something

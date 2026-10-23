@@ -8,12 +8,13 @@ import { modules } from '../modules.ts';
 import { readBankIndex } from './bank-index.ts';
 import { registerVisionJobs } from './jobs.ts';
 import { createVisionModule } from './routes.ts';
-import { visionClient as client } from './shared.ts';
+import { userSegmentQuality, visionClient as client } from './shared.ts';
 
 registerVisionJobs({
   client,
   wallDir: (wallId) => join(loadConfig().home, 'walls', wallId),
   bankIndex: readBankIndex,
+  segmentQuality: userSegmentQuality,
 });
 modules.push(createVisionModule(client));
 

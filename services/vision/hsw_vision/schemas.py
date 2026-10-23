@@ -35,11 +35,26 @@ class CalibrateParams(Strict):
     grid_pitch_mm: tuple[float, float] | None = None
 
 
+SegmentQuality = Literal["fast", "accurate"]
+DEFAULT_QUALITY: SegmentQuality = "fast"
+
+
 class SegmentParams(Strict):
     method: Literal["sam2", "sam2-dense", "u2net"] = "sam2"
+    #: `fast`: SAM2 grid filtered on the decoder's own low-resolution logits, only where OWLv2 sees objects; `accurate`:
+    #: the stock SAM2 automatic mask generator (docs/vision.md has the timings). The user's choice lives in the
+    #: `vision.segmentQuality` setting, which the server adds to the stage requests (docs/vision.md).
+    quality: SegmentQuality = DEFAULT_QUALITY
     fill: Literal["owlv2", "none"] = "owlv2"
     reject_bg: bool = True
     points_per_side: int = Field(default=32, ge=8, le=128)
+
+    @model_validator(mode="after")
+    def _u2net_has_no_quality(self) -> SegmentParams:
+        """`u2net` has no quality: requests that differ only in it share one cache entry and one engine."""
+        if self.method == "u2net":
+            self.quality = DEFAULT_QUALITY
+        return self
 
 
 class ImageRef(Strict):

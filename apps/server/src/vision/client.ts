@@ -22,6 +22,7 @@ import {
   PhotoToObjectsResultSchema,
   type PhotoToWallResult,
   PhotoToWallResultSchema,
+  type SegmentQuality,
   type SegmentResult,
   SegmentResultSchema,
   ServiceErrorBodySchema,
@@ -108,7 +109,31 @@ export interface HttpVisionClientOptions {
   spawn?: SpawnFn;
   /** Schedules the idle stop; tests inject a manual one. */
   scheduler?: IdleScheduler;
+  /**
+   * The user's segmentation quality (the `vision.segmentQuality` setting), read at request time. Added to the `segment`
+   * parameters of every stage request that does not name a quality itself; `undefined` leaves the sidecar's default.
+   */
+  segmentQuality?: () => Promise<SegmentQuality | undefined>;
 }
+
+interface SendInit {
+  method: 'GET' | 'POST';
+  body?: ServiceRequest;
+}
+
+function isJsonObject(value: JsonValue | undefined): value is ServiceRequest {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+/** Routes whose body carries `segment` parameters. */
+const SEGMENT_ROUTES: ReadonlySet<string> = new Set([
+  '/segment',
+  '/calibrate',
+  '/recognise',
+  '/fit',
+  '/photo-to-wall',
+  '/photo-to-objects',
+]);
 
 /** Starts a one-shot timer (`ms`) and returns a handle for `cancel`. */
 export interface IdleScheduler {
@@ -366,24 +391,40 @@ export class HttpVisionClient implements VisionClient {
 
   private async send(
     path: string,
-    init: { method: 'GET' | 'POST'; body?: ServiceRequest },
+    init: SendInit,
     signal?: AbortSignal,
   ): Promise<Response> {
     const endpoint = await this.ensure();
     const stopEpoch = this.stopEpoch;
+    const request = await this.withSegmentQuality(path, init);
     let response: Response;
     try {
-      response = await this.fetchEndpoint(endpoint, path, init, signal);
+      response = await this.fetchEndpoint(endpoint, path, request, signal);
     } catch (error) {
       if (signal?.aborted) throw error;
       this.assertNotStopped(stopEpoch);
       // The sidecar may have died (or been stopped by a previous idle timer): forget it, start once more.
       this.endpoint = undefined;
       const fresh = await this.ensure();
-      response = await this.fetchEndpoint(fresh, path, init, signal);
+      response = await this.fetchEndpoint(fresh, path, request, signal);
     }
     if (!response.ok) throw errorFromBody(await response.json().catch(() => null), response.status);
     return response;
+  }
+
+  /** The user's segmentation quality goes into the request unless the caller chose one (`segment.quality`). */
+  private async withSegmentQuality(path: string, init: SendInit): Promise<SendInit> {
+    const { body } = init;
+    if (body === undefined || this.options.segmentQuality === undefined) return init;
+    // keep in step with the stage routes of the sidecar that take `segment` parameters (services/vision/hsw_vision/app.py)
+    if (!SEGMENT_ROUTES.has(path)) return init;
+    const segment = body['segment'];
+    if (segment !== undefined && !isJsonObject(segment)) return init;
+    const params: ServiceRequest = segment ?? {};
+    if (params['quality'] !== undefined) return init;
+    const quality = await this.options.segmentQuality();
+    if (quality === undefined) return init;
+    return { ...init, body: { ...body, segment: { ...params, quality } } };
   }
 
   private fetchEndpoint(

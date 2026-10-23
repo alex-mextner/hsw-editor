@@ -15,6 +15,9 @@ import {
 } from '@hsw-editor/user-settings';
 import { atomicWrite, isNotFound } from './store/fsutil.ts';
 
+/** Name of the settings file inside the home directory (also read by `vision/settings.ts`). */
+export const SETTINGS_FILE = 'settings.json';
+
 /** Settings are per-user: owner read/write only. */
 const SETTINGS_FILE_MODE = 0o600;
 
@@ -37,7 +40,7 @@ export class SettingsStore {
   private readonly listeners = new Set<(document: SettingsDocument) => void>();
 
   constructor(options: SettingsStoreOptions) {
-    this.path = join(options.home, 'settings.json');
+    this.path = join(options.home, SETTINGS_FILE);
     this.now = options.now ?? (() => new Date());
   }
 

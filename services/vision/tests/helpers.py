@@ -134,6 +134,7 @@ def raw_instances() -> dict[str, Any]:
 class Calls:
     def __init__(self) -> None:
         self.segment = 0
+        self.segment_kwargs: list[dict[str, Any]] = []
         self.calibrate = 0
         self.fit: list[dict[str, Any]] = []
         self.recognise = 0
@@ -197,8 +198,9 @@ def make_service(
         **config_overrides,
     )
 
-    def segment(rgb: np.ndarray, out_dir: Path, *, files_prefix: str = "", **_: Any) -> dict[str, Any]:
+    def segment(rgb: np.ndarray, out_dir: Path, *, files_prefix: str = "", **kwargs: Any) -> dict[str, Any]:
         calls.segment += 1
+        calls.segment_kwargs.append(kwargs)
         return stage_segment.describe(rgb, raw_instances(), out_dir, files_prefix=files_prefix)
 
     def calibrate(rgb: np.ndarray, **kwargs: Any) -> dict[str, Any]:

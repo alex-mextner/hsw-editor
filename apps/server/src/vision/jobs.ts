@@ -42,7 +42,9 @@ import {
   type StreamEvent,
   VisionError,
   calibrateToService,
+  DEFAULT_SEGMENT_QUALITY,
   segmentToService,
+  type SegmentQuality,
 } from './types.ts';
 
 export const VISION_ACTOR: Actor = { kind: 'agent', name: 'vision' };
@@ -63,6 +65,11 @@ export interface VisionJobDeps {
   wallDir(wallId: string): string;
   /** The bank index (`/api/bank/index`) of the data home, for tool classes and holder hints; null when unavailable. */
   bankIndex(home: string): Promise<JsonValue | null>;
+  /**
+   * The user's segmentation quality (the `vision.segmentQuality` setting). The stored-result key of `vision.photo_to_wall`
+   * includes it, so changing the setting recomputes instead of returning the other quality's proposal.
+   */
+  segmentQuality?(): Promise<SegmentQuality | undefined>;
 }
 
 const absolutePath = z.string().refine((value) => isAbsolute(value), 'must be an absolute path');
@@ -562,7 +569,8 @@ async function runPhotoToWall(
     typeof bank === 'object' && bank !== null && !Array.isArray(bank)
       ? (bank['contentHash'] ?? null)
       : null;
-  const key = `p2w-${sha.slice(0, 16)}-${hashOf({ ...input, wallId: undefined, refresh: undefined, askUser: undefined, extraShas, bankHash, scale: storedScale(photo.photo) }).slice(0, 16)}`;
+  const segmentQuality = input.segment?.quality ?? (await deps.segmentQuality?.()) ?? DEFAULT_SEGMENT_QUALITY;
+  const key = `p2w-${sha.slice(0, 16)}-${hashOf({ ...input, wallId: undefined, refresh: undefined, askUser: undefined, extraShas, bankHash, segmentQuality, scale: storedScale(photo.photo) }).slice(0, 16)}`;
   if (!input.refresh) {
     const stored = await readStored(deps, input.wallId, key);
     if (stored !== null) {
