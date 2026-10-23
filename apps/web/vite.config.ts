@@ -5,6 +5,7 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv, type ProxyOptions } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
+import { pwaPluginOptions } from './src/pwa/pluginOptions.ts';
 
 const stateLibDist = fileURLToPath(
   new URL('../../vendor/state-lib/dist/index.js', import.meta.url),
@@ -36,19 +37,8 @@ export default defineConfig(({ mode }) => {
     plugins: [
       react(),
       tailwindcss(),
-      // Placeholder PWA config: precaches the app shell. Offline op queue and model caching: see issues.
-      VitePWA({
-        registerType: 'autoUpdate',
-        manifest: {
-          name: 'HSW Editor',
-          short_name: 'HSW',
-          display: 'standalone',
-          background_color: '#0a0a0a',
-          theme_color: '#0a0a0a',
-          icons: [{ src: '/icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
-        },
-        workbox: { navigateFallbackDenylist: [/^\/api\//] },
-      }),
+      // App shell precache, runtime caches and the update flow: src/pwa (docs/offline.md).
+      VitePWA(pwaPluginOptions()),
     ],
     define: { __STATE_BACKEND__: JSON.stringify(useStateLib ? 'state-lib' : 'baseline') },
     resolve: {

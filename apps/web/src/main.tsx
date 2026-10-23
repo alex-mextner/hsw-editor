@@ -1,13 +1,12 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { registerSW } from 'virtual:pwa-register';
 import { App } from './App.tsx';
 import { loadBank } from './bank/client.ts';
+import './pwa/instance.ts';
 import './state/theme.ts';
 import { initSession } from './wall/session.ts';
 import './styles.css';
 
-registerSW({ immediate: true });
 initSession();
 void loadBank();
 
