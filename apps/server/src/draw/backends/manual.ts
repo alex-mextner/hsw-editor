@@ -33,15 +33,12 @@ export function manualJobDir(req: DrawRequest): string {
 }
 
 /**
- * The inbox files oldest first by when they arrived (the later of the modification and the inode change time, so a file moved
- * in with `mv`/`cp -p` counts from the move; name as the tie-break): the NEWEST upload wins, whatever it is called.
+ * The inbox files oldest first by modification time (name as the tie-break): the NEWEST upload wins, whatever it is called.
+ * API uploads are written when they arrive; a file moved in by hand keeps its old time (`touch` it to make it the newest).
  */
 async function newestLast(inbox: string, names: readonly string[]): Promise<string[]> {
   const stamped = await Promise.all(
-    names.map(async (name) => {
-      const { mtimeMs, ctimeMs } = await stat(join(inbox, name));
-      return { name, at: Math.max(mtimeMs, ctimeMs) };
-    }),
+    names.map(async (name) => ({ name, at: (await stat(join(inbox, name))).mtimeMs })),
   );
   return stamped.sort((a, b) => a.at - b.at || a.name.localeCompare(b.name)).map((f) => f.name);
 }
@@ -63,7 +60,7 @@ export class ManualBackend implements DrawBackend {
       await writeFile(join(jobDir, 'prompt.txt'), `${req.prompt}\n`);
       // the job is shared by every run of the request, whose chained `view` refs differ: show only the current refs
       for (const old of (await readdir(jobDir)).filter((name) => name.startsWith('ref-'))) {
-        await rm(join(jobDir, old));
+        await rm(join(jobDir, old), { force: true }); // another process (the CLI) may be doing the same
       }
       for (const [index, ref] of req.refs.entries()) {
         await copyFile(ref.path, join(jobDir, `ref-${index + 1}-${basename(ref.path)}`));
