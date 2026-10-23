@@ -61,7 +61,7 @@ vertex colour) of the GLB meshes: `glb.ts` records one `ColourPart` per mesh (it
 and the engine looks up the colour at up to 48 region vertices per involved item (`stripeColourOf`: vertex carried back into the item frame, then
 the part whose box contains it, else the nearest, smaller box winning ties). `chooseStripeColour` (`stripeColour.ts`, unit-tested) turns the
 samples into `RegionMesh.stripe`: white when at least half of the known samples are red-ish (hue 335-360 or 0-30 degrees, saturation >= 0.35,
-value >= 0.2), red otherwise and for items without colour data (stand-in boxes). One colour per GLB mesh (a mesh painted with several colours through vertex colours is judged by their mean). The choice is cached with the region (it depends only on the operands),
+value >= 0.2), red otherwise and for items without colour data (stand-in boxes). One colour per GLB mesh (the material colour; GLTFLoader gives each glTF primitive its own mesh), except that a mesh painted with vertex colours is split into a red-ish part and an other part, each with the box and mean colour of its triangles (`paintedParts` in `glb.ts`), so a red handle and a grey shaft in one mesh are told apart. The choice is cached with the region (it depends only on the operands),
 `regionGeometry.ts` writes it as a per-vertex `color` attribute (1 = red, 0 = white) and the stripe material switches diffuse and gap colour on it.
 The photo-mode overlay and the PNG export are drawn by the same canvas, so they inherit it; the viewport legend shows both swatches (red, and white on red).
 

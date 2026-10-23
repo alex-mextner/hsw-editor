@@ -55,6 +55,62 @@ function twoTriangleGlb(baseColor?: [number, number, number, number]): ArrayBuff
   return out.buffer;
 }
 
+/** Minimal GLB with ONE mesh of two triangles painted by COLOR_0: red at x 0..1, grey at x 2..3 (white material). */
+function paintedGlb(): ArrayBuffer {
+  const bin = new Uint8Array(6 * 12 + 6 * 12 + 12);
+  const view = new DataView(bin.buffer);
+  [0, 0, 0, 1, 0, 0, 0, 1, 0, 2, 0, 0, 3, 0, 0, 2, 1, 0].forEach((value, i) =>
+    view.setFloat32(i * 4, value, true),
+  );
+  const colours = [0.8, 0.02, 0.02, 0.5, 0.5, 0.5];
+  [0, 0, 0, 1, 1, 1].forEach((half, v) =>
+    [0, 1, 2].forEach((c) =>
+      view.setFloat32(72 + (v * 3 + c) * 4, colours[half * 3 + c] ?? 0, true),
+    ),
+  );
+  [0, 1, 2, 3, 4, 5].forEach((value, i) => view.setUint16(144 + i * 2, value, true));
+  const json = JSON.stringify({
+    asset: { version: '2.0' },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0, COLOR_0: 1 }, indices: 2 }] }],
+    accessors: [
+      {
+        bufferView: 0,
+        componentType: 5126,
+        count: 6,
+        type: 'VEC3',
+        min: [0, 0, 0],
+        max: [3, 1, 0],
+      },
+      { bufferView: 1, componentType: 5126, count: 6, type: 'VEC3' },
+      { bufferView: 2, componentType: 5123, count: 6, type: 'SCALAR' },
+    ],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: 72 },
+      { buffer: 0, byteOffset: 72, byteLength: 72 },
+      { buffer: 0, byteOffset: 144, byteLength: 12 },
+    ],
+    buffers: [{ byteLength: bin.length }],
+  });
+  const jsonBytes = new TextEncoder().encode(json.padEnd(Math.ceil(json.length / 4) * 4, ' '));
+  const total = 12 + 8 + jsonBytes.length + 8 + bin.length;
+  const out = new Uint8Array(total);
+  const head = new DataView(out.buffer);
+  head.setUint32(0, 0x46546c67, true);
+  head.setUint32(4, 2, true);
+  head.setUint32(8, total, true);
+  head.setUint32(12, jsonBytes.length, true);
+  head.setUint32(16, 0x4e4f534a, true);
+  out.set(jsonBytes, 20);
+  const binAt = 20 + jsonBytes.length;
+  head.setUint32(binAt, bin.length, true);
+  head.setUint32(binAt + 4, 0x004e4942, true);
+  out.set(bin, binAt + 8);
+  return out.buffer;
+}
+
 describe('readGlbSolid', () => {
   test('a mirrored node keeps outward-facing triangles (winding flipped back)', async () => {
     const solid = await readGlbSolid(twoTriangleGlb());
@@ -88,5 +144,16 @@ describe('readGlbSolid', () => {
     const [plain] = (await readGlbSolid(twoTriangleGlb())).colours ?? [];
     plain?.rgb.forEach((channel) => expect(channel).toBeCloseTo(1, 6));
     expect(plain && isRedish(plain.rgb)).toBe(false);
+  });
+
+  test('a mesh painted red and grey through vertex colours yields one part per colour, each with its own box', async () => {
+    const parts = (await readGlbSolid(paintedGlb())).colours ?? [];
+    expect(parts).toHaveLength(2);
+    const red = parts.find((part) => isRedish(part.rgb));
+    const grey = parts.find((part) => !isRedish(part.rgb));
+    expect(red?.min).toEqual([0, 0, 0]);
+    expect(red?.max).toEqual([1, 1, 0]);
+    expect(grey?.min).toEqual([2, 0, 0]);
+    expect(grey?.max).toEqual([3, 1, 0]);
   });
 });

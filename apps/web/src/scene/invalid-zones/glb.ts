@@ -9,13 +9,12 @@ import {
   Color,
   Matrix4,
   SRGBColorSpace,
-  type BufferGeometry,
   type InstancedMesh,
   type Material,
   type Mesh,
 } from 'three';
 import type { SolidMesh } from './engine.ts';
-import type { ColourPart, Rgb } from './stripeColour.ts';
+import { isRedish, type ColourPart, type Rgb } from './stripeColour.ts';
 
 const loader = new GLTFLoader();
 loader.setMeshoptDecoder(MeshoptDecoder);
@@ -30,7 +29,10 @@ export async function readGlbSolid(glb: ArrayBuffer): Promise<SolidMesh> {
   gltf.scene.traverse((node) => {
     const mesh = node as Mesh;
     if (!mesh.isMesh) return;
-    const rgb = meshColour(mesh);
+    // Material colour, used as is for a plain mesh and as the factor of the vertex colours for a painted one.
+    const base = materialColour(mesh);
+    const painted = base && mesh.geometry.getAttribute('color') ? base : null;
+    const rgb = base && !painted ? srgb(base) : null;
     // EXT_mesh_gpu_instancing: every instance is a part of the solid.
     const instanced = (node as InstancedMesh).isInstancedMesh ? (node as InstancedMesh) : null;
     for (let copy = 0; copy < (instanced ? instanced.count : 1); copy += 1) {
@@ -41,8 +43,12 @@ export async function readGlbSolid(glb: ArrayBuffer): Promise<SolidMesh> {
         place.copy(mesh.matrixWorld);
       }
       const first = positions.length;
+      const firstIndex = indices.length;
       appendMesh(mesh, place, positions, indices);
-      if (rgb && positions.length > first) colours.push({ ...boxOf(positions, first), rgb });
+      if (positions.length === first) continue;
+      if (painted)
+        colours.push(...paintedParts(mesh, painted, positions, indices, first, firstIndex));
+      else if (rgb) colours.push({ ...boxOf(positions, first), rgb });
     }
   });
   return {
@@ -53,35 +59,96 @@ export async function readGlbSolid(glb: ArrayBuffer): Promise<SolidMesh> {
 }
 
 /**
- * Base colour of a mesh as sRGB: the material colour times the mean vertex colour, if the mesh has any. One colour per
- * mesh (the first material of a multi-material mesh): a mesh painted with several colours through vertex colours is
- * judged by their mean.
+ * Material colour of a mesh (the first material of a multi-material mesh; GLTFLoader gives every glTF primitive its
+ * own mesh, so that is the only one in practice).
  */
-function meshColour(mesh: Mesh): Rgb | null {
+function materialColour(mesh: Mesh): Color | null {
   const material: Material | undefined = Array.isArray(mesh.material)
     ? mesh.material[0]
     : mesh.material;
   if (!material || !('color' in material) || !(material.color instanceof Color)) return null;
-  const colour = material.color.clone();
-  const vertex = meanVertexColour(mesh.geometry);
-  if (vertex) colour.multiply(vertex);
+  return material.color.clone();
+}
+
+function srgb(colour: Color): Rgb {
   const rgb = { r: 0, g: 0, b: 0 };
   colour.getRGB(rgb, SRGBColorSpace);
   return [rgb.r, rgb.g, rgb.b];
 }
 
-function meanVertexColour(geometry: BufferGeometry): Color | null {
-  const attribute = geometry.getAttribute('color');
-  if (!attribute || attribute.count === 0) return null;
-  let r = 0;
-  let g = 0;
-  let b = 0;
-  for (let i = 0; i < attribute.count; i += 1) {
-    r += attribute.getX(i);
-    g += attribute.getY(i);
-    b += attribute.getZ(i);
+interface Bucket {
+  readonly sum: [number, number, number];
+  readonly min: [number, number, number];
+  readonly max: [number, number, number];
+  count: number;
+}
+
+const newBucket = (): Bucket => ({
+  sum: [0, 0, 0],
+  min: [Infinity, Infinity, Infinity],
+  max: [-Infinity, -Infinity, -Infinity],
+  count: 0,
+});
+
+/**
+ * A mesh painted with vertex colours (a red handle and a grey shaft in ONE mesh) split into at most two colour parts:
+ * the red-ish triangles and the rest, each with the box of its triangles and the mean colour of its triangles. A
+ * triangle on the red/grey border counts for one side by its mean colour, but its box covers all three vertices, so a
+ * border box can reach a little into the other part (acceptable: the colour is a heuristic).
+ * `first`/`firstIndex` mark what `appendMesh` just appended to `positions`/`indices` (the vertices of this copy).
+ */
+function paintedParts(
+  mesh: Mesh,
+  base: Color,
+  positions: readonly number[],
+  indices: readonly number[],
+  first: number,
+  firstIndex: number,
+): ColourPart[] {
+  const attribute = mesh.geometry.getAttribute('color');
+  const firstVertex = first / 3;
+  const red = newBucket();
+  const other = newBucket();
+  const triangle = new Color();
+  for (let i = firstIndex; i + 2 < indices.length; i += 3) {
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    for (let k = 0; k < 3; k += 1) {
+      const local = (indices[i + k] ?? 0) - firstVertex;
+      r += attribute.getX(local) / 3;
+      g += attribute.getY(local) / 3;
+      b += attribute.getZ(local) / 3;
+    }
+    triangle.setRGB(r, g, b).multiply(base);
+    const rgb = srgb(triangle);
+    const bucket = isRedish(rgb) ? red : other;
+    bucket.count += 1;
+    for (let k = 0; k < 3; k += 1) {
+      bucket.sum[k] = (bucket.sum[k] ?? 0) + (rgb[k] ?? 0);
+      const vertex = (indices[i + k] ?? 0) * 3;
+      for (let axis = 0; axis < 3; axis += 1) {
+        const value = positions[vertex + axis] ?? 0;
+        bucket.min[axis] = Math.min(bucket.min[axis] ?? Infinity, value);
+        bucket.max[axis] = Math.max(bucket.max[axis] ?? -Infinity, value);
+      }
+    }
   }
-  return new Color().setRGB(r / attribute.count, g / attribute.count, b / attribute.count);
+  return [red, other].flatMap((bucket) =>
+    bucket.count === 0
+      ? []
+      : [
+          {
+            min: bucket.min,
+            max: bucket.max,
+            rgb: [
+              bucket.sum[0] / (3 * bucket.count),
+              bucket.sum[1] / (3 * bucket.count),
+              bucket.sum[2] / (3 * bucket.count),
+            ] satisfies Rgb,
+          },
+        ],
+  );
 }
 
 /** Box of the xyz triples appended to `positions` from float index `from` on. */
