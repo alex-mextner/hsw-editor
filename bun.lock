@@ -21,6 +21,7 @@
         "@hsw-editor/core": "workspace:*",
         "@hsw-editor/draw": "workspace:*",
         "@hsw-editor/omp-protocol": "workspace:*",
+        "@hsw-editor/tools": "workspace:*",
         "@hsw-editor/user-settings": "workspace:*",
         "sharp": "^0.35.5",
         "zod": "^4.3.6",
@@ -125,6 +126,7 @@
       "version": "0.1.0",
       "dependencies": {
         "earcut": "^3.0.2",
+        "zod": "^4.3.6",
       },
       "devDependencies": {
         "@types/earcut": "^3.0.0",

@@ -22,6 +22,7 @@ packages/compat tool-to-holder compatibility, auto-attach, re-hang and the bank 
 packages/overlay photo calibration, rectification, wall<->photo mapping, snapping (pure)
 packages/bank   HSW element bank index
 packages/commands  action registry, hotkeys, command palette engine (docs/hotkeys.md)
+packages/tools  realistic parametric tool models (GLB, holding interface), custom tool fit and the user tool library
 services/vision Python sidecar (uv + FastAPI): detect, segment, calibrate, fit
 cli/hsw_editor.py  lifecycle CLI on the shared agent-tools service manager
 docs/specs/     design spec
@@ -106,6 +107,10 @@ release: [docs/cli.md](docs/cli.md). HTTP API: [docs/api.md](docs/api.md). Relea
 ## Bank
 
 The bank (`packages/bank`, [docs/bank.md](docs/bank.md)) indexes **428 elements**: 144 curated from the HSW sources and 284 generated parametric family rungs (19 families). **301** are redistributable (MIT / CC-BY) and **127** are not (CC-BY-NC, CC-BY-NC-SA, Standard Digital File, unknown). Licence policy: only redistributable elements may be committed; **103** of them (4 MB) are the seed in `packages/bank/seed`. Non-redistributable elements are indexed with `license.redistributable = false`, are never committed, and are ingested locally from the sources. Run `bun run bank:ingest` and `bun run bank:verify`.
+- [#44](https://github.com/alex-mextner/hsw-editor/issues/44) (y) Realistic parametric tool library (`packages/tools`, [docs/tools.md](docs/tools.md))
+- [#45](https://github.com/alex-mextner/hsw-editor/issues/45) (z) Custom tools from photos (single and multi-object import) and the user library
+- [#46](https://github.com/alex-mextner/hsw-editor/issues/46) (aa) Tool Library panel and Add-from-photo wizard
+- [#47](https://github.com/alex-mextner/hsw-editor/issues/47) (ab) Recognition with generator-rendered class prototypes
 
 Full design: [docs/specs/2026-10-22-hsw-editor-design.md](docs/specs/2026-10-22-hsw-editor-design.md). Agent rules: [AGENTS.md](AGENTS.md).
 

@@ -1,0 +1,279 @@
+import { describe, expect, test } from 'bun:test';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { analyzeMesh } from '../mesh.ts';
+import { generate, presetValues } from '../registry.ts';
+import '../classes/index.ts';
+import { ToolStore } from '../node/store.ts';
+import { fitClassToProfile } from './fit.ts';
+import { fitObject, observeModel } from './create.ts';
+import { ToolInputError } from './errors.ts';
+import { createManualTool } from './manual.ts';
+import { applyPatch } from './rebuild.ts';
+import { CustomToolSchema, type CustomTool } from './schema.ts';
+
+describe('profile fit', () => {
+  test('recovers a screwdriver of a different size from its silhouette profile', () => {
+    const truth = generate('screwdriver', presetValues('screwdriver', 'phillips-ergonomic'), 0);
+    const obs = observeModel(truth);
+    const fit = fitClassToProfile('screwdriver', obs);
+    expect(fit.iou).toBeGreaterThan(0.85);
+    expect(Math.abs(fit.lengthMm - obs.lengthMm) / obs.lengthMm).toBeLessThan(0.04);
+    expect(fit.evals).toBeLessThan(300);
+  });
+
+  test('finds the flipped orientation when the wide end is the far end', () => {
+    const truth = generate('screwdriver', {}, 0);
+    const obs = observeModel(truth);
+    const reversed = {
+      ...obs,
+      stations: [...obs.stations]
+        .reverse()
+        .map((s, i) => ({ ...s, t: (i + 0.5) / obs.stations.length })),
+    };
+    const fit = fitClassToProfile('screwdriver', reversed);
+    expect(fit.flipped).toBe(true);
+    expect(fit.iou).toBeGreaterThan(0.85);
+  });
+});
+
+describe('fitObject', () => {
+  test('takes the suggested class, maps photo colours onto parts and builds both LODs watertight', () => {
+    const truth = generate('screwdriver', presetValues('screwdriver', 'torx-cushion'), 0);
+    const fitted = fitObject({
+      profile: observeModel(truth),
+      colors: [
+        { t0: 0, t1: 0.5, hex: '#2455a8', weight: 0.6 },
+        { t0: 0.5, t1: 1, hex: '#b9bcc1', weight: 0.4 },
+      ],
+      candidates: [
+        { classId: 'screwdriver', score: 0.7 },
+        { classId: 'screwdriver', score: 0.1 },
+      ],
+      dimensionSource: 'photo',
+    });
+    expect(fitted.classId).toBe('screwdriver');
+    expect(fitted.fit.method).toBe('class-profile');
+    const handle = fitted.model.parts.find((p) => p.name === 'handle');
+    expect(handle?.material.color).toBe('#2455a8');
+    for (const m of [fitted.model, fitted.modelLod1]) {
+      for (const p of m.parts) expect(analyzeMesh(p.mesh).watertight).toBe(true);
+    }
+    expect(fitted.modelLod1.triangles).toBeLessThan(fitted.model.triangles);
+  });
+
+  test('falls back to a generic loft when no class fits, one part per colour segment', () => {
+    const profile = {
+      lengthMm: 120,
+      stations: Array.from({ length: 12 }, (_, i) => {
+        const t = (i + 0.5) / 12;
+        const w = 18 + 10 * Math.sin(t * Math.PI);
+        return { t, lo: -w / 2, hi: w / 2 };
+      }),
+    };
+    const fitted = fitObject(
+      {
+        profile,
+        colors: [
+          { t0: 0, t1: 0.4, hex: '#c8262b', weight: 0.5 },
+          { t0: 0.4, t1: 1, hex: '#1b1c1e', weight: 0.5 },
+        ],
+        candidates: [],
+        dimensionSource: 'photo',
+        profileKind: 'lathe_profile',
+      },
+      {},
+    );
+    expect(fitted.classId).toBeNull();
+    expect(fitted.model.parts.length).toBe(2);
+    for (const p of fitted.model.parts) expect(analyzeMesh(p.mesh).watertight).toBe(true);
+    expect(fitted.dimensionsMm.length).toBeCloseTo(120, 0);
+  });
+
+  test('user dimensions rescale the fit', () => {
+    const truth = generate('screwdriver', {}, 0);
+    const fitted = fitObject({
+      profile: observeModel(truth),
+      colors: [],
+      candidates: [{ classId: 'screwdriver', score: 0.9 }],
+      dimensionsMm: { length: 150 },
+      dimensionSource: 'user',
+    });
+    expect(fitted.dimensionsMm.length).toBeGreaterThan(140);
+    expect(fitted.dimensionsMm.length).toBeLessThan(160);
+  });
+});
+
+describe('tool store', () => {
+  test('saves, lists, patches and trashes a tool', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'hsw-tools-'));
+    try {
+      const store = new ToolStore(root);
+      const truth = generate('screwdriver', {}, 0);
+      const fitted = fitObject({
+        profile: observeModel(truth),
+        colors: [{ t0: 0, t1: 1, hex: '#c8262b', weight: 1 }],
+        candidates: [{ classId: 'screwdriver', score: 0.8 }],
+        dimensionSource: 'photo',
+      });
+      const now = new Date().toISOString();
+      const id = await store.freeId('My screwdriver');
+      const saved = await store.save(
+        {
+          version: 1,
+          id,
+          name: { en: 'My screwdriver' },
+          createdAt: now,
+          updatedAt: now,
+          classId: fitted.classId,
+          classCandidates: [{ classId: 'screwdriver', score: 0.8 }],
+          params: fitted.params,
+          profile: fitted.profile,
+          colors: [{ t0: 0, t1: 1, hex: '#c8262b', weight: 1 }],
+          partColors: fitted.partColors,
+          dimensionsMm: fitted.dimensionsMm,
+          fit: fitted.fit,
+          sources: [{ file: 'photo.jpg' }],
+        },
+        fitted,
+        [{ name: 'photo.jpg', bytes: new Uint8Array([1, 2, 3]) }],
+      );
+      expect(CustomToolSchema.safeParse(saved).success).toBe(true);
+      expect((await readdir(join(root, id))).sort()).toEqual([
+        'model-lod1.glb',
+        'model.glb',
+        'source',
+        'thumb.webp',
+        'tool.json',
+      ]);
+      expect((await store.list()).map((t) => t.id)).toEqual([id]);
+      const patched = applyPatch(saved as CustomTool, {
+        name: { ru: 'Моя отвёртка' },
+        partColors: { handle: '#2455a8' },
+      });
+      expect(patched.tool.name).toEqual({ en: 'My screwdriver', ru: 'Моя отвёртка' });
+      expect(patched.model.parts.find((p) => p.name === 'handle')?.material.color).toBe('#2455a8');
+      await store.remove(id);
+      expect(await store.list()).toEqual([]);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('tool patches', () => {
+  const profile = {
+    lengthMm: 120,
+    stations: Array.from({ length: 12 }, (_, i) => {
+      const t = (i + 0.5) / 12;
+      const w = 18 + 10 * Math.sin(t * Math.PI);
+      return { t, lo: -w / 2, hi: w / 2 };
+    }),
+  };
+  const colors = [{ t0: 0, t1: 1, hex: '#c8262b', weight: 1 }];
+  const docOf = (fitted: ReturnType<typeof fitObject>, profileKind?: string): CustomTool => {
+    const now = new Date().toISOString();
+    return {
+      version: 1,
+      id: 'x',
+      name: {},
+      createdAt: now,
+      updatedAt: now,
+      classId: fitted.classId,
+      classCandidates: [],
+      params: fitted.params,
+      profile: fitted.profile,
+      colors,
+      partColors: fitted.partColors,
+      ...(profileKind ? { profileKind } : {}),
+      dimensionsMm: fitted.dimensionsMm,
+      fit: fitted.fit,
+      sources: [],
+      model: {
+        glb: 'model.glb',
+        glbLod1: 'model-lod1.glb',
+        thumb: 'thumb.webp',
+        triangles: fitted.model.triangles,
+        bboxMm: { min: [0, 0, 0], max: [1, 1, 1] },
+      },
+    };
+  };
+
+  test('renaming a generic loft keeps its geometry (thickness of a round object included)', () => {
+    const fitted = fitObject({
+      profile,
+      colors,
+      candidates: [],
+      dimensionSource: 'photo',
+      profileKind: 'lathe_profile',
+    });
+    const before = fitted.dimensionsMm.thickness;
+    expect(before).toBeGreaterThan(20);
+    const patched = applyPatch(docOf(fitted, 'lathe_profile'), { name: { en: 'Bottle' } });
+    expect(patched.tool.name.en).toBe('Bottle');
+    expect(patched.tool.dimensionsMm.thickness).toBeCloseTo(before, 3);
+  });
+
+  test('a later length edit keeps the earlier thickness edit of a class tool', () => {
+    const truth = generate('screwdriver', {}, 0);
+    const fitted = fitObject({
+      profile: observeModel(truth),
+      colors: [],
+      candidates: [{ classId: 'screwdriver', score: 0.9 }],
+      dimensionsMm: { thickness: 40 },
+      dimensionSource: 'user',
+    });
+    const doc = docOf(fitted);
+    const after = applyPatch(doc, { dimensionsMm: { length: 200 } });
+    expect(after.tool.dimensionsMm.thickness).toBeGreaterThan(35);
+    expect(after.tool.dimensionsMm.length).toBeGreaterThan(185);
+    expect(after.tool.dimensionsMm.length).toBeLessThan(215);
+  });
+
+  test('manual tools can change class and dimensions, and unknown classes are input errors', () => {
+    const manual = createManualTool({ id: 'm', classId: 'screwdriver' });
+    const doc = {
+      ...manual.tool,
+      model: docOf(
+        fitObject({
+          profile: manual.tool.profile as never,
+          colors: [],
+          candidates: [],
+          dimensionSource: 'user',
+        }),
+      ).model,
+    } as CustomTool;
+    const longer = applyPatch(doc, { dimensionsMm: { length: 260 } });
+    expect(longer.tool.dimensionsMm.length).toBeGreaterThan(240);
+    expect(() => applyPatch(doc, { classId: 'nope' })).toThrow(ToolInputError);
+    const params = applyPatch(doc, { params: { shaftLength: 200 } });
+    expect(params.tool.dimensionsMm.length).toBeGreaterThan(manual.tool.dimensionsMm.length);
+  });
+
+  test('a typed length is remembered as typed and survives later edits; parameter edits are not undone', () => {
+    const manual = createManualTool({ id: 'm', classId: 'screwdriver' });
+    const doc = {
+      ...manual.tool,
+      model: docOf(
+        fitObject({
+          profile: manual.tool.profile as never,
+          colors: [],
+          candidates: [],
+          dimensionSource: 'user',
+        }),
+      ).model,
+    } as CustomTool;
+    const typed = applyPatch(doc, { dimensionsMm: { length: 210 } });
+    expect(typed.tool.userDimensionsMm).toEqual({ length: 210 });
+    const again = applyPatch({ ...doc, ...typed.tool }, { dimensionsMm: { thickness: 30 } });
+    expect(again.tool.userDimensionsMm).toEqual({ length: 210, thickness: 30 });
+    expect(Math.abs(again.tool.dimensionsMm.length - typed.tool.dimensionsMm.length)).toBeLessThan(
+      6,
+    );
+
+    const edited = applyPatch(doc, { params: { shaftLength: 200 } });
+    const thicker = applyPatch({ ...doc, ...edited.tool }, { dimensionsMm: { thickness: 30 } });
+    expect(thicker.tool.dimensionsMm.length).toBeGreaterThan(edited.tool.dimensionsMm.length - 12);
+  });
+});
