@@ -5,10 +5,12 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
-from hsw_vision.config import VisionConfig
+from hsw_vision.config import SETUP_HINT, VisionConfig
+from hsw_vision.errors import MissingDependency
 from hsw_vision.manager import Engine, EngineSpec, ModelManager
 
 CLIP = "clip"
+DINO = "dino"
 OWL = "owl"
 RECOGNISER = "recogniser"
 SEGMENTER_SAM2 = "sam2"
@@ -19,7 +21,10 @@ FIT_CUDA = "fit-cuda"
 # Estimates (MB). The library's `Segmenter.vram_estimate_mb` (2000) already includes the CLIP/OWLv2 it shares, which are
 # separate resident engines here, so the SAM2 entry is its OWN share (measured spike peak for AMG + OWLv2 + CLIP: ~1.9 GB).
 #: FIT: the soft-silhouette optimiser peaks at ~40 MB of tensors, the CUDA context it opens adds a few hundred MB.
-VRAM_ESTIMATES = {CLIP: 500, OWL: 700, RECOGNISER: 100, SEGMENTER_SAM2: 1300, SEGMENTER_U2NET: 300, FIT: 350}
+# DINO: a `cpu_only` spec with a zero estimate. DINOv2-small (22 M parameters) runs on the CPU (~0.15 s per crop, a few seconds per
+# photo) so that it never asks the GPU budget for room: another 300 MB would push a photo (SAM2 + OWL + CLIP + recogniser + fit =
+# 2950 of 3000 MB) over the budget and evict SAM2 on every photo.
+VRAM_ESTIMATES = {CLIP: 500, DINO: 0, OWL: 700, RECOGNISER: 100, SEGMENTER_SAM2: 1300, SEGMENTER_U2NET: 300, FIT: 350}
 
 
 class FitRunner:
@@ -53,6 +58,13 @@ def default_specs(manager: ModelManager) -> dict[str, EngineSpec]:
 
         return tv_clip.ClipEncoder(device=device)
 
+    def dino(device: str) -> Engine:
+        from threed_vision import clip as tv_clip
+
+        if not hasattr(tv_clip, "DinoEncoder"):  # a library older than the DINOv2 encoder: the same as absent weights
+            raise MissingDependency("the installed threed_vision has no DinoEncoder", fix=SETUP_HINT)
+        return tv_clip.DinoEncoder(device=device)  # always "cpu": the spec is `cpu_only`
+
     def owl(device: str) -> Engine:
         from threed_vision import detect as tv_detect
 
@@ -65,6 +77,7 @@ def default_specs(manager: ModelManager) -> dict[str, EngineSpec]:
 
     return {
         CLIP: EngineSpec(CLIP, clip, VRAM_ESTIMATES[CLIP]),
+        DINO: EngineSpec(DINO, dino, VRAM_ESTIMATES[DINO], cpu_only=True),
         OWL: EngineSpec(OWL, owl, VRAM_ESTIMATES[OWL]),
         RECOGNISER: EngineSpec(RECOGNISER, recogniser, VRAM_ESTIMATES[RECOGNISER], requires=(CLIP,)),
         FIT: EngineSpec(FIT, FitRunner, VRAM_ESTIMATES[FIT]),

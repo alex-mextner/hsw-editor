@@ -39,6 +39,7 @@ from hsw_vision.analysis import (
 )
 from hsw_vision.cache import params_hash
 from hsw_vision.config import VisionConfig
+from hsw_vision.errors import Cancelled, MissingDependency, ModelsMissing
 from hsw_vision.files import copy_file, save_npy, write_json, write_png
 from hsw_vision.geometry import camera_from_calibration
 from hsw_vision.proposal import MIN_RECOGNITION_PROB, dimensions_mm
@@ -55,6 +56,8 @@ STATUS_NEEDS_CONFIRMATION = "needs_confirmation"
 STATUS_NO_SCALE = "no_scale"
 STATUS_FIT_FAILED = "fit_failed"
 EMBEDDINGS_FILE = "embeddings.npy"
+#: DINOv2 rows of the same objects, same row order as `embeddings.npy` (absent when the model is not installed).
+DINO_EMBEDDINGS_FILE = "embeddings-dino.npy"
 RUN_ID = re.compile(r"[0-9a-f]{12}")
 #: Run directories (`<image cache>/objects/<run id>`) kept per photo when the caller did not choose an `out_dir`.
 DEFAULT_RUNS_KEPT = 8
@@ -144,6 +147,10 @@ def run(
     records, fitted, masks = analysis.records, analysis.fitted, analysis.masks
     if len(analysis.embeddings):
         save_npy(out_dir / EMBEDDINGS_FILE, analysis.embeddings)
+    if len(analysis.dino_embeddings):
+        save_npy(out_dir / DINO_EMBEDDINGS_FILE, analysis.dino_embeddings)
+    else:
+        (out_dir / DINO_EMBEDDINGS_FILE).unlink(missing_ok=True)  # an earlier run's rows must not pass for this run's
     clock.start("overlay")
     overlay = write_overlays(service, img, segmentation, out_dir, objects_in, masks, analysis.by_id, calibration if scaled else None)
     clock.done("overlay")
@@ -189,6 +196,8 @@ class Analysis:
 
     records: list[dict[str, Any]]
     embeddings: np.ndarray
+    #: DINOv2 rows parallel to `embeddings` (zero rows when the model is not installed).
+    dino_embeddings: np.ndarray
     masks: dict[int, np.ndarray]
     fitted: Fitted
     by_id: dict[int, dict[str, Any]]
@@ -242,21 +251,43 @@ def analyse(
     if reuse is None:
         with service.run_lock:
             embeddings = service.stages.embed_objects(service.manager, img.rgb, [masks[i] for i in ids])
+        dino_embeddings = _dino_embeddings(service, img, [masks[i] for i in ids], clock.emit)
     else:
         embeddings = np.zeros((0, stage_embed.DIM), np.float32)
+        dino_embeddings = np.zeros((0, stage_embed.DINO_DIM), np.float32)
     records: list[dict[str, Any]] = []
     for row, inst in enumerate(objects_in):
         clock.check_cancel("export")
         record = _record(
             service, req, img, segmentation, out_dir, inst, masks[inst["id"]], recognition, by_id.get(inst["id"]),
             failed.get(inst["id"]), scaled, colours_on, min_conf, mm_per_px,
-            embeddings[row] if len(embeddings) else None, row_offset + row,
+            embeddings[row] if len(embeddings) else None, row_offset + row, dino_embeddings if len(dino_embeddings) else None,
         )  # fmt: skip
         if reuse is not None:
             record["class"], record["embedding"] = reuse[inst["id"]]["class"], reuse[inst["id"]].get("embedding")
         records.append(record)
     clock.done("export", objects=len(records))
-    return Analysis(records, embeddings, masks, fitted, by_id, colours_on)
+    return Analysis(records, embeddings, dino_embeddings, masks, fitted, by_id, colours_on)
+
+
+def _dino_embeddings(service: VisionService, img: Image, masks: list[np.ndarray], emit: Emit) -> np.ndarray:
+    """DINOv2 rows of the objects, or zero rows when they cannot be made (model not installed, no VRAM for it, a runtime
+    error): DINOv2 is extra evidence, the CLIP embedding and everything else of the analysis stand without it, so this
+    never fails a photo. Why it is missing is a `warning` event; a cancellation still cancels."""
+    none = np.zeros((0, stage_embed.DINO_DIM), np.float32)
+    if service.dino_missing:
+        return none
+    with service.run_lock:
+        try:
+            return service.stages.embed_objects_dino(service.manager, img.rgb, masks)  # type: ignore[no-any-return]
+        except Cancelled:
+            raise
+        except Exception as exc:  # noqa: BLE001 - optional evidence must not take the analysis down
+            missing = isinstance(exc, (ModelsMissing, MissingDependency))
+            service.dino_missing = service.dino_missing or missing
+            reason = exc.message if isinstance(exc, (ModelsMissing, MissingDependency)) else f"{type(exc).__name__}: {exc}"
+            emit({"event": "warning", "stage": "export", "message": f"DINOv2 embeddings skipped: {reason}"})
+            return none
 
 
 def recognition_of_records(records: dict[int, dict[str, Any]]) -> dict[str, Any]:
@@ -339,6 +370,7 @@ def _record(
     mm_per_px: float | None,
     embedding: np.ndarray | None,
     row: int,
+    dino: np.ndarray | None,
 ) -> dict[str, Any]:
     ident = f"{int(inst['id']):03d}"
     mask_rel = f"masks/{ident}.png"
@@ -403,7 +435,8 @@ def _record(
         "embedding": None
         if embedding is None
         else {"file": EMBEDDINGS_FILE, "row": row, "dim": int(embedding.shape[0]), "model": stage_embed.MODEL,
-              **({"vector": [float(v) for v in embedding]} if req.inline_embeddings else {})},  # fmt: skip
+              **({"vector": [float(v) for v in embedding]} if req.inline_embeddings else {}),
+              **({"dino": {"file": DINO_EMBEDDINGS_FILE, "row": row, "dim": int(dino.shape[1]), "model": stage_embed.DINO_MODEL}} if dino is not None else {})},  # fmt: skip
         "class": klass,
         "fit": fit_record,
         "dimensionsMm": dims,

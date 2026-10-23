@@ -52,7 +52,10 @@ def test_every_object_has_mask_crops_class_fit_colours_and_embedding(tmp_path: P
     assert multi_view["generatedViews"] == [] and multi_view["sanityOk"] is None
     embeddings = np.load(out / "embeddings.npy")
     assert embeddings.shape == (2, 512) and embeddings.dtype == np.float32
-    assert long_tool["embedding"] == {"file": "embeddings.npy", "row": 0, "dim": 512, "model": "clip-b32"}
+    dino = {"file": "embeddings-dino.npy", "row": 0, "dim": 768, "model": "dinov2-s"}
+    assert long_tool["embedding"] == {"file": "embeddings.npy", "row": 0, "dim": 512, "model": "clip-b32", "dino": dino}
+    dino_rows = np.load(out / "embeddings-dino.npy")
+    assert dino_rows.shape == (2, 768) and dino_rows.dtype == np.float32
     assert result["overlay"] == {"segmentation": "overlay.jpg", "fit": "fit-overlay.jpg"}
     assert (out / "overlay.jpg").is_file() and (out / "fit-overlay.jpg").is_file()
     assert result["summary"] == {"found": 3, "analysed": 2, "recognised": 2, "fitted": 2, "failed": 0, "needsViews": 2, "needsConfirmation": 0}
@@ -270,3 +273,49 @@ def test_every_fit_failing_keeps_the_masks_crops_and_classes(tmp_path: Path, pho
     first = result["objects"][0]
     assert first["status"] == "fit_failed" and "degenerate" in first["error"] and first["fit"] is None
     assert (Path(result["outDir"]) / first["mask"]).is_file() and first["class"]["toolClass"] == "screwdriver"
+
+
+def test_a_missing_dino_model_leaves_the_clip_embedding_alone(tmp_path: Path, photo: Path) -> None:
+    import dataclasses
+
+    from hsw_vision.errors import ModelsMissing
+
+    service, _ = make_service(tmp_path)
+
+    def missing(*_: Any, **__: Any) -> np.ndarray:
+        raise ModelsMissing("dinov2-s is not installed", ["dinov2-s"])
+
+    service = dataclasses.replace(service, stages=dataclasses.replace(service.stages, embed_objects_dino=missing))
+    result = run(tmp_path, photo, service, calibrate=CalibrateParams(**SCALE))
+    out = Path(result["outDir"])
+    assert result["objects"][0]["embedding"] == {"file": "embeddings.npy", "row": 0, "dim": 512, "model": "clip-b32"}
+    assert not (out / "embeddings-dino.npy").exists() and np.load(out / "embeddings.npy").shape == (2, 512)
+
+    def broken(*_: Any, **__: Any) -> np.ndarray:
+        raise RuntimeError("onnxruntime exploded")
+
+    events: list[dict[str, Any]] = []
+    fresh, _ = make_service(tmp_path / "fresh")  # `service` learned that the model is absent
+    service = dataclasses.replace(fresh, stages=dataclasses.replace(fresh.stages, embed_objects_dino=broken))
+    request = PhotoToObjectsRequest(image_path=photo, work_dir=tmp_path / "work2", out_dir=tmp_path / "out2", calibrate=CalibrateParams(**SCALE))
+    again = objects.run(service, request, events.append)
+    assert again["status"] == "ok" and again["objects"][0]["embedding"]["model"] == "clip-b32" and "dino" not in again["objects"][0]["embedding"]
+    assert any(e.get("event") == "warning" and "onnxruntime exploded" in e["message"] for e in events)
+
+    # a model that proved absent is not asked for again (asking would unload other engines to make room for nothing)
+    calls = {"n": 0}
+
+    def absent(*_: Any, **__: Any) -> np.ndarray:
+        calls["n"] += 1
+        raise ModelsMissing("dinov2-s is not installed", ["dinov2-s"])
+
+    gone = dataclasses.replace(fresh, stages=dataclasses.replace(fresh.stages, embed_objects_dino=absent))
+    for n in (1, 2):
+        objects.run(gone, PhotoToObjectsRequest(image_path=photo, work_dir=tmp_path / f"w{n}", out_dir=tmp_path / f"o{n}", calibrate=CalibrateParams(**SCALE)))
+    assert calls["n"] == 1 and gone.dino_missing
+
+    # a failing run into a directory an earlier run filled does not leave the earlier DINOv2 rows behind
+    stale = tmp_path / "o1"
+    np.save(stale / "embeddings-dino.npy", np.zeros((9, 768), np.float32))
+    objects.run(gone, PhotoToObjectsRequest(image_path=photo, work_dir=tmp_path / "w3", out_dir=stale, calibrate=CalibrateParams(**SCALE)))
+    assert not (stale / "embeddings-dino.npy").exists()

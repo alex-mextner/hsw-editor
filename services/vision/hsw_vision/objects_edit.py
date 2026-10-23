@@ -32,6 +32,7 @@ from hsw_vision.errors import BadRequest, CalibrationNeeded
 from hsw_vision.files import save_npy, write_json
 from hsw_vision.mask_split import MIN_PART_PX, split_mask
 from hsw_vision.objects import (
+    DINO_EMBEDDINGS_FILE,
     EMBEDDINGS_FILE,
     STATUS_MERGED,
     STATUS_OK,
@@ -149,9 +150,29 @@ class Session:
         )
         return analysis, segmentation
 
+    def dino_rows(self) -> np.ndarray:
+        path = self.out_dir / DINO_EMBEDDINGS_FILE
+        return np.load(path, allow_pickle=False) if path.is_file() else np.zeros((0, stage_embed.DINO_DIM), np.float32)
+
     def append(self, analysis: Analysis) -> None:
         if len(analysis.embeddings):
-            save_npy(self.out_dir / EMBEDDINGS_FILE, np.vstack([self.embedding_rows(), analysis.embeddings]))
+            clip_before, dino_before = self.embedding_rows(), self.dino_rows()
+            # the two files share their row order: both are extended together or the DINOv2 one is left alone
+            files_in_step = len(dino_before) == len(clip_before) and len(clip_before) > 0
+            width_ok = not len(dino_before) or not len(analysis.dino_embeddings) or dino_before.shape[1] == analysis.dino_embeddings.shape[1]
+            if len(analysis.dino_embeddings) == len(analysis.embeddings) and (files_in_step or not len(clip_before)) and width_ok:
+                # no CLIP rows yet: the DINOv2 file starts over too (leftover rows would shift the new row numbers)
+                kept = dino_before if len(clip_before) else np.zeros((0, analysis.dino_embeddings.shape[1]), np.float32)
+                save_npy(self.out_dir / DINO_EMBEDDINGS_FILE, np.vstack([kept, analysis.dino_embeddings]))
+            else:
+                if files_in_step:
+                    # DINOv2 failed just now: pad zero rows (no record points at them) so later edits stay in step
+                    pad = np.zeros((len(analysis.embeddings), dino_before.shape[1]), np.float32)
+                    save_npy(self.out_dir / DINO_EMBEDDINGS_FILE, np.vstack([dino_before, pad]))
+                for record in analysis.records:
+                    if record.get("embedding"):
+                        record["embedding"].pop("dino", None)
+            save_npy(self.out_dir / EMBEDDINGS_FILE, np.vstack([clip_before, analysis.embeddings]))
         self.records.extend(analysis.records)
 
     def log(self, op: str, **fields: Any) -> None:

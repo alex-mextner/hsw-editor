@@ -344,3 +344,16 @@ def test_an_engine_is_not_placed_on_cuda_while_a_dependency_sits_on_the_cpu() ->
     manager._forced_cpu.add("clip")
     assert manager.get("rec").device == "cpu"
     assert manager.status()["engines"]["clip"]["device"] == "cpu"
+
+
+def test_a_cpu_only_engine_never_evicts_a_gpu_engine_to_make_room() -> None:
+    log: list[str] = []
+    gpu = Gpu(8000)
+    manager = make_manager(gpu, log, budget=2000, engines={"a": 1000})
+    assert manager.get("a").device == "cuda"
+    gpu.free_mb = 100  # below the headroom: an ordinary engine would evict "a" before loading, even at 0 MB
+    manager.register(EngineSpec("ordinary", lambda device: FakeEngine("ordinary", device, 0, log), 0))
+    manager.register(EngineSpec("small", lambda device: FakeEngine("small", device, 0, log), 0, cpu_only=True))
+    assert manager.get("small").device == "cpu" and "unload a" not in log
+    manager.get("ordinary")
+    assert "unload a" in log  # the control: without `cpu_only` the same card state does evict

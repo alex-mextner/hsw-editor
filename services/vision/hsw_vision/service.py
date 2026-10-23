@@ -60,6 +60,7 @@ class Stages:
     axis_and_profile: Callable[..., Any] = stage_shape.axis_and_profile
     embed_objects: Callable[..., np.ndarray] = stage_embed.embed_objects
     embed_images: Callable[..., np.ndarray] = stage_embed.embed_images
+    embed_objects_dino: Callable[..., np.ndarray] = stage_embed.embed_objects_dino
     prompt_mask: Callable[..., dict[str, Any]] = stage_prompt.prompt_mask
 
 
@@ -150,6 +151,9 @@ class VisionService:
     loader: Callable[[Path], np.ndarray] = _load_rgb
     #: Serialises heavy stage work: one GPU, and the models are not re-entrant.
     run_lock: threading.Lock = field(default_factory=threading.Lock)
+    #: Set once the DINOv2 model proved to be absent: later analyses skip it instead of making room for an engine that cannot
+    #: load (which would unload SAM2 for nothing). Cleared by restarting the service after `hsw-editor vision fetch-models`.
+    dino_missing: bool = False
 
     @classmethod
     def create(cls, config: VisionConfig, **overrides: Any) -> VisionService:

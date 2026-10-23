@@ -49,6 +49,9 @@ class EngineSpec:
     #: Always placed on the GPU whatever the service default is (a request that names `device="cuda"` on a service pinned
     #: to the CPU): the budget, headroom and eviction still apply, but there is no CPU fallback; no room is an error.
     strict_cuda: bool = False
+    #: Always on the CPU, decided before any VRAM bookkeeping: loading it never evicts a GPU engine to make room (small encoders
+    #: that only add optional evidence).
+    cpu_only: bool = False
 
 
 @dataclass
@@ -243,7 +246,7 @@ class ModelManager:
         return sum(r.vram_mb for r in self._resident.values() if r.device == "cuda")
 
     def _choose_device(self, spec: EngineSpec, pinned: frozenset[str]) -> str:
-        if not spec.strict_cuda and (self.device == "cpu" or spec.name in self._forced_cpu):
+        if spec.cpu_only or (not spec.strict_cuda and (self.device == "cpu" or spec.name in self._forced_cpu)):
             return "cpu"
         gpu_only = spec.strict_cuda or self.device == "cuda"
         if any(self._device_of(dependency) == "cpu" for dependency in spec.requires):

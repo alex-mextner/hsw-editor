@@ -183,6 +183,8 @@ for the whole one. Real generated drawings were not run (they need the user's Ch
   unloaded. If that is not enough the engine runs on the **CPU** (`HSW_VISION_DEVICE=auto`), or fails with `insufficient_vram` (`cuda`). An OOM
   while loading or running falls back to the CPU for that engine. CLIP and OWLv2 are shared residents between the segmenter and the recogniser
   (unloaded together with their dependents). Idle engines unload after `HSW_VISION_IDLE_UNLOAD_S` (300).
+  The DINOv2 encoder (`dinov2-s`, extra recognition evidence) is a `cpu_only` engine with a zero VRAM estimate: it is placed on the CPU before any VRAM bookkeeping and never asks the GPU budget for room
+  (a photo already uses 2950 of the 3000 MB). Missing weights or an old library are reported once as a `warning` event; the analysis goes on without `embedding.dino`.
 - Results are cached by **image sha256 + stage + parameter hash (+ library version)** under `<work_dir>/<sha16>/`: re-running a stage with the same
   photo and parameters returns the stored result without a model. A cached result whose files vanished is recomputed. Two concurrent requests for
   one key compute once. Every segmentation run writes its masks into a NEW directory (`seg-<params>-<run id>`; the newest two are kept), so a
@@ -308,7 +310,8 @@ Result (`<out>/objects.json`, also the return value):
    "dimensionsMm": {"length": 187.2, "width": 21.0, "thickness": 21.0} | null,
    "colours": {"parts": [{"t0": 0.0, "t1": 0.5, "colour_srgb": [r, g, b], "hex": "#c83c3c", "lab": [..], "area_frac": .., "n_pixels": .., "role_guess": ".."}, ...],
                "palette": [{"colour_srgb": .., "hex": .., "lab": .., "area_frac": ..}], "axis_deg": 12.4} | null,
-   "embedding": {"file": "embeddings.npy", "row": 0, "dim": 512, "model": "clip-b32", "vector": [512 floats, only with inline_embeddings]},
+   "embedding": {"file": "embeddings.npy", "row": 0, "dim": 512, "model": "clip-b32", "vector": [512 floats, only with inline_embeddings],
+                  "dino": {"file": "embeddings-dino.npy", "row": 0, "dim": 768, "model": "dinov2-s"}},   // dino: only when the dinov2-s model is installed
    "confidence": 0.6, "needsView": true, "needsViews": [{"azimuth_deg": 60, "elevation_deg": 30}],
    "multiView": {"mode": "single_photo|heldout", "status": "unverified|ok|flagged", "minIou": null, "flagBelow": 0.75, "views": [], "generatedViews": [], "sanityOk": true, "sanityFailed": []} | null,
    "status": "ok|needs_confirmation|no_scale|fit_failed", "error": null,
