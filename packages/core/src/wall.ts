@@ -1,70 +1,74 @@
-/** Versioned wall document. All lengths are millimetres, Z up, wall plane = XZ at y = 0. */
-export const WALL_SCHEMA_VERSION = 1 as const;
+/** Parsing and versioning of stored wall documents. */
+import { z } from 'zod';
+import { isJsonObject, type JsonValue } from './json.ts';
+import { checkIntegrity } from './ops.ts';
+import { OpSchema, type Op, WALL_SCHEMA_VERSION, WallSchema, type Wall } from './schema.ts';
 
-export interface Vec3 {
-  readonly x: number;
-  readonly y: number;
-  readonly z: number;
-}
+/** Upgrades a document of schemaVersion `n` to `n + 1`. Keyed by the version it upgrades *from*. */
+export type WallMigrations = Readonly<
+  Record<number, (doc: { [key: string]: JsonValue }) => { [key: string]: JsonValue }>
+>;
 
-/** Honeycomb grid of the HSW panel the wall is built on. */
-export interface HoneycombGrid {
-  /** Distance between neighbouring cell centres. */
-  readonly pitchMm: number;
-}
+/** Registered migrations. Empty while schemaVersion 1 is the only version; add `1: (doc) => ...` with the next bump. */
+export const WALL_MIGRATIONS: WallMigrations = {};
 
-/** One placed element: an HSW holder from the bank (`bankId`) or a tool model. */
-export interface WallElement {
-  readonly id: string;
-  readonly bankId: string;
-  readonly position: Vec3;
-  /** Rotation about the wall normal, in degrees, snapped to the honeycomb symmetry (60). */
-  readonly rotationDeg: number;
-}
-
-export interface Wall {
-  readonly schemaVersion: typeof WALL_SCHEMA_VERSION;
-  readonly id: string;
-  readonly name: string;
-  readonly widthMm: number;
-  readonly heightMm: number;
-  readonly grid: HoneycombGrid;
-  readonly elements: readonly WallElement[];
-}
-
-export const DEFAULT_GRID_PITCH_MM = 25;
-
-export function createEmptyWall(id: string, name: string, widthMm = 1200, heightMm = 800): Wall {
-  return {
-    schemaVersion: WALL_SCHEMA_VERSION,
-    id,
-    name,
-    widthMm,
-    heightMm,
-    grid: { pitchMm: DEFAULT_GRID_PITCH_MM },
-    elements: [],
-  };
-}
-
-/** Returns human-readable problems; an empty array means the wall is valid. */
-export function validateWall(wall: Wall): string[] {
-  const problems: string[] = [];
-  const positive = (value: number): boolean => Number.isFinite(value) && value > 0;
-  if (!positive(wall.widthMm) || !positive(wall.heightMm)) {
-    problems.push('wall size must be positive');
+export class WallParseError extends Error {
+  readonly issues: readonly string[];
+  constructor(message: string, issues: readonly string[] = []) {
+    super(issues.length > 0 ? `${message}: ${issues.join('; ')}` : message);
+    this.name = 'WallParseError';
+    this.issues = issues;
   }
-  if (!positive(wall.grid.pitchMm)) problems.push('grid pitch must be positive');
-  const seen = new Set<string>();
-  for (const element of wall.elements) {
-    if (seen.has(element.id)) problems.push(`duplicate element id ${element.id}`);
-    seen.add(element.id);
-    const { x, z } = element.position;
-    if (!Number.isFinite(x) || x < 0 || x > wall.widthMm) {
-      problems.push(`element ${element.id} is outside the wall horizontally`);
-    }
-    if (!Number.isFinite(z) || z < 0 || z > wall.heightMm) {
-      problems.push(`element ${element.id} is outside the wall vertically`);
-    }
+}
+
+export function formatIssues(error: z.ZodError): string[] {
+  return error.issues.map((issue) => `${issue.path.join('.') || '(root)'}: ${issue.message}`);
+}
+
+/** Runs the migration chain from the document's `schemaVersion` up to the current one. */
+export function migrateWall(
+  raw: JsonValue,
+  migrations: WallMigrations = WALL_MIGRATIONS,
+  target: number = WALL_SCHEMA_VERSION,
+): { [key: string]: JsonValue } {
+  if (!isJsonObject(raw)) throw new WallParseError('wall document must be a JSON object');
+  let doc = raw;
+  let version = doc['schemaVersion'];
+  if (typeof version !== 'number' || !Number.isInteger(version)) {
+    throw new WallParseError('wall document has no integer schemaVersion');
   }
-  return problems;
+  if (version > target) {
+    throw new WallParseError(
+      `wall schemaVersion ${version} is newer than this build supports (${target}); upgrade hsw-editor`,
+    );
+  }
+  while (version < target) {
+    const migrate = migrations[version];
+    if (migrate === undefined)
+      throw new WallParseError(`no migration from schemaVersion ${version}`);
+    doc = migrate(doc);
+    version += 1;
+    doc = { ...doc, schemaVersion: version };
+  }
+  return doc;
+}
+
+/** Migrates, validates against the schema and checks id uniqueness. */
+export function parseWall(raw: JsonValue): Wall {
+  const parsed = WallSchema.safeParse(migrateWall(raw));
+  if (!parsed.success) throw new WallParseError('invalid wall', formatIssues(parsed.error));
+  const problems = checkIntegrity(parsed.data);
+  if (problems.length > 0) throw new WallParseError('inconsistent wall', problems);
+  return parsed.data;
+}
+
+export function parseOp(raw: JsonValue): Op {
+  const parsed = OpSchema.safeParse(raw);
+  if (!parsed.success) throw new WallParseError('invalid op', formatIssues(parsed.error));
+  return parsed.data;
+}
+
+/** JSON Schema of the op union, for agent tool definitions (omp `wall_apply`). */
+export function opJsonSchema() {
+  return z.toJSONSchema(OpSchema, { io: 'input' });
 }
