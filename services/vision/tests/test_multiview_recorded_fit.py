@@ -227,6 +227,22 @@ def test_a_drawing_needs_exactly_one_direction(view: str | None, azimuth: float 
     assert multiview.view_direction(None, 30.0, 40.0) == (30.0, 40.0) and multiview.view_direction("top", None, None) == (90.0, 0.0)
 
 
+def test_a_drawing_with_a_transparent_background_is_flattened_on_white(tmp_path: Path) -> None:
+    fit = RECORDED["10"]["fit"]
+    opaque = drawing_of(fit, "top")
+    rgba = cv2.cvtColor(opaque, cv2.COLOR_RGB2BGRA)
+    background = opaque.min(axis=2) == 255
+    rgba[background] = (0, 0, 0, 0)  # what many generators return: a transparent background (black in the colour channels)
+    path = tmp_path / "transparent.png"
+    cv2.imwrite(str(path), rgba)
+    flattened = multiview.load_drawing(path)
+    assert flattened.shape == opaque.shape and (flattened[background] == 255).all()
+    same, transparent = multiview.check_generated(fit, [{"image": opaque, "view": "top"}, {"image": flattened, "view": "top"}])
+    assert transparent["usable"] is True and transparent["iou"] == pytest.approx(same["iou"], abs=0.01)
+    with pytest.raises(BadRequest):
+        multiview.load_drawing(tmp_path / "missing.png")
+
+
 def test_a_16_bit_mask_file_is_binarised_at_half_its_range(tmp_path: Path) -> None:
     mask = np.zeros((8, 8), np.uint16)
     mask[2:4, 2:4] = 65535
@@ -319,6 +335,8 @@ def test_a_photo_view_may_carry_its_mask_as_pixels(tmp_path: Path) -> None:
         pytest.param({"views": [{**RECORD["camera"], "mask": [[1]], "mask_path": "m.png"}]}, id="view-with-two-masks"),
         pytest.param({"views": [{**RECORD["camera"], "mask": [[1]], "K": [[float("nan")] * 3] * 3}]}, id="nan-camera"),
         pytest.param({"views": [{**RECORD["camera"], "mask": [[1]], "t": [0.0, 1.0]}]}, id="short-translation"),
+        pytest.param({"views": [{**RECORD["camera"], "mask": [[1, 0], [1]]}]}, id="ragged-mask"),
+        pytest.param({"views": [{**RECORD["camera"], "mask": []}]}, id="empty-mask"),
     ],
 )
 def test_a_malformed_request_is_a_422_never_a_500(tmp_path: Path, bad: dict[str, Any]) -> None:

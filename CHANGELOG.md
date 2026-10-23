@@ -13,6 +13,14 @@ needs an entry here first.
   in a worker for typed sizes and class parameters (proportions and sizes held to real tools, `realism.ts`), hung tools seated with the model's own holding
   interface and re-hung after a resize, invalid-zone checks on the tool mesh, offline caching and pinning, the inspector's model card, a camera that frames tools
   overhanging the board, and a Pages demo wall of generated tools.
+- Multi-view consistency check (#13, [docs/vision.md](docs/vision.md#multi-view-check-ticket-13)): `objects.json` records carry `multiView` (mode, status, worst
+  held-out IoU, per-photo views, failed sanity checks) next to `confidence`, `needsView` and the suggested `needsViews` (azimuth/elevation); `/multiview` takes views
+  as mask files (`mask_path`) and scores DRAWN views (`generated_views`) as flagged `source: "generated"` hints that never touch the confidence. A recorded real-fit
+  regression test (`services/vision/tests/data/carpet-fit`, 18 KB, no GPU) pins a good fit at 0.91-0.97 held-out IoU and wrong ones at 0.26-0.65.
+- Draw a missing view of a draft object (3d-cli #468, [docs/draw.md](docs/draw.md#drawing-a-missing-view-of-a-draft-object-toolsdraw_view)):
+  `POST /api/tools/drafts/:id/objects/:key/draw-view` queues the `tools.draw_view` job (cut-out on white as the subject, `packages/draw` prompt and quality gate,
+  `DrawBackend`); drawings are kept as `source: 'generated'` candidates (`GET .../drawn`), a pinned backend without login/quota is refused with the literal steps
+  (`409 login_required` ...), `auto` ends in `manual_pending` with the prompt and what would automate it. The daemon now mounts `/api/draw/*`.
 - Invalid-zone stripes turn white where the invalid part itself is red (red screwdriver handles etc., #166): the colour is chosen per region from
   the GLB material colours (`stripeColour.ts`), the legend shows both swatches; photo overlay and PNG export inherit it. See
   [docs/invalid-zones.md](docs/invalid-zones.md#rendering).
@@ -115,6 +123,7 @@ needs an entry here first.
 - The committed bank seed declares the current `TOOL_CLASSES` (it kept the 27 classes that predate the finer ones), so the
   palette, tool picker and bank filter on a seed-served bank offer chisel, punch, hacksaw, long-nose/locking/water-pump
   pliers, crimper and hex-key-set; `exportSeed` writes the vocabulary from `TOOL_CLASSES` instead of the built root (#156).
+- `hsw-editor draw status|doctor|login|stop|settings|run` answered `invalid choice: 'draw'`: the verb was never registered in `cli/hsw_editor.py` (`cli/tests/test_draw_verb.py`).
 
 ## [0.1.0] - 2026-10-22
 

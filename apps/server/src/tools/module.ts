@@ -24,11 +24,22 @@ import {
   type VisionPort,
 } from '@hsw-editor/tools/node';
 import { z } from 'zod';
+import type { DrawRuntime } from '../draw/runtime.ts';
+import { sharedDrawRuntime } from '../draw/shared.ts';
 import { defaultJobRegistry, registerJob, type JobRegistry } from '../jobs.ts';
 import type { ServerModule } from '../modules.ts';
 import type { VisionClient } from '../vision/client.ts';
 import { visionClient as sharedVisionClient } from '../vision/shared.ts';
 import { handleToolAssets } from './assets.ts';
+import {
+  type DrawViewDeps,
+  type DrawnViewChecker,
+  DrawViewInputSchema,
+  TOOLS_DRAW_VIEW_JOB,
+  runDrawView,
+  sidecarChecker,
+  toJson,
+} from './draw-view.ts';
 import { handleToolsRequest } from './routes.ts';
 import { ManagedVisionTransport } from './vision-transport.ts';
 
@@ -37,8 +48,12 @@ export interface ToolsModuleOptions {
   vision?: VisionPort;
   /** Test seam: another managed client than the daemon's one (own environment and state file). */
   visionClient?: VisionClient;
-  /** Job registry the `tools.analyze` job is registered in (the daemon's default one). */
+  /** Job registry the `tools.analyze` and `tools.draw_view` jobs are registered in (the daemon's default one). */
   jobRegistry?: JobRegistry;
+  /** Test seam: a draw runtime with fake backends and a scratch data directory (default: the daemon's shared one). */
+  drawRuntime?: DrawRuntime;
+  /** Test seam: how drawn views are scored against the sidecar's fit (default: the managed sidecar's `/multiview`). */
+  drawnViewChecker?: DrawnViewChecker;
 }
 
 export const TOOLS_ANALYZE_JOB = 'tools.analyze';
@@ -71,9 +86,12 @@ async function openDeps(home: string, vision: VisionPort): Promise<DraftDeps> {
 }
 
 export function createToolsModule(options: ToolsModuleOptions = {}): ServerModule {
+  const visionClient = options.visionClient ?? sharedVisionClient;
   const vision =
     options.vision ??
-    new HttpVisionPort(new ManagedVisionTransport(options.visionClient ?? sharedVisionClient));
+    new HttpVisionPort(new ManagedVisionTransport(visionClient));
+  const drawRuntime = (home: string): DrawRuntime => options.drawRuntime ?? sharedDrawRuntime(home);
+  const check = options.drawnViewChecker ?? sidecarChecker(visionClient);
   const opened = new Map<string, Promise<DraftDeps>>();
   const assetStores = new Map<string, Promise<ToolAssetStore>>();
   /** Data directory of the daemon this module is mounted in (jobs carry no config; set by the first request). */
@@ -124,6 +142,22 @@ export function createToolsModule(options: ToolsModuleOptions = {}): ServerModul
     return store;
   };
 
+  registerJob(
+    {
+      kind: TOOLS_DRAW_VIEW_JOB,
+      inputSchema: DrawViewInputSchema,
+      concurrency: 1,
+      async run(input, ctx) {
+        const home = lastHome;
+        if (home === null) throw new Error('the tools module has not served a request yet');
+        const deps: DrawViewDeps = { drafts: await depsFor(home), runtime: drawRuntime(home), check };
+        const result = await runDrawView(deps, input, ctx);
+        return toJson(result);
+      },
+    },
+    options.jobRegistry ?? defaultJobRegistry,
+  );
+
   return {
     name: 'tools',
     handle(request, deps) {
@@ -144,7 +178,9 @@ export function createToolsModule(options: ToolsModuleOptions = {}): ServerModul
         }
         return vision.status().then((status) => Response.json(status));
       }
-      return depsFor(home).then((d) => handleToolsRequest(request, d, home));
+      return depsFor(home).then((d) =>
+        handleToolsRequest(request, d, home, { jobs: deps.jobs, draw: drawRuntime(home) }),
+      );
     },
   };
 }

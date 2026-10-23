@@ -142,3 +142,25 @@ test('manual upload rejects ids that are not job ids and unknown jobs', async ()
   expect(unknown?.status).toBe(404);
   expect(await routes(new Request('http://x/api/other'))).toBeNull();
 });
+
+test('the newest upload is collected, so a bad first upload can be replaced', async () => {
+  const runtime = createDrawRuntime({ env: { HSW_EDITOR_DATA_DIR: scratch.dir } });
+  const ref = `${scratch.dir}/subject.png`;
+  await writeObjectPng(ref);
+  const req: DrawRequest = {
+    version: 1,
+    prompt: 'orthographic top view of the box',
+    refs: [{ path: ref, role: 'subject' }],
+    n: 1,
+    size: '1024x1024',
+    outDir: runtime.paths.workDir,
+    tag: 'wall1/box/top',
+  };
+  const backend = new ManualBackend();
+  const first = await pending(backend, req);
+  const inbox = `${first.extra.jobDir}/inbox`;
+  await Bun.write(`${inbox}/upload-1000-a.png`, await pngBytes(64)); // the first upload (later found to be unusable)
+  await Bun.write(`${inbox}/upload-2000-b.png`, await pngBytes(96)); // its replacement
+  const result = await backend.draw(req);
+  expect(result.ok && result.images[0]?.width).toBe(96);
+});

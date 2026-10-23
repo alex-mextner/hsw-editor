@@ -135,6 +135,24 @@ def load_mask_file(path: Path | str) -> np.ndarray:
     return mask
 
 
+def load_drawing(path: Path | str) -> np.ndarray:
+    """A drawn view as HxWx3 uint8 RGB with transparency flattened on WHITE: generators often return a PNG whose
+    background is transparent, and the draw quality gate composites such pixels over white too."""
+    import cv2
+
+    raw = cv2.imread(str(Path(path).expanduser()), cv2.IMREAD_UNCHANGED)
+    if raw is None:
+        raise BadRequest(f"cannot read drawing {path}")
+    if raw.dtype != np.uint8:
+        raw = (raw.astype(np.float64) / np.iinfo(raw.dtype).max * 255).astype(np.uint8) if raw.dtype.kind in "ui" else (raw * 255).clip(0, 255).astype(np.uint8)
+    if raw.ndim == 2:
+        raw = cv2.cvtColor(raw, cv2.COLOR_GRAY2BGR)
+    if raw.shape[2] == 4:
+        alpha = raw[..., 3:4].astype(np.float64) / 255
+        raw = (raw[..., :3] * alpha + 255 * (1 - alpha)).round().astype(np.uint8)
+    return np.asarray(cv2.cvtColor(raw, cv2.COLOR_BGR2RGB))
+
+
 def view_direction(view: str | None, azimuth_deg: float | None, elevation_deg: float | None) -> tuple[float, float]:
     """The (azimuth, elevation) a drawn view is compared at: a named view XOR both explicit angles."""
     explicit = azimuth_deg is not None or elevation_deg is not None

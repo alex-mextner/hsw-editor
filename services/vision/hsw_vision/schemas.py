@@ -124,6 +124,8 @@ class PhotoView(Strict):
     def _has_one_mask(self) -> PhotoView:
         if (self.mask is None) == (self.mask_path is None):
             raise ValueError("give exactly one of `mask` and `mask_path`")
+        if self.mask is not None and (not self.mask or not self.mask[0] or len({len(row) for row in self.mask}) != 1):
+            raise ValueError("`mask` must be a non-empty rectangle of pixels (rows of equal length)")
         return self
 
 

@@ -375,7 +375,7 @@ class VisionService:
             return []
         items = []
         for view in views:
-            _, image = self.read_photo(view.image_path)
+            image = stage_multiview.load_drawing(view.image_path)
             items.append(
                 {"image": image, "view": view.view, "azimuth_deg": view.azimuth_deg, "elevation_deg": view.elevation_deg, "name": view.name}
             )

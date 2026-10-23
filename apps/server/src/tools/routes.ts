@@ -38,6 +38,17 @@ import {
   type DraftDeps,
 } from '@hsw-editor/tools/node';
 import { z } from 'zod';
+import type { DrawRuntime } from '../draw/runtime.ts';
+import type { JobRunner } from '../jobs.ts';
+import {
+  DEFAULT_DRAW_VIEWS,
+  DrawViewBodySchema,
+  TOOLS_DRAW_VIEW_JOB,
+  drawnFile,
+  pinnedBackendProblem,
+  prepareDrawView,
+  readDrawnViews,
+} from './draw-view.ts';
 import { classThumb, thumbKey } from './thumbs.ts';
 
 const MAX_PHOTO_BYTES = 40 * 1024 * 1024;
@@ -130,6 +141,17 @@ function decodePathSegment(segment: string): string {
       'invalid_id',
       `malformed percent-escape in the URL path: ${segment}`,
     );
+  }
+}
+
+/** The JSON body of a request that may be empty (an empty body is `{}`: every field has a default). */
+async function readOptionalJson(request: Request): Promise<unknown> {
+  const text = await request.text();
+  if (text.trim() === '') return {};
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new RequestShapeError('invalid_json', 'body is not valid JSON');
   }
 }
 
@@ -251,13 +273,20 @@ function errorToResponse(error: unknown): Response {
   throw error;
 }
 
+/** What the draft routes need besides the stores: the job runner (draw jobs are minutes long) and the draw runtime. */
+export interface ToolsContext {
+  readonly jobs: Pick<JobRunner, 'submit'>;
+  readonly draw: DrawRuntime;
+}
+
 export type ToolsRoutes = (
   request: Request,
   deps: DraftDeps,
   home: string,
+  context: ToolsContext,
 ) => Promise<Response | null>;
 
-export const handleToolsRequest: ToolsRoutes = async (request, deps, home) => {
+export const handleToolsRequest: ToolsRoutes = async (request, deps, home, context) => {
   const url = new URL(request.url);
   const path = url.pathname;
   if (path !== '/api/tools' && !path.startsWith('/api/tools/')) return null;
@@ -267,7 +296,7 @@ export const handleToolsRequest: ToolsRoutes = async (request, deps, home) => {
       .filter(Boolean)
       .slice(2)
       .map((segment) => decodePathSegment(segment));
-    return await route(request, url, parts, deps, home);
+    return await route(request, url, parts, deps, home, context);
   } catch (error) {
     return errorToResponse(error);
   }
@@ -279,12 +308,13 @@ async function route(
   parts: readonly string[],
   deps: DraftDeps,
   home: string,
+  context: ToolsContext,
 ): Promise<Response> {
   const method = request.method;
   const [a, b, c] = parts;
 
   if (a === 'classes') return classRoute(request, url, home, b, c);
-  if (a === 'drafts') return draftRoute(request, deps, parts.slice(1));
+  if (a === 'drafts') return draftRoute(request, deps, context, parts.slice(1));
 
   if (a === undefined) {
     if (method === 'GET') return json({ tools: await deps.tools.list() });
@@ -419,6 +449,7 @@ async function createManual(request: Request, deps: DraftDeps): Promise<Response
 async function draftRoute(
   request: Request,
   deps: DraftDeps,
+  context: ToolsContext,
   parts: readonly string[],
 ): Promise<Response> {
   const method = request.method;
@@ -438,6 +469,12 @@ async function draftRoute(
   if (sub === 'files' && method === 'GET') {
     const path = await deps.drafts.file(id, [key, ...rest].join('/'));
     return fileResponse(path, Bun.file(path).type || 'application/octet-stream', false);
+  }
+  if (sub === 'objects' && key !== undefined && rest.length === 1 && rest[0] === 'draw-view') {
+    return drawViewRoute(request, deps, context, id, key);
+  }
+  if (sub === 'objects' && key !== undefined && rest[0] === 'drawn') {
+    return drawnRoute(request, deps, id, key, rest.slice(1));
   }
   if (sub === 'objects' && key !== undefined && method === 'PATCH') {
     const patch = await readBody(request, DraftObjectPatchSchema);
@@ -472,6 +509,61 @@ async function draftRoute(
     return json({ ...result, draft: await deps.drafts.get(id) }, 201);
   }
   return fail(404, 'not_found', 'unknown draft resource');
+}
+
+/**
+ * `POST /api/tools/drafts/:id/objects/:key/draw-view` `{ views?: ('front'|'side'|'top'|'back')[], backend? }`: queue the
+ * `tools.draw_view` job (a draw takes minutes: follow `GET /api/jobs/:id/events`). A pinned backend that cannot run now
+ * (login wall, quota, challenge, missing binary) is refused here with its literal one-time steps instead of queueing a
+ * job that must fail; `auto` falls through to a manual-upload job whose result says what would automate it.
+ */
+async function drawViewRoute(
+  request: Request,
+  deps: DraftDeps,
+  context: ToolsContext,
+  id: string,
+  key: string,
+): Promise<Response> {
+  if (request.method !== 'POST') return fail(405, 'method_not_allowed', 'POST only');
+  const value = await readOptionalJson(request);
+  const body = parseInput(DrawViewBodySchema, value, 'body');
+  await prepareDrawView(deps, id, key);
+  const problem = await pinnedBackendProblem(context.draw, body.backend);
+  if (problem) {
+    return fail(
+      409,
+      problem.state === 'unavailable' ? 'backend_unavailable' : problem.state,
+      problem.message,
+      {
+        backend: problem.id,
+        steps: problem.steps,
+        ...(problem.retryAfterMs === undefined ? {} : { retryAfterMs: problem.retryAfterMs }),
+      },
+    );
+  }
+  const job = context.jobs.submit(TOOLS_DRAW_VIEW_JOB, {
+    draftId: id,
+    key,
+    views: [...(body.views ?? DEFAULT_DRAW_VIEWS)],
+    ...(body.backend === undefined ? {} : { backend: body.backend }),
+  });
+  return json({ job }, 202);
+}
+
+/** `GET .../objects/:key/drawn` lists the kept drawings (`source: 'generated'`); `GET .../drawn/<view>.<ext>` serves one. */
+async function drawnRoute(
+  request: Request,
+  deps: DraftDeps,
+  id: string,
+  key: string,
+  rest: readonly string[],
+): Promise<Response> {
+  if (request.method !== 'GET') return fail(405, 'method_not_allowed', 'GET only');
+  if (rest.length === 0) return json({ views: await readDrawnViews(deps, id, key) });
+  const [name] = rest;
+  if (rest.length !== 1 || name === undefined) return fail(404, 'not_found', 'unknown drawing');
+  const path = await drawnFile(deps, id, key, name);
+  return fileResponse(path, Bun.file(path).type || 'application/octet-stream', false);
 }
 
 async function createDraft(request: Request, deps: DraftDeps): Promise<Response> {

@@ -48,7 +48,8 @@ export class ManualBackend implements DrawBackend {
       );
     }
     const images: DrawImage[] = [];
-    for (const [index, name] of have.slice(0, req.n).entries()) {
+    // the NEWEST uploads: a rejected or wrong first upload must be replaceable by uploading another one
+    for (const [index, name] of have.slice(-req.n).entries()) {
       const bytes = new Uint8Array(await Bun.file(join(inbox, name)).arrayBuffer());
       images.push(
         await saveImage(
