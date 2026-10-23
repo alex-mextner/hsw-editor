@@ -101,6 +101,40 @@ describe('removal ergonomics', () => {
     expect(report.neighbourGapMm).toBeGreaterThan(12);
   });
 
+  test('the rest gap is exact below room for fingers, between that and the search distance, and capped beyond it', () => {
+    const holder = shelf('shelf', 200, 0, 40);
+    const gapAt = (x: number): number =>
+      probe.analyse({
+        tool: barTool(),
+        placement: at(0, 0, 20),
+        holder,
+        neighbours: [asObstacle('next', barTool('next'), at(x, 0, 20))],
+      }).neighbourGapMm;
+    // The bar is 20 mm wide (x +-10): neighbour centres are 20 mm farther than the gaps.
+    expect(gapAt(26)).toBeCloseTo(6, 1);
+    expect(gapAt(60)).toBeCloseTo(40, 1);
+    expect(gapAt(120)).toBe(60);
+  });
+
+  test('the clearance along the way is measured to the nearest neighbour when there is room, and is the rest gap when cramped', () => {
+    const holder = shelf('shelf', 100, 0, 40);
+    const room = probe.analyse({
+      tool: barTool(),
+      placement: at(0, 0, 20),
+      holder,
+      neighbours: [asObstacle('next', barTool('next'), at(50, 0, 20))],
+    });
+    expect(room.verdict).toBe('free');
+    expect(room.clearanceMm).toBeCloseTo(30, 0);
+    const cramped = probe.analyse({
+      tool: barTool(),
+      placement: at(0, 0, 20),
+      holder,
+      neighbours: [asObstacle('next', barTool('next'), at(26, 0, 20))],
+    });
+    expect(cramped.clearanceMm).toBe(cramped.neighbourGapMm);
+  });
+
   test('a heavy tool needs a second hand', () => {
     const holder = shelf('shelf', 100, 0, 40);
     const heavy: ToolBody = { ...barTool(), id: 'heavy', massG: 4200 };

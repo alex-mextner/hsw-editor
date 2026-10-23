@@ -21,7 +21,9 @@ export interface ShowcaseTool {
  * laid out in rows like the reference photo (tape, scissors and measuring tools on the top, pliers, the drill and the hammer in the
  * middle, screwdrivers, wrenches and the spray can at the bottom). Ids exist in the seed bank (`packages/bank/seed`); where a
  * generator's default does not fit the holder, the class parameter the holder asks about is set (`params`), as a user would
- * with the dimension widget.
+ * with the dimension widget. The racks are laid out as the physics says they work (the wall is the proof of "Seat tools"): the side-cutters
+ * (handles 82 mm apart at rest) do not fit a 52 mm deep rack beside two other pliers, so they have a rack of their own; the screwdrivers on the
+ * 36 mm rail are slim (22 mm handles) so the gap to the neighbour leaves room for fingers.
  */
 export const SHOWCASE_LAYOUT: readonly ShowcaseHolder[] = [
   {
@@ -58,11 +60,13 @@ export const SHOWCASE_LAYOUT: readonly ShowcaseHolder[] = [
     id: 'sc-pliers',
     bankId: 'pliers-rack-slots3-jawthickness18',
     cell: { col: 9, row: 12 },
-    tools: [
-      { classId: 'pliers-combination' },
-      { classId: 'side-cutters' },
-      { classId: 'pliers-long-nose' },
-    ],
+    tools: [{ classId: 'pliers-combination' }, { classId: 'pliers-long-nose' }],
+  },
+  {
+    id: 'sc-cutters',
+    bankId: 'pliers-rack-slots3-jawthickness18',
+    cell: { col: 16, row: 2 },
+    tools: [{ classId: 'side-cutters' }],
   },
   {
     id: 'sc-wrench',
@@ -84,7 +88,11 @@ export const SHOWCASE_LAYOUT: readonly ShowcaseHolder[] = [
     id: 'sc-drivers',
     bankId: 'refit-screwdriver-rail-3',
     cell: { col: 8, row: 2 },
-    tools: [{ classId: 'screwdriver' }, { classId: 'screwdriver' }, { classId: 'screwdriver' }],
+    tools: [
+      { classId: 'screwdriver', params: { handleDiameter: 22 } },
+      { classId: 'screwdriver', params: { handleDiameter: 22 } },
+      { classId: 'screwdriver', params: { handleDiameter: 22 } },
+    ],
   },
   {
     id: 'sc-spray',

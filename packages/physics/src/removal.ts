@@ -39,7 +39,10 @@ export interface RemovalReport {
   verdict: RemovalVerdict;
   /** 0 (cannot be taken off) .. 1 (lifts straight out with room to spare). */
   convenience: number;
-  /** Smallest gap (mm) between the tool and a neighbour (not the holder, not the board) along the path; capped at `searchMm`. */
+  /**
+   * Smallest gap (mm) between the tool and a neighbour (not the holder, not the board) along the path; capped at `searchMm`. For a tool
+   * cramped at rest (it needs two hands whatever the way) the way is not measured: this is then the rest gap, an upper bound.
+   */
   clearanceMm: number;
   /** Smallest gap (mm) to a neighbour in the rest pose (room for fingers). */
   neighbourGapMm: number;
@@ -156,10 +159,20 @@ export class RemovalProbe {
       (o) => o !== holder && boundsOverlap(sweepBox, o.bounds(), 0),
     );
     const bodies = [holder, ...neighbours];
+    // The rasters only need what the tool can run into on the ways it is tried; the gaps and the exact sweep look at
+    // everything within reach of the tool's real way (each culls by its own bounds), the sweep box or not.
+    const everything = input.neighbours.filter((o) => o !== holder);
     const start: Pose = { rotation: placement.rotation, position: placement.position };
     const pivot = input.pivot ?? placement.position;
 
-    const neighbourGap = this.gapTo(this.toolManifold(tool), start, neighbours, options.searchMm);
+    const neighbourGap = this.gapTo(
+      this.toolManifold(tool),
+      start,
+      tool,
+      everything,
+      options.fingerRoomMm,
+      options.searchMm,
+    );
     let found: Verified | null = null;
     let tilt: Path['tilt'] = null;
     let blockedBy: string[] = [];
@@ -177,7 +190,7 @@ export class RemovalProbe {
         candidate === null ? start : tiltAbout(start, pivot, candidate.axis, candidate.deg);
       if (candidate !== null && !this.tiltIsFree(tool, start, pivot, candidate, bodies)) continue;
       for (const path of this.candidatePaths(tool, from, candidate, bodies, options)) {
-        const verified = this.verify(tool, path, holder, neighbours, options);
+        const verified = this.verify(tool, path, holder, everything, options, neighbourGap);
         if (verified.ok) {
           found = verified;
           tilt = candidate;
@@ -294,6 +307,7 @@ export class RemovalProbe {
     holder: SolidBody,
     neighbours: readonly SolidBody[],
     options: RemovalOptions,
+    neighbourGap: number,
   ): Verified {
     const toolSolid = this.toolManifold(tool);
     const poses: Pose[] = [];
@@ -312,65 +326,55 @@ export class RemovalProbe {
         ],
       });
     }
+    // The rotation is the same all the way: the tool's bounds at any pose are its bounds at the start, moved.
+    const base = worldBounds(tool, path.from);
+    const boundsAt = (pose: Pose): Bounds => shifted(base, pose.position, path.from.position);
     // Only what the tool's whole way (its bounds at both ends, and what lies between) comes near is worth a boolean.
-    let way: Bounds = worldBounds(tool, poses[0] ?? path.from);
-    for (const pose of poses.slice(1)) {
-      const b = worldBounds(tool, pose);
-      way = {
-        min: [
-          Math.min(way.min[0], b.min[0]),
-          Math.min(way.min[1], b.min[1]),
-          Math.min(way.min[2], b.min[2]),
-        ],
-        max: [
-          Math.max(way.max[0], b.max[0]),
-          Math.max(way.max[1], b.max[1]),
-          Math.max(way.max[2], b.max[2]),
-        ],
-      };
-    }
-    way = {
-      min: [
-        way.min[0] - options.searchMm,
-        way.min[1] - options.searchMm,
-        way.min[2] - options.searchMm,
-      ],
-      max: [
-        way.max[0] + options.searchMm,
-        way.max[1] + options.searchMm,
-        way.max[2] + options.searchMm,
-      ],
-    };
-    const solids = [
-      {
-        id: holder.id,
-        body: holder as SolidBody | null,
-        solid: this.bodyManifold(holder),
-        baseline: 0,
-      },
+    let way: Bounds = base;
+    for (const pose of poses) way = union(way, boundsAt(pose));
+    way = grown(way, options.searchMm);
+    const solids: Sweep[] = [
+      { id: holder.id, counts: false, bounds: holder.bounds(), solid: this.bodyManifold(holder) },
       ...neighbours
         .filter((n) => boundsOverlap(way, n.bounds(), 0))
         .map((n) => ({
           id: n.id,
-          body: n as SolidBody | null,
+          counts: true,
+          bounds: n.bounds(),
           solid: this.bodyManifold(n),
-          baseline: 0,
         })),
-      { id: 'board', body: null as SolidBody | null, solid: this.wallManifold(), baseline: 0 },
+      { id: 'board', counts: false, bounds: BOARD_BOUNDS, solid: this.wallManifold() },
     ];
-    for (const s of solids) s.baseline = this.overlap(toolSolid, path.from, s.solid);
-    let clearance = options.searchMm;
+    const baselines = solids.map((s) => this.overlap(toolSolid, path.from, s.solid));
+    // A tool with less than room for fingers beside it at rest needs two hands whatever the clearance along the way, and its
+    // rating is capped by that: the way is not measured, the rest gap stands for it (an upper bound).
+    const measured = neighbourGap >= options.fingerRoomMm;
+    let clearance = measured ? options.searchMm : neighbourGap;
     for (const pose of poses) {
+      const near = boundsAt(pose);
+      // Nothing is measured farther away than it could matter: a box gap is never more than the true gap, so a solid whose
+      // box is at least as far as the closest one so far cannot lower the clearance, and one whose box is not touching the
+      // tool's box cannot overlap it.
+      const close = solids.filter(
+        (s) =>
+          boundsGap(near, s.bounds) <= TOUCH_MM ||
+          (measured && s.counts && boundsGap(near, s.bounds) < clearance),
+      );
+      if (close.length === 0) continue;
       const posed = toolSolid.transform(matrixOf(pose));
       try {
-        for (const s of solids) {
-          const gap = posed.minGap(s.solid, options.searchMm);
-          if (s.body !== null && s.body !== holder) clearance = Math.min(clearance, gap);
-          if (gap > TOUCH_MM) continue;
+        for (const s of close) {
+          const apart = boundsGap(near, s.bounds);
+          // The gap is looked for no farther than the closest neighbour seen so far: a smaller search is a cheaper one.
+          if (measured && s.counts && apart < clearance && clearance > TOUCH_MM) {
+            clearance = Math.min(clearance, gapWithin(posed, s.solid, clearance));
+          }
+          if (apart > TOUCH_MM) continue;
           const shared = posed.intersect(s.solid);
           const volume = shared.volume();
           shared.delete();
-          if (volume > Math.max(OVERLAP_MM3, s.baseline * 1.5 + OVERLAP_MM3)) {
+          const baseline = baselines[solids.indexOf(s)] ?? 0;
+          if (volume > Math.max(OVERLAP_MM3, baseline * 1.5 + OVERLAP_MM3)) {
             return { ok: false, blockedBy: [s.id], path, clearanceMm: clearance };
           }
         }
@@ -466,13 +470,34 @@ export class RemovalProbe {
   private gapTo(
     toolSolid: Manifold,
     pose: Pose,
+    tool: ToolBody,
     bodies: readonly SolidBody[],
+    fingerRoomMm: number,
     searchMm: number,
   ): number {
+    const near = worldBounds(tool, pose);
+    // Closest boxes first: a near neighbour narrows the search for all the farther ones.
+    const ordered = bodies
+      .map((b) => ({ body: b, apart: boundsGap(near, b.bounds()) }))
+      .filter((e) => e.apart < searchMm)
+      .sort((a, b) => a.apart - b.apart);
+    if (ordered.length === 0) return searchMm;
     const posed = toolSolid.transform(matrixOf(pose));
     let gap = searchMm;
     try {
-      for (const b of bodies) gap = Math.min(gap, posed.minGap(this.bodyManifold(b), searchMm));
+      // Room for fingers decides most: look for a gap smaller than that first (a cheap search), and only when there is
+      // none for the whole gap (an expensive one). A search that finds nothing within its limit says only "farther".
+      for (const { body, apart } of ordered) {
+        if (apart >= fingerRoomMm) break;
+        const found = posed.minGap(this.bodyManifold(body), fingerRoomMm);
+        if (found < fingerRoomMm) gap = Math.min(gap, found);
+      }
+      if (gap >= fingerRoomMm) {
+        for (const { body, apart } of ordered) {
+          if (apart >= gap) continue;
+          gap = Math.min(gap, gapWithin(posed, this.bodyManifold(body), gap));
+        }
+      }
     } finally {
       posed.delete();
     }
@@ -628,6 +653,64 @@ function upAlongAxis(rotation: Mat3): Vec3 | null {
   const up: Vec3 = axis[1] >= 0 ? axis : [-axis[0], -axis[1], -axis[2]];
   const lean = (Math.acos(Math.min(1, up[1])) * 180) / Math.PI;
   return lean < UPRIGHT_DEG || lean > MAX_AXIS_LEAN_DEG ? null : up;
+}
+
+/** First search distance (mm) of `gapWithin`; it doubles until the gap is found or the limit is reached. */
+const GAP_RAMP_START_MM = 8;
+
+/**
+ * `minGap` up to `limit`, asked in growing steps: a search is as expensive as the pairs of triangles within its distance, so
+ * two dense meshes a few millimetres apart answer a search of 16 mm in a millisecond and one of 60 mm in most of a second.
+ * The answer is the same: the gap when it is below `limit`, else `limit`.
+ */
+function gapWithin(posed: Manifold, other: Manifold, limit: number): number {
+  for (let reach = Math.min(limit, GAP_RAMP_START_MM); ; reach = Math.min(limit, reach * 2)) {
+    const gap = posed.minGap(other, reach);
+    if (gap < reach || reach >= limit) return Math.min(gap, limit);
+  }
+}
+
+/** A solid the sweep tests the tool against: `counts` = a neighbour whose gap is the path's clearance (not the holder, not the board). */
+interface Sweep {
+  id: string;
+  counts: boolean;
+  bounds: Bounds;
+  solid: Manifold;
+}
+
+const BOARD_BOUNDS: Bounds = {
+  min: [-WALL_SIZE_MM / 2, -WALL_SIZE_MM / 2, -200],
+  max: [WALL_SIZE_MM / 2, WALL_SIZE_MM / 2, 0],
+};
+
+function shifted(bounds: Bounds, to: Vec3, from: Vec3): Bounds {
+  const d: Vec3 = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
+  return {
+    min: [bounds.min[0] + d[0], bounds.min[1] + d[1], bounds.min[2] + d[2]],
+    max: [bounds.max[0] + d[0], bounds.max[1] + d[1], bounds.max[2] + d[2]],
+  };
+}
+
+function union(a: Bounds, b: Bounds): Bounds {
+  return {
+    min: [Math.min(a.min[0], b.min[0]), Math.min(a.min[1], b.min[1]), Math.min(a.min[2], b.min[2])],
+    max: [Math.max(a.max[0], b.max[0]), Math.max(a.max[1], b.max[1]), Math.max(a.max[2], b.max[2])],
+  };
+}
+
+function grown(a: Bounds, mm: number): Bounds {
+  return {
+    min: [a.min[0] - mm, a.min[1] - mm, a.min[2] - mm],
+    max: [a.max[0] + mm, a.max[1] + mm, a.max[2] + mm],
+  };
+}
+
+/** Distance between two boxes (0 when they overlap): never more than the distance between what is inside them. */
+function boundsGap(a: Bounds, b: Bounds): number {
+  const dx = Math.max(0, a.min[0] - b.max[0], b.min[0] - a.max[0]);
+  const dy = Math.max(0, a.min[1] - b.max[1], b.min[1] - a.max[1]);
+  const dz = Math.max(0, a.min[2] - b.max[2], b.min[2] - a.max[2]);
+  return Math.hypot(dx, dy, dz);
 }
 
 const clamp01 = (v: number): number => Math.max(0, Math.min(1, v));

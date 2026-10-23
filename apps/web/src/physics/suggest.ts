@@ -17,7 +17,7 @@ import {
   evaluateHolders,
   rankWithPhysics,
 } from '@hsw-editor/compat';
-import type { BatchOp } from '@hsw-editor/core';
+import type { BatchOp, Wall, WallItem } from '@hsw-editor/core';
 import {
   hangProblems,
   type PhysicsProblem,
@@ -28,12 +28,27 @@ import { useEffect, useMemo, useState } from 'react';
 import { bankStore } from '@/bank/client.ts';
 import { toolAssetsStore } from '@/toolmodels/assets.ts';
 import { toolModelVersion } from '@/toolmodels/regen.ts';
+import { paramsDraftStore } from '@/widgets/draft.ts';
 import { useStore } from '@/state/react.ts';
 import { sessionStore } from '@/wall/session.ts';
-import { planVirtualRank, planWallRank, wallSlot, type WallSlot } from './assets.ts';
+import {
+  planVirtualRank,
+  planWallRank,
+  wallSlot,
+  type AssetContext,
+  type WallSlot,
+} from './assets.ts';
+import type { PhysicsRanker } from './client.ts';
 import { ensureToolModels, physicsContext } from './context.ts';
 import { physicsEnabledStore } from './enabled.ts';
-import { samePose, seatAfterHang, seatOps, type PostStepDeps, type SeatStatus } from './seat.ts';
+import {
+  samePose,
+  seatAfterHang,
+  seatOps,
+  stillHung,
+  type PostStepDeps,
+  type SeatStatus,
+} from './seat.ts';
 import { physicsClient } from './service.ts';
 
 /** How much better (0..1 on the combined rank) another holder must be before a dropped tool moves there. */
@@ -66,6 +81,18 @@ export async function settleAfterDrop(
   radiusMm: number = DEFAULT_SNAP_RADIUS_MM,
 ): Promise<SettleStatus> {
   if (!deps.enabled()) return 'off';
+  const first = deps.wall()?.items.find((item) => item.id === toolId);
+  if (deps.settled !== undefined && first?.parentId !== undefined && !first.locked) {
+    // The model of a tool resized a moment ago is still being rebuilt: wait for it, then go on only if the tool is still hung
+    // exactly as it was when dropped (a later drop of the same tool must not be undone by this one), and physics is still on.
+    const built = await deps.settled(toolId);
+    if (!deps.enabled()) return 'off';
+    const live = deps.wall()?.items.find((item) => item.id === toolId);
+    if (!stillHung(live, { parentId: first.parentId, slot: first.slot, pose: first.pose })) {
+      return 'stale';
+    }
+    if (!built) return 'kept';
+  }
   const wall = deps.wall();
   const ctx = wall === null ? null : deps.context(wall);
   const hung = wall?.items.find((item) => item.id === toolId);
@@ -173,7 +200,7 @@ export function ratingOfSeat(seat: RankedSeat): HolderRating {
 }
 
 /** Per (tool model, holder element); `null` = judged, no seat exists. Replaced whole on every change (hooks read it as state). */
-const ratingsStore = createValueStore<ReadonlyMap<string, HolderRating | null>>(new Map());
+export const ratingsStore = createValueStore<ReadonlyMap<string, HolderRating | null>>(new Map());
 const CACHE_LIMIT = 600;
 /** One rating at a time: the worker is shared with the wall check. */
 let ratingQueue: Promise<void> = Promise.resolve();
@@ -185,6 +212,51 @@ function withRating(key: string, rating: HolderRating | null): void {
   const next = new Map(current.size >= CACHE_LIMIT ? [] : current);
   next.set(key, rating);
   ratingsStore.set(next);
+}
+
+/** One queued rating job: the tool as the suggestion list saw it (`modelKey`), the holders still unrated. */
+export interface RatingJob {
+  readonly wall: Wall;
+  readonly ctx: AssetContext;
+  readonly toolItem: WallItem;
+  /** The model the cards were rendered with: ratings are stored under it, so they are only valid for exactly this model. */
+  readonly modelKey: string;
+  readonly holderIds: readonly string[];
+  readonly cancelled: () => boolean;
+  readonly rank: PhysicsRanker['rank'];
+}
+
+/**
+ * Rates the tool in each holder, one by one. A rating is stored under the model key the cards were rendered with, so it is
+ * stored only when the tool's model is still that one both when the plan was made and when the worker answered (an
+ * uncommitted dimension draft, or a rebuild, changes the model without a render); while the model is being rebuilt nothing is
+ * stored, the next run tries again. No seat at all is a rating too (`null`).
+ */
+export async function rateHolders(job: RatingJob): Promise<void> {
+  const { wall, ctx, toolItem, modelKey } = job;
+  const sameModel = (): boolean => ctx.toolModel(toolItem)?.key === modelKey;
+  for (const id of job.holderIds) {
+    if (job.cancelled()) return;
+    const key = `${modelKey}|${id}`;
+    if (ratingsStore.get().has(key) || !sameModel()) continue;
+    // The model is being rebuilt: nothing can be said yet, the next run rates it.
+    if (ctx.toolModel(toolItem) === null) continue;
+    const element = ctx.bank.get(id);
+    const plan = element === undefined ? null : planVirtualRank(wall, ctx, toolItem, element);
+    if (plan === null) {
+      // The holder does not take this tool at all (no slot, a rotated holder, no seat): that is the answer.
+      withRating(key, null);
+      continue;
+    }
+    try {
+      const [best] = await job.rank(plan.request, plan.sources);
+      if (sameModel()) withRating(key, best === undefined ? null : ratingOfSeat(best));
+    } catch (error) {
+      console.warn(
+        `[physics] rating of ${id} failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
 }
 
 /**
@@ -202,6 +274,8 @@ export function usePhysicsRatings(
   // The model index loading and a model being rebuilt change which model a tool is.
   useStore(toolAssetsStore);
   useStore(toolModelVersion);
+  // An uncommitted dimension draft is another model too (and cancelling it brings the old one back).
+  useStore(paramsDraftStore);
   const rated = useStore(ratingsStore);
   const ctx = useMemo(() => (wall === null ? null : physicsContext(wall, bank)), [wall, bank]);
   const toolItem = wall?.items.find((item) => item.id === toolItemId && item.kind === 'tool');
@@ -222,24 +296,17 @@ export function usePhysicsRatings(
     const ids = idsKey === '' ? [] : idsKey.split('\n');
     const pending = ids.filter((id) => !ratingsStore.get().has(`${modelKey}|${id}`));
     if (pending.length === 0) return undefined;
-    ratingQueue = ratingQueue.then(async () => {
-      for (const id of pending) {
-        if (cancelled) return;
-        const key = `${modelKey}|${id}`;
-        if (ratingsStore.get().has(key)) continue;
-        const element = ctx.bank.get(id);
-        const plan = element === undefined ? null : planVirtualRank(wall, ctx, toolItem, element);
-        try {
-          const [best] =
-            plan === null ? [] : await physicsClient().rank(plan.request, plan.sources);
-          withRating(key, best === undefined ? null : ratingOfSeat(best));
-        } catch (error) {
-          console.warn(
-            `[physics] rating of ${id} failed: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-      }
-    });
+    ratingQueue = ratingQueue.then(() =>
+      rateHolders({
+        wall,
+        ctx,
+        toolItem,
+        modelKey,
+        holderIds: pending,
+        cancelled: () => cancelled,
+        rank: (request, sources) => physicsClient().rank(request, sources),
+      }),
+    );
     return () => {
       cancelled = true;
     };

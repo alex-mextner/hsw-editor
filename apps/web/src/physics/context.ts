@@ -2,6 +2,7 @@
 import type { Op, Wall, WallItem } from '@hsw-editor/core';
 import { type BankState, bankStore } from '@/bank/client.ts';
 import { refreshToolAssets, toolAssetsStore } from '@/toolmodels/assets.ts';
+import { toolModelVersion } from '@/toolmodels/regen.ts';
 import { resolveToolModel, type ResolveDeps } from '@/toolmodels/resolve.ts';
 import { sessionStore, submitOps } from '@/wall/session.ts';
 import { toolInterfaceOf } from '@/wall/toolInterface.ts';
@@ -55,6 +56,33 @@ export async function ensureToolModels(): Promise<void> {
   await refreshToolAssets();
 }
 
+/** How long a rebuild is waited for; a slower one leaves the tool where it is. */
+export const MODEL_WAIT_MS = 8000;
+
+function modelSettled(itemId: string): boolean {
+  const wall = currentWall();
+  const item = wall?.items.find((candidate) => candidate.id === itemId);
+  if (!wall || !item) return true;
+  const source = resolveToolModel(item, wall);
+  return source === null || !source.pending;
+}
+
+/** Resolves true once the model of the tool is no longer being rebuilt (at once when it is not), false when that took too long. */
+export function untilToolModelSettled(itemId: string): Promise<boolean> {
+  if (modelSettled(itemId)) return Promise.resolve(true);
+  return new Promise((resolve) => {
+    const finish = (settled: boolean): void => {
+      clearTimeout(timer);
+      unsubscribe();
+      resolve(settled);
+    };
+    const unsubscribe = toolModelVersion.subscribe(() => {
+      if (modelSettled(itemId)) finish(true);
+    });
+    const timer = setTimeout(() => finish(false), MODEL_WAIT_MS);
+  });
+}
+
 export function livePostStepDeps(): PostStepDeps {
   return {
     wall: currentWall,
@@ -69,5 +97,6 @@ export function livePostStepDeps(): PostStepDeps {
       }
     },
     enabled: () => physicsEnabledStore.get(),
+    settled: untilToolModelSettled,
   };
 }

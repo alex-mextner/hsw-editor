@@ -125,6 +125,14 @@ needs an entry here first.
 
 ### Changed
 
+- Removal analysis is 20-100x faster on dense racks (#196): boxes decide before the exact `minGap`/boolean, a gap is asked in growing steps (8 -> 60 mm), a tool cramped
+  at rest is not measured along its way (it needs two hands anyway). The showcase wall: 54 s -> 3 s, a rack of three screwdrivers 26 s -> 0.3-0.6 s per tool, same verdicts. The rest gap and the clearance now look at everything within the 60 mm search distance (they only saw
+  what lay in the sweep box before), so a tool with another one 25 mm below it has a clearance of 25 mm, not 60: its convenience (and so a holder's rating) can be a little lower.
+- A tool hung on a holder may overhang the board edge without an `out_of_board` layout warning (its origin lies outside when a long tool or a can sits low).
+- The showcase wall is laid out as the physics says it works (#196): the side-cutters (82 mm of open handles) have their own rack, the three screwdrivers are slim
+  enough to leave room for fingers on the rail: 3 of 17 tools flagged after "Seat tools" (was 9).
+- "Seat tools" says so when physics was switched off meanwhile and counts tools without a slot number apart; a tool resized a moment ago is seated after its model
+  is rebuilt when it is dropped or hung (they wait for it, like the re-hang; "Seat tools" reports such a tool as not seated); the holder ratings are stored only for the model they were made for.
 - Web: a tool dragged on the wall hangs on a suitable mount or, dropped elsewhere, snaps to a lattice cell as before (Alt = exact). Its box is
   drawn from the butt (origin) towards the tip, the frame the mounts use, so tools saved earlier appear shifted by half their length.
 - `HSW_EDITOR_DATA_DIR` is now `HSW_EDITOR_HOME`.

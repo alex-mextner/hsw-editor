@@ -53,6 +53,48 @@ describe('seatAfterHang', () => {
     expect(editor.submitted).toEqual([{ ops: [seatOps('drv', SEATED)], label: 'seat' }]);
   });
 
+  test('a tool whose model is still being rebuilt is seated once the build is in', async () => {
+    const editor = fakeEditor(hungWall(), () => [fakeSeat('h', SEATED)]);
+    const built = Promise.withResolvers<boolean>();
+    const pending = seatAfterHang('drv', { ...editor.deps, settled: () => built.promise });
+    await Promise.resolve();
+    expect(editor.requests).toEqual([]);
+    built.resolve(true);
+    expect(await pending).toBe('seated');
+    expect(editor.requests).toHaveLength(1);
+  });
+
+  test('a tool moved on, or physics switched off, while the model was being rebuilt is left alone', async () => {
+    const wall = hungWall();
+    const moved = fakeEditor(wall, () => [fakeSeat('h', SEATED)]);
+    const afterMove = await seatAfterHang('drv', {
+      ...moved.deps,
+      settled: async () => {
+        moved.wall = hungWall({ x: 99, y: 20, z: 40 });
+        return true;
+      },
+    });
+    expect(afterMove).toBe('stale');
+    const off = fakeEditor(wall, () => [fakeSeat('h', SEATED)]);
+    const afterOff = await seatAfterHang('drv', {
+      ...off.deps,
+      settled: async () => {
+        off.enabled = false;
+        return true;
+      },
+    });
+    expect(afterOff).toBe('off');
+    expect(moved.requests).toEqual([]);
+    expect(off.requests).toEqual([]);
+  });
+
+  test('a rebuild that does not finish leaves the tool where it is, without asking the worker', async () => {
+    const editor = fakeEditor(hungWall(), () => [fakeSeat('h', SEATED)]);
+    expect(await seatAfterHang('drv', { ...editor.deps, settled: async () => false })).toBe('kept');
+    expect(editor.requests).toEqual([]);
+    expect(editor.submitted).toEqual([]);
+  });
+
   test('no seat keeps the compatibility pose and submits nothing', async () => {
     const editor = fakeEditor(hungWall(), () => []);
     expect(await seatAfterHang('drv', editor.deps)).toBe('kept');
@@ -235,9 +277,8 @@ describe('seatAllTools', () => {
       return [fakeSeat('h', SEATED)];
     });
     const outcome = await seatAllTools(editor.deps);
-    expect(outcome).toMatchObject({ seated: ['a'], kept: ['nameless'] });
-    // Seated once, then once more among everything that stayed.
-    expect(seen).toEqual([['nameless'], ['nameless']]);
+    expect(outcome).toMatchObject({ seated: ['a'], kept: [], unslotted: ['nameless'] });
+    expect(seen).toEqual([['nameless']]);
   });
 
   test('another wall opened meanwhile with the same revision gets nothing', async () => {

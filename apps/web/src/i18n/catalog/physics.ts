@@ -12,6 +12,10 @@ export const physicsEn = {
     '{count} tool could not be seated (no model yet, no free slot or a rotated holder)',
   'physics.seat.kept.other':
     '{count} tools could not be seated (no model yet, no free slot or a rotated holder)',
+  'physics.seat.unslotted.one':
+    '{count} tool has no slot number: take it off and hang it again to seat it',
+  'physics.seat.unslotted.other':
+    '{count} tools have no slot number: take them off and hang them again to seat them',
   'physics.seat.done.one': '{count} tool seated in its holder',
   'physics.seat.done.other': '{count} tools seated in their holders',
   'physics.toggle': 'Physics',
@@ -110,6 +114,14 @@ export const physicsRu = {
     '{count} инструментов не удалось посадить (нет модели, свободного места или держатель повёрнут)',
   'physics.seat.kept.other':
     '{count} инструмента не удалось посадить (нет модели, свободного места или держатель повёрнут)',
+  'physics.seat.unslotted.one':
+    'У {count} инструмента нет номера места: снимите его и повесьте заново, чтобы посадить',
+  'physics.seat.unslotted.few':
+    'У {count} инструментов нет номера места: снимите их и повесьте заново, чтобы посадить',
+  'physics.seat.unslotted.many':
+    'У {count} инструментов нет номера места: снимите их и повесьте заново, чтобы посадить',
+  'physics.seat.unslotted.other':
+    'У {count} инструмента нет номера места: снимите его и повесьте заново, чтобы посадить',
   'physics.seat.done.one': '{count} инструмент посажен в держатель',
   'physics.seat.done.few': '{count} инструмента посажены в держатели',
   'physics.seat.done.many': '{count} инструментов посажено в держатели',
