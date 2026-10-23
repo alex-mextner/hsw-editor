@@ -254,6 +254,7 @@ export function createSettingsClient(options: SettingsClientOptions = {}): Setti
     if (forceFetch || mirror.serverRev === null) {
       try {
         adopt(await transport.get());
+        announcedRev = null; // this fetch already covers anything announced before it
         dropRedundantPending();
       } catch {
         return finish('offline');
@@ -307,9 +308,11 @@ export function createSettingsClient(options: SettingsClientOptions = {}): Setti
   function finish(status: SyncStatus): SyncStatus {
     currentStatus = status === 'synced' && pendingCount() > 0 ? 'pending' : status;
     if (currentStatus === 'synced') syncedAt = now().toISOString();
-    const announced = announcedRev;
-    announcedRev = null;
-    if (status === 'synced' && announced !== null && announced !== mirror.serverRev) {
+    // An SSE rev parked during a PUT is acted on once (refetch) unless the PUT's answer or a later fetch already
+    // covered it; while offline it stays parked, and after a conflict the conflict's own document was just adopted.
+    if (announcedRev === mirror.serverRev) announcedRev = null;
+    if (announcedRev !== null && (status === 'synced' || status === 'rejected')) {
+      announcedRev = null;
       void enqueue(true);
     }
     return currentStatus;

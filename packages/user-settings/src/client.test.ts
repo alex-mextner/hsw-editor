@@ -49,6 +49,7 @@ class FakeServer implements SettingsTransport {
     this.puts.push(body);
     this.onPutStart?.();
     if (this.gate !== undefined) await this.gate;
+    if (!this.online) throw new Error('offline');
     this.beforePut?.();
     if (this.rejectWith !== undefined) throw this.rejectWith;
     if (body.baseRev !== undefined && body.baseRev !== this.document.rev) {
@@ -517,6 +518,52 @@ describe('review regressions', () => {
     await client.notifyServerRev(0);
     expect(client.serverRev()).toBe(0);
     expect(client.get('keymap')).toBeUndefined();
+    client.dispose();
+  });
+
+  test('an announcement during an in-flight PUT that is then refused is still fetched', async () => {
+    const server = new FakeServer();
+    const client = createSettingsClient({ transport: server, debounceMs: 10_000 });
+    await client.sync();
+    let release: () => void = () => undefined;
+    server.gate = new Promise<void>((resolve) => (release = resolve));
+    const started = new Promise<void>((resolve) => (server.onPutStart = resolve));
+    server.rejectWith = new SettingsRejectedError(400, 'invalid_body', 'bad');
+    client.set('mine', 1);
+    const flushing = client.flush();
+    await started;
+    server.remoteWrite({ theirs: 2 });
+    const notified = client.notifyServerRev(server.document.rev);
+    server.gate = undefined;
+    release();
+    await Promise.all([flushing, notified]);
+    await client.flush(); // joins the refetch cycle finish() queued; never fetches on its own
+    expect(client.get('theirs')).toBe(2);
+    client.dispose();
+  });
+
+  test('a parked announcement is dropped once a later fetch has covered it', async () => {
+    const server = new FakeServer();
+    const client = createSettingsClient({ transport: server, debounceMs: 10_000 });
+    await client.sync();
+    let release: () => void = () => undefined;
+    server.gate = new Promise<void>((resolve) => (release = resolve));
+    const started = new Promise<void>((resolve) => (server.onPutStart = resolve));
+    client.set('mine', 1);
+    const flushing = client.flush();
+    await started;
+    void client.notifyServerRev(5);
+    server.online = false;
+    server.gate = undefined;
+    release();
+    expect(await flushing).toBe('offline');
+    server.online = true;
+    server.remoteWrite({ a: 1 });
+    server.remoteWrite({ b: 1 });
+    await client.sync();
+    const gets = server.gets;
+    await client.flush();
+    expect(server.gets).toBe(gets);
     client.dispose();
   });
 
