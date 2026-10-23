@@ -178,6 +178,16 @@ describe('cache-first (bank files)', () => {
     expect(h.storage.cache(MEDIA_CACHE).entries.size).toBe(0);
   });
 
+  test('a failed registry write keeps a previously stored copy of the same file', async () => {
+    const h = harness();
+    const r = route(GLB);
+    if (!r) throw new Error('no route');
+    await storeResponse(h.deps, new Request(GLB), bytesOf(10), r);
+    h.registry.record = () => Promise.reject(new Error('idb gone'));
+    await expect(storeResponse(h.deps, new Request(GLB), bytesOf(12), r)).rejects.toThrow();
+    expect(h.storage.cache(MEDIA_CACHE).entries.has(GLB)).toBe(true);
+  });
+
   test('offline with nothing cached is a network error, not a fake response', async () => {
     const h = harness();
     h.net.online = false;
