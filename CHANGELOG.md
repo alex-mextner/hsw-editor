@@ -74,7 +74,7 @@ needs an entry here first.
 - Finer bank tool classes `chisel`, `punch`, `hacksaw`, `level`, `square`, `long-nose-pliers`, `locking-pliers`,
   `water-pump-pliers`, `crimper`, `hex-key-set` with an optional `ToolClass.broader` (the coarser class). Holders of
   the coarse class still fit, suggest and filter for them (`compatibility`, bank tool filter, holder suggestion,
-  `listElements({ fits })`, search, palette); an exact class match ranks above a broader one.
+  `listElements({ fits })`, search, palette); an exact class match ranks above an equally fitting broader one.
 
 - Photo mode, export and tools (#30): PNG export of the photo with the HSW overlay at the chosen opacity and a banner (like the reference picture, ru/en); a 'find tools' button that runs the vision job `vision.photo_to_objects` and says plainly when the vision service is not available; photo commands in the command palette (export PNG, find tools, calibrate, hide/show photo, before/after divider).
 

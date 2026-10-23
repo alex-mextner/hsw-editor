@@ -5,7 +5,6 @@
  */
 import {
   finerToolClasses,
-  toolClassVocabulary,
   toolClassWords,
   type BankElement,
   type BankIndex,
@@ -106,8 +105,7 @@ export function wallItemsProvider(deps: ProviderDeps): PaletteProvider {
 }
 
 function bankItems(index: BankIndex, deps: ProviderDeps): readonly PaletteItem[] {
-  const vocabulary = toolClassVocabulary(index.toolClasses);
-  const toolClassById = new Map(vocabulary.map((entry) => [entry.id, entry] as const));
+  const toolClassById = new Map(index.toolClasses.map((entry) => [entry.id, entry] as const));
   const finerByBroader = finerToolClasses(index.toolClasses);
   const elements = index.elements.map((element): PaletteItem => {
     // A holder of a coarse class also holds the finer ones, so their words find it too.
@@ -128,7 +126,7 @@ function bankItems(index: BankIndex, deps: ProviderDeps): readonly PaletteItem[]
       run: () => deps.addBankElement(element),
     };
   });
-  const tools = vocabulary.map((toolClass): PaletteItem => ({
+  const tools = index.toolClasses.map((toolClass): PaletteItem => ({
     id: `tool:${toolClass.id}`,
     kind: 'tool',
     title: toolClass.name,

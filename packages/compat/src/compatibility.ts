@@ -24,7 +24,8 @@ const SCORE_CLASS_ONLY = 0.15;
 const SCORE_DEDICATED = 0.1;
 /**
  * Taken off the score when the entry lists only a coarser class of the tool. It equals the whole dedicated bonus, so
- * a holder that names the tool's class always outranks one that only lists a coarser class, whatever else it holds.
+ * of two holders that fit equally well in their dimensions the one that names the tool's class ranks first,
+ * whatever else it holds; a much better dimensional fit can still outweigh it.
  */
 export const SCORE_BROADER_PENALTY = SCORE_DEDICATED;
 
