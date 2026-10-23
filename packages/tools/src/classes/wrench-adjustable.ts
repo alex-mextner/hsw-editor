@@ -30,7 +30,9 @@ import {
 const TILT = 15;
 
 const schema = {
-  length: num(L('Overall length', 'Общая длина'), 200, 100, 380, { step: 5 }),
+  length: num(L('Length at full opening', 'Длина при раскрытых губках'), 200, 100, 380, {
+    step: 5,
+  }),
   jawOpening: num(
     L('Jaw opening (max 12 % of length)', 'Раскрытие губок (до 12 % длины)'),
     20,
@@ -120,11 +122,10 @@ export const wrenchAdjustable = defineToolClass({
 
     // Head local frame: x across the jaws (fixed jaw face at x = 0, sliding jaw at +x), y along the jaws.
     // `world` rotates it by the head angle about the neck point and puts that point at (0, yNeck).
-    const topRel = Math.max(
-      (-jtTip / 2 - xn) * s + (jl + hb) * c,
-      (g + mt / 2 - xn) * s + (0.96 * jl + hb) * c,
-    );
-    const yNeck = Lt - topRel;
+    const fixedTop = (-jtTip / 2 - xn) * s + (jl + hb) * c;
+    const slideTop = (gap: number): number => (gap + mt / 2 - xn) * s + (0.96 * jl + hb) * c;
+    // The head sits where it would with the jaws fully open, so the opening only moves the sliding jaw.
+    const yNeck = Lt - Math.max(fixedTop, slideTop(cap));
     const world = ([x, y]: V2): V2 => [
       (x - xn) * c - (y + hb) * s,
       yNeck + (x - xn) * s + (y + hb) * c,
@@ -291,16 +292,17 @@ export const wrenchAdjustable = defineToolClass({
       });
     }
 
+    const overall = yNeck + Math.max(fixedTop, slideTop(g));
     const headWidth = xr + jtBase;
     return {
       parts,
       hang: { point: [0, holeY, 0], kind: 'hole', diameterMm: 2 * holeR },
       zones: [
         { name: 'handle', y0: 0, y1: yNeck - 0.02 * Lt },
-        { name: 'head', y0: yNeck - 0.02 * Lt, y1: Lt },
+        { name: 'head', y0: yNeck - 0.02 * Lt, y1: overall },
       ],
       dims: {
-        length: Lt,
+        length: overall,
         width: headWidth * c + (jl + hb) * s,
         thickness: Math.max(
           Th,

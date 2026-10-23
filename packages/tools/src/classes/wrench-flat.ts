@@ -129,7 +129,10 @@ function buildFlat(ends: readonly [End, End], o: FlatOptions, ctx: BuildCtx): Bu
       innerOf(endA) + innerOf(endB) + 4,
     ) + 2;
   const Ltot = Math.max(o.length, 2 * (rA + rB), rA + rB + clear);
-  const spanOf = (e: End): number => (e.kind === 'ring' ? 1.7 * ringRadius(e.size) : 0.001);
+  // The crank never runs longer than 45 % of the shank, so each end is flat again before the other starts.
+  const shank = Ltot - rA - rB - innerOf(endA) - innerOf(endB);
+  const spanOf = (e: End): number =>
+    e.kind === 'ring' ? Math.min(1.7 * ringRadius(e.size), 0.45 * shank) : 0.001;
   const dzOf = (e: End): number =>
     e.kind === 'ring' ? (spanOf(e) * Math.tan(o.offsetAngle * DEG)) / 1.5 : 0;
   const layout = (e: End, y: number): FlatLayout => ({

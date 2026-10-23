@@ -86,7 +86,7 @@ export function handleOutline(spec: HandleOutlineSpec): { outer: V2[]; hole: V2[
   return { outer, hole };
 }
 
-/** Sorted, de-duplicated sample positions: `count` evenly spaced plus the `extra` ones. */
+/** Sorted sample positions from y0 to y1: `count` evenly spaced plus the `extra` ones. */
 export function stationYs(
   y0: number,
   y1: number,
@@ -94,14 +94,15 @@ export function stationYs(
   extra: readonly number[],
 ): number[] {
   const all: number[] = [];
-  for (let i = 0; i <= count; i++) all.push(lerp(y0, y1, i / count));
+  for (let i = 1; i < count; i++) all.push(lerp(y0, y1, i / count));
   for (const e of extra) if (e > y0 && e < y1) all.push(e);
   all.sort((a, b) => a - b);
-  const out: number[] = [];
+  // Both ends are always kept; interior samples closer than 0.05 mm to a neighbour or an end are dropped.
+  const out: number[] = [y0];
   for (const y of all) {
-    const last = out[out.length - 1];
-    if (last === undefined || y - last > 0.05) out.push(y);
+    if (y - (out[out.length - 1] as number) > 0.05 && y1 - y > 0.05) out.push(y);
   }
+  out.push(y1);
   return out;
 }
 
