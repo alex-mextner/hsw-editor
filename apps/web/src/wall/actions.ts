@@ -12,7 +12,6 @@ import {
   planRemoveHolder,
   planRotateHolder,
   type Reason,
-  toolDraftOps,
 } from '@hsw-editor/compat';
 import {
   applyOp,
@@ -46,7 +45,8 @@ import {
 import type { ToolClass } from '@hsw-editor/bank';
 import { offsetCell } from './footprint.ts';
 import type { ToolDragPayload } from '@/scene/toolDrop.ts';
-import { presetDims, toolPresetOps } from './toolPresets.ts';
+import { toolPresetOps } from './toolPresets.ts';
+import { planToolAdd } from './autoPlace.ts';
 import { sessionStore, submitOps } from './session.ts';
 
 export function currentWall(): Wall | null {
@@ -257,23 +257,33 @@ export function addToolPreset(toolClass: ToolClass, label: string): string | nul
   return item.id;
 }
 
-/** Adds a Tool Library tool (class dimensions, measured params, user-tool source) in front of the middle of the viewport. */
-export function addToolFromPayload(payload: ToolDragPayload): string | null {
-  if (!currentWall()) return null;
-  const { item, ops } = toolDraftOps(
-    payload.toolClass,
-    payload.label,
-    viewportMiddle(),
-    payload.dimsMm ?? presetDims(payload.toolClass),
-    {
-      ...(payload.params ? { params: payload.params } : {}),
-      ...(payload.customToolId === undefined ? {} : { customToolId: payload.customToolId }),
-      ...(payload.generatorClass === undefined ? {} : { generatorClass: payload.generatorClass }),
-    },
-  );
-  if (!submitOps(ops, 'add-tool').ok) return null;
-  setSelection([item.id]);
-  return item.id;
+/** Why `addToolFromPayload` added nothing: no wall open, the bank still loading, no clear spot on the board, or the wall refused the ops. */
+export type AddToolFailure = 'noWall' | 'bankNotReady' | 'noRoom' | 'failed';
+
+export type AddToolResult =
+  | { readonly ok: true; readonly itemId: string }
+  | { readonly ok: false; readonly reason: AddToolFailure };
+
+/**
+ * Adds a Tool Library tool (class dimensions, measured params, user-tool source): on the nearest free mount of a
+ * compatible holder, else on the clear spot of the board nearest to the middle of the viewport.
+ */
+export function addToolFromPayload(payload: ToolDragPayload): AddToolResult {
+  const wall = currentWall();
+  if (!wall) return { ok: false, reason: 'noWall' };
+  // A bank still on its way would make every tool look free; one that failed to load holds nothing a tool could hang on,
+  // and the holders on the wall are then measured as the scene draws them (placeholders).
+  if (bankStore.get().status === 'loading') return { ok: false, reason: 'bankNotReady' };
+  const plan = planToolAdd(wall, currentBank(), payload, viewportMiddle());
+  if (plan.kind === 'no-room') return { ok: false, reason: 'noRoom' };
+  if (plan.kind === 'refused') return { ok: false, reason: 'failed' };
+  if (!submitOps(plan.ops, plan.kind === 'hung' ? 'add-and-hang' : 'add-tool').ok) {
+    return { ok: false, reason: 'failed' };
+  }
+  setSelection([plan.itemId]);
+  // The mount was chosen here (nearest compatible one clear of other items): the physics seats the tool in it a moment later.
+  if (plan.kind === 'hung') seatAfterChosenHang(plan.itemId);
+  return { ok: true, itemId: plan.itemId };
 }
 
 /** Outcome of `addHolderForTool`: `refused` and `locked` already told the user why (a toast); only `no-room` is left to the caller. */

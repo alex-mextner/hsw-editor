@@ -25,7 +25,8 @@ import {
   type ParamValues,
   type ToolClassInfo,
 } from './api.ts';
-import { addLibraryTool } from './actions.ts';
+import type { AddToolFailure } from '@/wall/actions.ts';
+import { ADD_FAILURE_KEY, addLibraryTool } from './actions.ts';
 import { useClassHolding, useDebouncedValue, useToolHolding } from './hooks.ts';
 import { HoldingSection } from './HoldingSection.tsx';
 import { buildEntries, entryName, type LibraryEntry } from './model.ts';
@@ -565,20 +566,23 @@ function AddButton({
   readonly hint: string | null;
 }) {
   const { t, locale } = useI18n();
-  const [failed, setFailed] = useState(false);
+  const [failure, setFailure] = useState<AddToolFailure | null>(null);
   return (
     <>
       {hint === null ? null : <p className="text-[11px] text-muted-foreground">{hint}</p>}
-      {failed ? (
+      {failure !== null ? (
         <p role="alert" className="text-[11px] text-warn">
-          {t('toolLib.notice.noWall')}
+          {t(ADD_FAILURE_KEY[failure])}
         </p>
       ) : null}
       <Button
         className="w-full"
         disabled={disabled}
         data-testid="tool-detail-add"
-        onClick={() => setFailed(!addLibraryTool(entry, locale).ok)}
+        onClick={() => {
+          const result = addLibraryTool(entry, locale);
+          setFailure(result.ok ? null : result.reason);
+        }}
       >
         <PlusIcon aria-hidden />
         {t('toolDetail.add')}

@@ -1,5 +1,5 @@
 import type { Vec3 } from '@hsw-editor/bank';
-import type { Wall, WallItem } from '@hsw-editor/core';
+import type { Aabb, Wall, WallItem } from '@hsw-editor/core';
 import { lastKnownElement } from '@/bank/client.ts';
 import { bboxCentre, resolveModel } from '@/bank/models.ts';
 import { resolveToolModel } from '@/toolmodels/resolve.ts';
@@ -12,6 +12,15 @@ export interface ItemBounds {
   readonly dims: Vec3;
   /** Box centre relative to the item's origin, in mm. */
   readonly centre: Vec3;
+}
+
+/** The box of `bounds` in the item's own frame. */
+export function boundsAabb(bounds: ItemBounds): Aabb {
+  const { dims, centre } = bounds;
+  return {
+    min: { x: centre.x - dims.x / 2, y: centre.y - dims.y / 2, z: centre.z - dims.z / 2 },
+    max: { x: centre.x + dims.x / 2, y: centre.y + dims.y / 2, z: centre.z + dims.z / 2 },
+  };
 }
 
 /** Stand-in size for an item with no known model at all. */

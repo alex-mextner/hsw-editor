@@ -33,6 +33,9 @@ export const toolsEn = {
     'You have not added tools yet. Use "Add from photo" to create the first one.',
   'toolLib.notice.added': '{name} added to the wall',
   'toolLib.notice.noWall': 'Open a wall first.',
+  'toolLib.notice.bankNotReady': 'The holder bank is still loading; try again in a moment.',
+  'toolLib.notice.noRoom':
+    'No free spot on the board for this tool. Remove something or enlarge the board.',
   'toolLib.notice.failed': 'Could not add the tool.',
   'toolLib.notice.dismiss': 'Dismiss',
   'toolLib.found.one': '{count} tool found',
@@ -237,6 +240,9 @@ export const toolsRu: FeatureRu<typeof toolsEn> = {
     'Своих инструментов пока нет. Нажмите «Добавить по фото», чтобы создать первый.',
   'toolLib.notice.added': '{name} добавлен на стену',
   'toolLib.notice.noWall': 'Сначала откройте стену.',
+  'toolLib.notice.bankNotReady': 'Банк держателей ещё загружается; попробуйте через мгновение.',
+  'toolLib.notice.noRoom':
+    'На доске нет свободного места для инструмента. Уберите что-нибудь или увеличьте доску.',
   'toolLib.notice.failed': 'Не удалось добавить инструмент.',
   'toolLib.notice.dismiss': 'Скрыть',
   'toolLib.found.one': 'Найден {count} инструмент',

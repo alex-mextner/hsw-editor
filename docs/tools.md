@@ -191,7 +191,9 @@ of the left panel; commands in `apps/web/src/commands`).
   a "my tools only" toggle for the user's tools (the "Mine" badge). Thumbnails are the server-rendered
   `GET /api/tools/classes/:id/thumb.webp` / `GET /api/tools/:id/thumb.webp`; a missing one shows a tinted fallback glyph.
   Search text, tags and collapsed groups survive reloads.
-- **On the wall**: a click puts the tool in front of the middle of the viewport; a drag uses the `ToolDragPayload`
+- **On the wall**: a click (`wall/autoPlace.ts`, `planToolAdd`) hangs the tool on the nearest free mount of a compatible holder anywhere on the board
+  (same compat maths as a drop, no snap radius), else puts it on the clear spot of the board nearest to the middle of the viewport (a 10 mm scan that keeps
+  5 mm from every item and the board edge); no spot says so instead of stacking tools; holders are measured as the scene draws them (parametric variants, placeholders); a drag uses the `ToolDragPayload`
   of `scene/toolDrop.ts` (class = the tool's `bankClass`, box, measured `holdingDims` as `params`, `customToolId` for a
   user tool, recorded in the model ref as `source.by = "tool:<id>"`), so mount glow, refusal and hanging are the same
   as for tools already on the wall. Selecting tool items filters the bank (`toolFilterStore`, #57).

@@ -1,5 +1,5 @@
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
-import type { HolderSpec } from '@hsw-editor/compat';
+import { makeElement } from '@hsw-editor/bank/testing';
 import {
   applyOp,
   cellCenter,
@@ -20,18 +20,19 @@ const realSessionExports = { ...realSession };
 const realPostStepExports = { ...realPostStep };
 
 const board = { ...DEFAULT_BOARD, cols: 30, rows: 30 };
-const RAIL: HolderSpec = {
+const RAIL = makeElement({
   id: 'rail',
+  ru: 'Рейка',
+  en: 'Rail',
   category: 'holders/screwdrivers',
+  dims: [120, 40, 40],
   fitsTool: [{ toolClass: 'screwdriver', capacity: 3 }],
-  bboxMm: { min: { x: -60, y: -20, z: 0 }, max: { x: 60, y: 20, z: 40 } },
-};
-
-const fakeBank = createValueStore<unknown>({
-  status: 'ready',
-  byId: new Map([[RAIL.id, RAIL]]),
 });
+
+const READY_BANK = { status: 'ready', byId: new Map([[RAIL.id, RAIL]]) };
+const fakeBank = createValueStore<unknown>(READY_BANK);
 const submitted: { ops: readonly Op[]; label: string | undefined }[] = [];
+const seated: string[] = [];
 
 mock.module('@/bank/client.ts', () => ({ ...realBankExports, bankStore: fakeBank }));
 mock.module('./session.ts', () => ({
@@ -44,10 +45,13 @@ mock.module('./session.ts', () => ({
 mock.module('@/physics/postStep.ts', () => ({
   ...realPostStepExports,
   seatAfterDrop: () => {},
-  seatAfterChosenHang: () => {},
+  seatAfterChosenHang: (toolId: string) => {
+    seated.push(toolId);
+  },
 }));
 
-const { deleteSelection, nudgeSelection, rotateSelection } = await import('./actions.ts');
+const { addToolFromPayload, deleteSelection, nudgeSelection, rotateSelection } =
+  await import('./actions.ts');
 const { editorStore, setSelection } = await import('@/state/editor.ts');
 const { toastStore } = await import('@/features/notices/notices.ts');
 
@@ -128,6 +132,8 @@ function item(wall: Wall, id: string): WallItem {
 
 beforeEach(() => {
   submitted.length = 0;
+  seated.length = 0;
+  fakeBank.set(READY_BANK);
   toastStore.set([]);
 });
 afterEach(() => {
@@ -249,6 +255,57 @@ describe('nudgeSelection', () => {
     setSelection(['a']);
     nudgeSelection(1, 0);
     expect(submitted).toHaveLength(0);
+  });
+});
+
+const SCREWDRIVER = {
+  toolClass: 'screwdriver',
+  label: 'Screwdriver',
+  dimsMm: { x: 28, y: 210, z: 28 },
+};
+
+describe('addToolFromPayload', () => {
+  test('hangs the tool on the compatible holder, selects it and has the physics seat it', () => {
+    const wall = wallWith([holder('h', 6, 10)]);
+    open(wall);
+    const result = addToolFromPayload(SCREWDRIVER);
+    if (!result.ok) throw new Error(`expected an add, got ${result.reason}`);
+    expect(submitted.map((entry) => entry.label)).toEqual(['add-and-hang']);
+    const added = item(afterSubmit(wall), result.itemId);
+    expect(added.parentId).toBe('h');
+    expect(editorStore.get().selection).toEqual([result.itemId]);
+    expect(seated).toEqual([result.itemId]);
+  });
+
+  test('a tool no holder takes lies free inside the board and is not seated', () => {
+    const wall = wallWith([holder('h', 6, 10)]);
+    open(wall);
+    const result = addToolFromPayload({ ...SCREWDRIVER, toolClass: 'pliers', label: 'Pliers' });
+    if (!result.ok) throw new Error(`expected an add, got ${result.reason}`);
+    expect(submitted.map((entry) => entry.label)).toEqual(['add-tool']);
+    const added = item(afterSubmit(wall), result.itemId);
+    expect(added.parentId).toBeUndefined();
+    expect(added.pose.x).toBeGreaterThanOrEqual(0);
+    expect(added.pose.y).toBeGreaterThanOrEqual(0);
+    expect(seated).toEqual([]);
+  });
+
+  test('says why nothing was added without touching the wall', () => {
+    expect(addToolFromPayload(SCREWDRIVER)).toEqual({ ok: false, reason: 'noWall' });
+    open(wallWith([]));
+    fakeBank.set({ status: 'loading' });
+    expect(addToolFromPayload(SCREWDRIVER)).toEqual({ ok: false, reason: 'bankNotReady' });
+    expect(submitted).toHaveLength(0);
+  });
+
+  test('a bank that failed to load still takes the tool, lying free', () => {
+    const wall = wallWith([]);
+    open(wall);
+    fakeBank.set({ status: 'error', message: 'offline' });
+    const result = addToolFromPayload(SCREWDRIVER);
+    if (!result.ok) throw new Error(`expected an add, got ${result.reason}`);
+    expect(item(afterSubmit(wall), result.itemId).parentId).toBeUndefined();
+    expect(seated).toEqual([]);
   });
 });
 

@@ -4,7 +4,7 @@
  * refused and is filtered in the bank exactly like any other tool.
  */
 import { beginToolDrag, endToolDrag, type ToolDragPayload } from '@/scene/toolDrop.ts';
-import { currentWall, addToolFromPayload } from '@/wall/actions.ts';
+import { addToolFromPayload, type AddToolFailure, type AddToolResult } from '@/wall/actions.ts';
 import type { Locale } from '@/i18n/index.ts';
 import { measuredDimensions } from '@hsw-editor/compat';
 import { buildEntries, entryName, type LibraryEntry } from './model.ts';
@@ -23,15 +23,17 @@ export function payloadOf(entry: LibraryEntry, locale: Locale): ToolDragPayload 
   };
 }
 
-export type AddResult =
-  | { readonly ok: true; readonly itemId: string }
-  | { readonly ok: false; readonly reason: 'noWall' | 'failed' };
+/** Message key (Tools panel notice) per reason a tool was not added. */
+export const ADD_FAILURE_KEY = {
+  noWall: 'toolLib.notice.noWall',
+  bankNotReady: 'toolLib.notice.bankNotReady',
+  noRoom: 'toolLib.notice.noRoom',
+  failed: 'toolLib.notice.failed',
+} as const satisfies Record<AddToolFailure, string>;
 
-/** Puts the tool on the wall in front of the middle of the viewport and selects it. */
-export function addLibraryTool(entry: LibraryEntry, locale: Locale): AddResult {
-  if (!currentWall()) return { ok: false, reason: 'noWall' };
-  const itemId = addToolFromPayload(payloadOf(entry, locale));
-  return itemId === null ? { ok: false, reason: 'failed' } : { ok: true, itemId };
+/** Hangs the tool on the nearest free compatible holder, else puts it on a clear spot of the board, and selects it. */
+export function addLibraryTool(entry: LibraryEntry, locale: Locale): AddToolResult {
+  return addToolFromPayload(payloadOf(entry, locale));
 }
 
 export function beginLibraryDrag(
@@ -44,16 +46,20 @@ export function beginLibraryDrag(
 
 export const endLibraryDrag = endToolDrag;
 
-/** Adds a library tool by entry key (`class:<id>`, `tool:<id>`) or by bare id (class first); the new item id or null. */
-export function addLibraryToolById(id: string, locale: Locale): string | null {
+/** What `tools.add` reports: the wall's result, or that the library has not loaded or has no such tool. */
+export type AddLibraryToolResult =
+  | AddToolResult
+  | { readonly ok: false; readonly reason: 'libraryNotReady' | 'unknownTool' };
+
+/** Adds a library tool by entry key (`class:<id>`, `tool:<id>`) or by bare id (class first); the result says why not. */
+export function addLibraryToolById(id: string, locale: Locale): AddLibraryToolResult {
   const library = libraryStore.get();
-  if (library.status !== 'ready') return null;
+  if (library.status !== 'ready') return { ok: false, reason: 'libraryNotReady' };
   const entries = buildEntries(library.classes, library.tools);
   const entry =
     entries.find((candidate) => candidate.key === id) ??
     entries.find((candidate) => candidate.kind === 'class' && candidate.id === id) ??
     entries.find((candidate) => candidate.id === id);
-  if (entry === undefined) return null;
-  const result = addLibraryTool(entry, locale);
-  return result.ok ? result.itemId : null;
+  if (entry === undefined) return { ok: false, reason: 'unknownTool' };
+  return addLibraryTool(entry, locale);
 }
