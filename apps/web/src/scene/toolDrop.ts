@@ -4,7 +4,7 @@
  * tool already on the wall, hangs the new tool on a suitable mount, leaves it free anywhere else and makes
  * the drop non-droppable (no-drop cursor) on a mount that does not take it.
  */
-import { planAddHung } from '@hsw-editor/compat';
+import { planAddHung, toolDraftOps } from '@hsw-editor/compat';
 import { applyOp, OpError, type LeafOp, type Wall, type WallItem } from '@hsw-editor/core';
 import { bankStore } from '@/bank/client.ts';
 import { createValueStore } from '#state-backend';
@@ -12,7 +12,7 @@ import { patchEditor, setSelection, type AttachPreview, type Vec2 } from '@/stat
 import { planToolDrag, toolBox, toolBoxCentreOf, type ToolDragPlan } from '@/wall/attach.ts';
 import { seatAfterDrop } from '@/physics/postStep.ts';
 import { sessionStore, submitOps } from '@/wall/session.ts';
-import { presetDims, toolDraftOps, type Dims3 } from '@/wall/toolPresets.ts';
+import { presetDims, type Dims3 } from '@/wall/toolPresets.ts';
 import { cancelSnap } from './snapAnimation.ts';
 import { wallPointAt } from './viewportBridge.ts';
 

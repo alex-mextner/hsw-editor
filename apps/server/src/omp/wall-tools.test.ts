@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  applyOp,
   createEmptyWall,
   type HistoryEntry,
   type LeafOp,
   type Op,
   type Wall,
+  WallItemSchema,
 } from '@hsw-editor/core';
 import type { HswPromptAnswer, ViewportCall, ViewportResult } from '@hsw-editor/omp-protocol';
 import { testConfig } from './testing/harness.ts';
@@ -603,5 +605,271 @@ describe('wall_undo and wall_bank_search', () => {
       score: 3.14,
       params: [{ key: 'length' }],
     });
+  });
+});
+
+// ---- Tool library tools ---------------------------------------------------------------------------------
+
+const LIBRARY = [
+  {
+    id: 'sd-1',
+    name: { en: 'Phillips screwdriver', ru: 'Отвёртка крестовая' },
+    classId: 'screwdriver',
+    bankClass: 'screwdriver',
+    tags: ['carpet', 'carpet-2026-10-21'],
+    dimsMm: { x: 28, y: 210, z: 28 },
+    holdingDims: { shaftDiameter: 6 },
+  },
+  {
+    id: 'pl-1',
+    name: { en: 'Combination pliers' },
+    classId: 'pliers-combination',
+    bankClass: 'pliers',
+    tags: ['carpet'],
+    dimsMm: { x: 60, y: 180, z: 20 },
+    holdingDims: { jawThickness: 8 },
+  },
+  {
+    id: 'blob-1',
+    name: { en: 'Odd thing' },
+    classId: null,
+    bankClass: null,
+    tags: ['garage'],
+    dimsMm: { x: 50, y: 50, z: 50 },
+    holdingDims: {},
+  },
+];
+
+/** A holder for screwdrivers with three slots taking shafts of 3-9 mm (the fields `@hsw-editor/compat` reads). */
+const HOLDER_ELEMENT = {
+  id: 'sd-holder',
+  name: { ru: 'Держатель отвёрток', en: 'Screwdriver holder' },
+  category: 'holders/screwdrivers',
+  dimsMm: { x: 90, y: 40, z: 30 },
+  footprint: { cells: [{}, {}, {}] },
+  mounting: { kind: 'plug' },
+  fitsTool: [
+    { toolClass: 'screwdriver', capacity: 3, dims: { shaftDiameter: { min: 3, max: 9 } } },
+  ],
+  bboxMm: { min: { x: -45, y: -20, z: 0 }, max: { x: 45, y: 20, z: 30 } },
+};
+
+const SD_HOLDING = {
+  holding: {
+    lengthMm: 210,
+    hang: null,
+    maxSection: { w: 28, t: 28, r: 20 },
+    dims: { shaftDiameter: 6, width: 28 },
+  },
+  bankClass: 'screwdriver',
+};
+
+function wallWithHolder(holderBankId = 'sd-holder'): Wall {
+  const wall = createEmptyWall('w1', 'Test');
+  return applyOp(wall, {
+    type: 'addItem',
+    item: WallItemSchema.parse({
+      id: 'h-1',
+      kind: 'holder',
+      bankId: holderBankId,
+      cell: { col: 4, row: 4 },
+    }),
+  }).wall;
+}
+
+function libraryDaemon(options: { wall?: Wall; holding?: object } = {}) {
+  const applied: Recorded[] = [];
+  const reply = (request: Recorded) => {
+    if (request.path === '/api/tools') return { status: 200, body: { tools: LIBRARY } };
+    if (request.path.startsWith('/api/tools/sd-1/holding'))
+      return { status: 200, body: options.holding ?? SD_HOLDING };
+    if (request.path === '/api/tools/sd-1')
+      return {
+        status: 200,
+        body: {
+          tool: {
+            id: 'sd-1',
+            name: LIBRARY[0]?.name,
+            dimensionsMm: { length: 210, width: 28, thickness: 28 },
+          },
+        },
+      };
+    if (request.path === '/api/tools/blob-1/holding')
+      return { status: 200, body: { holding: SD_HOLDING.holding, bankClass: null } };
+    if (request.path === '/api/tools/blob-1')
+      return {
+        status: 200,
+        body: {
+          tool: {
+            id: 'blob-1',
+            name: LIBRARY[2]?.name,
+            dimensionsMm: { length: 50, width: 50, thickness: 50 },
+          },
+        },
+      };
+    if (request.path.startsWith('/api/tools/'))
+      return { status: 404, body: { error: { code: 'tool_not_found' } } };
+    if (request.path.startsWith('/api/bank/search'))
+      return { status: 200, body: { results: [{ id: 'sd-holder', score: 2 }] } };
+    if (request.path === '/api/bank/elements/sd-holder')
+      return { status: 200, body: HOLDER_ELEMENT };
+    if (request.method === 'POST' && request.path === '/api/walls/w1/ops') {
+      applied.push(request);
+      return {
+        status: 200,
+        body: {
+          rev: 7,
+          changed: true,
+          op: { type: 'batch', ops: [] },
+          warnings: [],
+          canUndo: true,
+        },
+      };
+    }
+    return null;
+  };
+  return { h: harness({ reply, wall: options.wall ?? wallWithHolder() }), applied };
+}
+
+describe('wall_tools_search', () => {
+  test('lists the library tools of a tag with box, dims and suggested holders, and every tag of the library', async () => {
+    const { h } = libraryDaemon();
+    const body = JSON.parse(resultText(await run(h, 'wall_tools_search', { tag: 'carpet' }))) as {
+      total: number;
+      matched: number;
+      results: {
+        id: string;
+        bankClass: string;
+        dimsMm: object;
+        suggestedHolders: { id: string; name: string }[];
+      }[];
+      tags: { tag: string; count: number }[];
+    };
+    expect(body.total).toBe(3);
+    expect(body.matched).toBe(2);
+    expect(body.results.map((tool) => tool.id)).toEqual(['sd-1', 'pl-1']);
+    expect(body.results[0]).toMatchObject({
+      bankClass: 'screwdriver',
+      dimsMm: { x: 28, y: 210, z: 28 },
+      suggestedHolders: [{ id: 'sd-holder', name: 'Screwdriver holder' }],
+    });
+    expect(body.tags[0]).toEqual({ tag: 'carpet', count: 2 });
+    // one holder search per distinct class, by the class name, filtered to holders of that class
+    const searches = h.requests.filter((request) => request.path.startsWith('/api/bank/search'));
+    expect(searches.map((request) => request.path).sort()).toEqual([
+      '/api/bank/search?q=pliers&tool=pliers&category=holders&limit=3',
+      '/api/bank/search?q=screwdriver&tool=screwdriver&category=holders&limit=3',
+    ]);
+  });
+
+  test('filters by class and text; an unknown tag matches nothing but still lists the tags that exist', async () => {
+    const { h } = libraryDaemon();
+    const byClass = JSON.parse(
+      resultText(await run(h, 'wall_tools_search', { classId: 'pliers', holders: false })),
+    ) as { results: { id: string }[] };
+    expect(byClass.results.map((tool) => tool.id)).toEqual(['pl-1']);
+    const byText = JSON.parse(
+      resultText(await run(h, 'wall_tools_search', { text: 'отвертка', holders: false })),
+    ) as { results: { id: string }[] };
+    expect(byText.results.map((tool) => tool.id)).toEqual(['sd-1']);
+    const none = JSON.parse(resultText(await run(h, 'wall_tools_search', { tag: 'nope' }))) as {
+      matched: number;
+      tags: { tag: string }[];
+    };
+    expect(none.matched).toBe(0);
+    expect(none.tags.map((entry) => entry.tag)).toContain('carpet');
+  });
+
+  test('a generic shape is listed with a note instead of holders', async () => {
+    const { h } = libraryDaemon();
+    const body = JSON.parse(resultText(await run(h, 'wall_tools_search', { tag: 'garage' }))) as {
+      results: { id: string; note?: string; suggestedHolders?: unknown }[];
+    };
+    expect(body.results[0]?.note).toContain('generic');
+    expect(body.results[0]?.suggestedHolders).toBeUndefined();
+  });
+
+  test('a daemon without the library reports it instead of an empty list', async () => {
+    const h = harness({ reply: () => ({ status: 404, body: { error: { code: 'not_found' } } }) });
+    expect((await run(h, 'wall_tools_search', {})).isError).toBe(true);
+  });
+});
+
+describe('wall_add_tool', () => {
+  test('adds a library tool with a tool:<id> model ref and hangs it on the free compatible holder in one batch', async () => {
+    const { h, applied } = libraryDaemon();
+    const body = JSON.parse(resultText(await run(h, 'wall_add_tool', { toolId: 'sd-1' }))) as {
+      ok: boolean;
+      itemId: string;
+      holderId: string;
+      slot: number;
+    };
+    expect(body).toMatchObject({ ok: true, holderId: 'h-1', slot: 0 });
+    expect(applied).toHaveLength(1);
+    const post = applied[0]?.body as {
+      baseRev: number;
+      actor: object;
+      ops: { type: string; model?: Record<string, unknown>; item?: Record<string, unknown> }[];
+    };
+    expect(post.actor).toEqual({ kind: 'agent', name: 'omp' });
+    expect(post.baseRev).toBe(1); // the rev the wall was read at
+    expect(post.ops.map((op) => op.type)).toEqual(['addModelRef', 'addItem']);
+    const model = post.ops[0]?.model ?? {};
+    const item = post.ops[1]?.item ?? {};
+    expect(model).toMatchObject({
+      status: 'chosen',
+      toolClass: 'screwdriver',
+      source: { type: 'library', by: 'tool:sd-1' },
+      dimensionsMm: { x: 28, y: 210, z: 28 },
+    });
+    expect(item).toMatchObject({
+      kind: 'tool',
+      modelRefId: model['id'],
+      toolClass: 'screwdriver',
+      parentId: 'h-1',
+      slot: 0,
+      // measured holding dims are params; the model's `width` is the box, not a param
+      params: { shaftDiameter: 6 },
+      label: 'Phillips screwdriver',
+    });
+    expect(item['id']).toBe(body.itemId);
+    // hung: placed by the mount (z in front of the wall at the slot), not at the draft origin
+    expect(item['pose']).not.toMatchObject({ x: 0, y: 0 });
+  });
+
+  test('a requested slot of the holder is the one the tool takes', async () => {
+    const { h, applied } = libraryDaemon();
+    await run(h, 'wall_add_tool', { toolId: 'sd-1', slot: 2 });
+    const post = applied[0]?.body as { ops: { item?: { slot?: number } }[] };
+    expect(post.ops[1]?.item?.slot).toBe(2);
+  });
+
+  test('refuses a holder whose shaft range does not take the tool, with the verdict, and posts nothing', async () => {
+    const thick = {
+      ...SD_HOLDING,
+      holding: { ...SD_HOLDING.holding, dims: { shaftDiameter: 12 } },
+    };
+    const { h, applied } = libraryDaemon({ holding: thick });
+    const result = await run(h, 'wall_add_tool', { toolId: 'sd-1', holderId: 'h-1' });
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toContain('does not take this tool');
+    // the verdicts are in what the model reads, not only in the details
+    expect(resultText(result)).toContain('dim_too_large');
+    expect(applied).toHaveLength(0);
+  });
+
+  test('says to add a holder when the wall has none; names unknown tools and generic shapes', async () => {
+    const empty = libraryDaemon({ wall: createEmptyWall('w1', 'Test') });
+    const noHolder = await run(empty.h, 'wall_add_tool', { toolId: 'sd-1' });
+    expect(noHolder.isError).toBe(true);
+    expect(resultText(noHolder)).toContain('Add a suitable holder');
+
+    const { h } = libraryDaemon();
+    expect(resultText(await run(h, 'wall_add_tool', { toolId: 'ghost' }))).toContain(
+      'tool_not_found',
+    );
+    const generic = await run(h, 'wall_add_tool', { toolId: 'blob-1' });
+    expect(generic.isError).toBe(true);
+    expect(resultText(generic)).toContain('generic shape');
   });
 });

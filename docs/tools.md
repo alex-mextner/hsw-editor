@@ -207,3 +207,5 @@ of the left panel; commands in `apps/web/src/commands`).
   nothing is analysed or invented.
 - **Commands**: `tools.library.show` (`g t`), `tools.library.search {query}`, `tools.fromPhoto`, `tools.add {id}`
   (`class:<id>`, `tool:<id>` or a bare id).
+- **Agent**: the embedded omp agent reads the library with `wall_tools_search` (`GET /api/tools`: tag, class, text) and puts a tool on the wall with
+  `wall_add_tool` (a `tool:<id>` model ref + a tool item hung through `@hsw-editor/compat`, same maths as a drop onto a holder); see [omp.md](omp.md#host-tools).

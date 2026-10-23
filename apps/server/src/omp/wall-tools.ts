@@ -5,6 +5,7 @@
  * so it is validated by the single reducer, appended to the wall history, broadcast over SSE to the page and
  * undoable like any other edit. Argument schemas are the zod schemas of `packages/core`.
  */
+import { type HolderSpec, evaluateHolders, mountTargetFor, planAddHung } from '@hsw-editor/compat';
 import {
   type ApplyResponse,
   type HistoryEntry,
@@ -19,6 +20,17 @@ import {
 import type { JsonObject, JsonValue, OmpToolResult } from '@hsw-editor/omp-protocol';
 import { z } from 'zod';
 import type { OmpConfig } from './config.ts';
+import {
+  attachContextFor,
+  filterLibraryTools,
+  libraryToolDraft,
+  libraryToolLabel,
+  pickMount,
+  tagCounts,
+  type LibraryToolHolding,
+  type LibraryToolRecord,
+  type LibraryToolSummary,
+} from './library-tools.ts';
 import { failure, formatIssues, jsonResult, jsonSchemaOf } from './tool-helpers.ts';
 import type { HostTool, ToolEnv, ToolFactory } from './tool-types.ts';
 
@@ -33,6 +45,11 @@ const MAX_UNDO_STEPS = 20;
 const MAX_VIEW_SIDE_PX = 1600;
 const SELECTION_TIMEOUT_MS = 4000;
 const REQUEST_POLL_MS = 60_000;
+const DEFAULT_TOOLS_PER_SEARCH = 30;
+const MAX_TOOLS_PER_SEARCH = 100;
+const HOLDER_SUGGESTIONS_PER_CLASS = 3;
+/** `OpsBodySchema.label` of `packages/core`. */
+const MAX_BATCH_LABEL_CHARS = 200;
 
 export interface WallToolOptions {
   /** Base URL of the daemon's own API, e.g. `http://127.0.0.1:8794` (resolved lazily: the port is known after listen). */
@@ -148,6 +165,20 @@ const BankSearchArgsSchema = z.strictObject({
   mounting: z.string().max(50).optional(),
   limit: z.number().int().min(1).max(30).default(10),
 });
+const ToolsSearchArgsSchema = z.strictObject({
+  text: z.string().max(200).optional(),
+  tag: z.string().max(40).optional(),
+  classId: z.string().max(100).optional(),
+  holders: z.boolean().default(true),
+  limit: z.number().int().min(1).max(MAX_TOOLS_PER_SEARCH).default(DEFAULT_TOOLS_PER_SEARCH),
+});
+const AddToolArgsSchema = z.strictObject({
+  toolId: z.string().min(1).max(120),
+  holderId: z.string().min(1).max(64).optional(),
+  slot: z.number().int().min(0).optional(),
+  label: z.string().min(1).max(200).optional(),
+  baseRev: z.number().int().min(0).optional(),
+});
 const SelectArgsSchema = z.strictObject({ ids: z.array(z.string().min(1).max(64)).max(200) });
 const ViewArgsSchema = z.strictObject({
   view: z.enum(['current', 'front', 'iso']).default('current'),
@@ -223,6 +254,104 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
         ...(body.currentRev !== undefined ? { currentRev: body.currentRev } : {}),
       });
     };
+
+    /** Holder suggestions per bank tool class: ranked by the bank's own text search over the class name (an empty query finds nothing). */
+    async function suggestHolders(
+      classes: readonly string[],
+      signal: AbortSignal,
+    ): Promise<Map<string, HolderSuggestion[]>> {
+      const entries = await Promise.all(
+        classes.map(async (toolClass): Promise<[string, HolderSuggestion[]]> => {
+          const params = new URLSearchParams({
+            q: toolClass.replaceAll('-', ' '),
+            tool: toolClass,
+            category: 'holders',
+            limit: String(HOLDER_SUGGESTIONS_PER_CLASS),
+          });
+          const search = await api<{ results?: { id: string; score: number }[] } & ApiErrorReply>(
+            'GET',
+            `/api/bank/search?${params.toString()}`,
+            undefined,
+            signal,
+          );
+          if (search.status !== 200) return [toolClass, []];
+          const found = await bankSummaries(search.body.results ?? [], signal);
+          return [
+            toolClass,
+            found.map(({ id, name, category, cells, dimsMm }) => ({
+              id,
+              name: name.en,
+              category,
+              dimsMm,
+              ...(cells !== undefined ? { cells } : {}),
+            })),
+          ];
+        }),
+      );
+      return new Map(entries);
+    }
+
+    /** Bank elements of the wall's holders as the compat maths reads them; a holder whose element is gone is left out. */
+    async function fetchHolderSpecs(
+      wall: Wall,
+      signal: AbortSignal,
+    ): Promise<Map<string, HolderSpec>> {
+      const ids = [
+        ...new Set(
+          wall.items.flatMap((item) =>
+            item.kind === 'holder' && item.bankId !== undefined ? [item.bankId] : [],
+          ),
+        ),
+      ];
+      const specs = await Promise.all(
+        ids.map(async (id) => {
+          const element = await api<HolderSpec & ApiErrorReply>(
+            'GET',
+            `/api/bank/elements/${encodeURIComponent(id)}`,
+            undefined,
+            signal,
+          );
+          return element.status === 200 ? ([id, element.body] as const) : null;
+        }),
+      );
+      return new Map(specs.filter((entry) => entry !== null));
+    }
+
+    /** Bank search hits resolved to element summaries; hits whose element cannot be read are dropped. */
+    async function bankSummaries(
+      hits: readonly { id: string; score: number }[],
+      signal: AbortSignal,
+    ): Promise<BankElementSummary[]> {
+      const elements = await Promise.all(
+        hits.map(async ({ id, score }) => {
+          const element = await api<BankElementView & ApiErrorReply>(
+            'GET',
+            `/api/bank/elements/${encodeURIComponent(id)}`,
+            undefined,
+            signal,
+          );
+          return element.status === 200 ? summariseElement(element.body, score) : null;
+        }),
+      );
+      return elements.filter((entry): entry is BankElementSummary => entry !== null);
+    }
+
+    const postOps = (
+      ops: readonly Op[],
+      extra: { readonly baseRev?: number | undefined; readonly label?: string | undefined },
+      signal: AbortSignal,
+    ): Promise<ApiReply<ApplyResponse & ApiErrorReply>> =>
+      api<ApplyResponse & ApiErrorReply>(
+        'POST',
+        `${wallPath}/ops`,
+        {
+          ops,
+          ...(extra.baseRev !== undefined ? { baseRev: extra.baseRev } : {}),
+          ...(extra.label !== undefined ? { label: extra.label } : {}),
+          actor: AGENT_ACTOR,
+        },
+        signal,
+      );
 
     const wallGet: HostTool = {
       definition: {
@@ -334,17 +463,7 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
           signal,
         );
         if (refused !== null) return refused;
-        const reply = await api<ApplyResponse & ApiErrorReply>(
-          'POST',
-          `${wallPath}/ops`,
-          {
-            ops,
-            ...(baseRev !== undefined ? { baseRev } : {}),
-            ...(label !== undefined ? { label } : {}),
-            actor: AGENT_ACTOR,
-          },
-          signal,
-        );
+        const reply = await postOps(ops, { baseRev, label }, signal);
         if (reply.status !== 200) return apiFailure(reply.status, reply.body);
         const { rev, changed, op, warnings, canUndo } = reply.body;
         const added = addedIds(op);
@@ -434,7 +553,7 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
         name: 'wall_bank_search',
         label: 'Wall: bank search',
         description:
-          'Search the bank of ready-made HSW elements by text (Russian or English), optionally filtered by category id (e.g. holders/screwdrivers), tool class or mounting kind. Returns ids to use as bankId, names, categories, size in mm, the honeycomb cells covered, and the dimension parameters (key, range, default) the element accepts via setParams.',
+          'Search the bank of ready-made HSW elements by text (Russian or English), optionally filtered by category id (e.g. holders/screwdrivers), tool class or mounting kind. The text is required: an empty query finds nothing, so pass at least the class or element name (filters only narrow the text hits). Returns ids to use as bankId, names, categories, size in mm, the honeycomb cells covered, and the dimension parameters (key, range, default) the element accepts via setParams.',
         parameters: jsonSchemaOf(BankSearchArgsSchema),
       },
       async execute(args, { signal }) {
@@ -457,22 +576,156 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
           );
         }
         if (search.status !== 200) return apiFailure(search.status, search.body);
-        const hits = search.body.results ?? [];
-        const elements = await Promise.all(
-          hits.map(async ({ id, score }) => {
-            const element = await api<BankElementView & ApiErrorReply>(
-              'GET',
-              `/api/bank/elements/${encodeURIComponent(id)}`,
-              undefined,
-              signal,
-            );
-            return element.status === 200 ? summariseElement(element.body, score) : null;
-          }),
-        );
-        const results = elements.filter((entry): entry is BankElementSummary => entry !== null);
+        const results = await bankSummaries(search.body.results ?? [], signal);
         return jsonResult(
           { count: results.length, results },
           { details: { count: results.length } },
+        );
+      },
+    };
+
+    const toolsSearch: HostTool = {
+      definition: {
+        name: 'wall_tools_search',
+        label: 'Wall: tool library search',
+        description:
+          "List or search the USER'S TOOL LIBRARY (the collection of their real tools: screwdrivers, pliers, tape rolls, ...), the only way to find which tools the user owns. Filter by tag (a collection is a tag, e.g. carpet), class (e.g. screwdriver) and/or text (name in Russian or English); no filter lists the whole library. Each tool: id (use it in wall_add_tool), name, classId, bankClass (the holder vocabulary), tags, box dimsMm (x width, y length, z thickness), measured holdingDims, and suggestedHolders (bank elements made for its class: ids for wall_apply addItem bankId). The reply always lists every tag of the library with counts; an empty match means the tag or text does not exist, so check those tags instead of asking the user or using the shell.",
+        parameters: jsonSchemaOf(ToolsSearchArgsSchema),
+      },
+      async execute(args, { signal }) {
+        const parsed = ToolsSearchArgsSchema.safeParse(args);
+        if (!parsed.success) return failure(formatIssues(parsed.error));
+        const { text, tag, classId, holders, limit } = parsed.data;
+        const listed = await api<{ tools?: LibraryToolSummary[] } & ApiErrorReply>(
+          'GET',
+          '/api/tools',
+          undefined,
+          signal,
+        );
+        if (listed.status === 404 && listed.body.error?.code === 'not_found') {
+          return failure(
+            'The tool library is not available on this server (no /api/tools routes are mounted).',
+          );
+        }
+        if (listed.status !== 200) return apiFailure(listed.status, listed.body);
+        const library = listed.body.tools ?? [];
+        const matched = filterLibraryTools(library, { text, tag, classId });
+        const shown = matched.slice(0, limit);
+        const suggestions = holders
+          ? await suggestHolders(
+              [
+                ...new Set(
+                  shown.flatMap((tool) => (tool.bankClass === null ? [] : [tool.bankClass])),
+                ),
+              ],
+              signal,
+            )
+          : null;
+        const results = shown.map((tool) => ({
+          id: tool.id,
+          name: tool.name,
+          classId: tool.classId,
+          bankClass: tool.bankClass,
+          tags: tool.tags,
+          dimsMm: tool.dimsMm,
+          holdingDims: tool.holdingDims,
+          ...holderHint(tool.bankClass, suggestions),
+        }));
+        return jsonResult(
+          {
+            total: library.length,
+            matched: matched.length,
+            count: results.length,
+            results,
+            tags: tagCounts(library),
+            ...(matched.length > results.length
+              ? {
+                  note: `${matched.length - results.length} more match: raise limit or narrow the filter.`,
+                }
+              : {}),
+          },
+          { details: { total: library.length, matched: matched.length } },
+        );
+      },
+    };
+
+    const addTool: HostTool = {
+      definition: {
+        name: 'wall_add_tool',
+        label: 'Wall: add library tool',
+        description:
+          "Add a tool of the user's library (id from wall_tools_search) to the open wall, drawn as its real model and hung on a holder of the wall: one undoable edit that creates the tool item (kind tool, model ref tool:<id>) and attaches it to a free slot at the compatibility pose the editor computes for a hang (same rules as dragging the tool onto a holder; the editor's follow-up physics step that settles the tool into the real holder mesh is NOT run, so wall_analyse_hang may report levitating or not seated for a tool that is fine: do not chase that by re-adding, tell the user to run the Seat tools command). holderId: the holder item (id from wall_get) to hang it on; omitted, the best fitting holder with a free slot is used. slot: a specific free slot of that holder. A tool that no holder on the wall takes (class, dimension ranges, free slots) is refused with one verdict per holder: add a suitable holder first (wall_bank_search, wall_apply addItem) or pick another. Run wall_analyse_hang afterwards. It reads the wall itself: leave baseRev out unless you hold the rev of a wall_get that is still current (each wall_add_tool changes the rev).",
+        parameters: jsonSchemaOf(AddToolArgsSchema),
+      },
+      async execute(args, { signal }) {
+        const parsed = AddToolArgsSchema.safeParse(args);
+        if (!parsed.success) return failure(formatIssues(parsed.error));
+        const { toolId, holderId, slot, label, baseRev } = parsed.data;
+        const toolPath = `/api/tools/${encodeURIComponent(toolId)}`;
+        const [record, holding, current] = await Promise.all([
+          api<{ tool?: LibraryToolRecord } & ApiErrorReply>('GET', toolPath, undefined, signal),
+          api<LibraryToolHolding & ApiErrorReply>('GET', `${toolPath}/holding`, undefined, signal),
+          api<WallResponse & ApiErrorReply>('GET', wallPath, undefined, signal),
+        ]);
+        if (record.status === 404)
+          return failure(
+            `tool_not_found: the library has no tool ${toolId}. Take ids from wall_tools_search.`,
+          );
+        if (record.status !== 200 || record.body.tool === undefined)
+          return apiFailure(record.status, record.body);
+        if (holding.status !== 200) return apiFailure(holding.status, holding.body);
+        if (current.status !== 200) return apiFailure(current.status, current.body);
+        const { bankClass } = holding.body;
+        if (bankClass === null) {
+          return failure(
+            `Tool ${toolId} is a generic shape without a tool class, so no holder takes it. Tell the user it needs a class (Tools panel, detail page) instead of placing it loose.`,
+          );
+        }
+        const { wall } = current.body;
+        const draft = libraryToolDraft(
+          record.body.tool,
+          holding.body.holding,
+          bankClass,
+          label ?? libraryToolLabel(record.body.tool),
+        );
+        const holderSpecs = await fetchHolderSpecs(wall, signal);
+        const context = attachContextFor(wall, holderSpecs, draft);
+        const pick = pickMount(wall, evaluateHolders(context, draft.item), { holderId, slot });
+        if (!pick.ok) {
+          // The verdicts are what the model must read to choose again, so they go in the content, not only in details.
+          return jsonResult(
+            { error: 'no_mount', message: pick.message, holders: pick.verdicts },
+            { isError: true },
+          );
+        }
+        const target = mountTargetFor(context, draft.item, pick.holderId, slot);
+        if (target === null)
+          return failure(`Holder ${pick.holderId} no longer has a free slot for this tool.`);
+        const hung = planAddHung(draft.item, target);
+        const reply = await postOps(
+          [{ type: 'addModelRef', model: draft.model }, ...hung.ops],
+          {
+            baseRev: baseRev ?? wall.rev,
+            label: `add ${draft.item.label ?? toolId}`.slice(0, MAX_BATCH_LABEL_CHARS),
+          },
+          signal,
+        );
+        if (reply.status !== 200) return apiFailure(reply.status, reply.body);
+        const { rev, canUndo, warnings } = reply.body;
+        return jsonResult(
+          {
+            ok: true,
+            rev,
+            canUndo,
+            itemId: draft.item.id,
+            modelId: draft.model.id,
+            holderId: target.holderId,
+            slot: target.slot,
+            fit: Math.round(target.compat.score * 100) / 100,
+            warnings,
+            next: 'Run wall_analyse_hang once all tools are placed.',
+          },
+          { details: { rev, itemId: draft.item.id, holderId: target.holderId } },
         );
       },
     };
@@ -707,6 +960,8 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
       wallApply,
       wallUndo,
       bankSearch,
+      toolsSearch,
+      addTool,
       wallSelect,
       wallView,
       requestInput,
@@ -761,6 +1016,27 @@ interface BankElementView {
     readonly max: number;
     readonly default: number;
   }[];
+}
+
+/** A bank holder offered for a library tool of its class (compat checks the real fit when the tool is added). */
+type HolderSuggestion = {
+  id: string;
+  name: string;
+  category: string;
+  dimsMm: { x: number; y: number; z: number };
+  cells?: number;
+};
+
+/** What a tool search result says about holders: suggestions for its class, or why there can be none. */
+function holderHint(
+  bankClass: string | null,
+  suggestions: ReadonlyMap<string, HolderSuggestion[]> | null,
+): JsonObject {
+  if (bankClass === null) {
+    return { note: 'generic shape (no tool class): no holder takes it, wall_add_tool refuses it' };
+  }
+  if (suggestions === null) return {};
+  return { suggestedHolders: suggestions.get(bankClass) ?? [] };
 }
 
 interface BankElementSummary {
