@@ -1005,6 +1005,7 @@ function objectsResult(outDir: string, status: 'ok' | 'no_scale' = 'ok'): PhotoT
         reason: 'unseen side',
       },
     ],
+    multiView: { mode: 'single_photo', status: 'unverified', minIou: null, views: [] },
     status: status === 'ok' ? 'ok' : 'no_scale',
     error: null,
   };

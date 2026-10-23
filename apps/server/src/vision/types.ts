@@ -155,6 +155,8 @@ export const ObjectRecordSchema = z.looseObject({
   needsViews: z.array(
     z.looseObject({ azimuth_deg: z.number().optional(), elevation_deg: z.number().optional() }),
   ),
+  /** The compact multi-view record (docs/vision.md "Multi-view check"); null without a fit. */
+  multiView: z.looseObject({ status: z.string() }).nullable().optional(),
   status: z.enum(['ok', 'needs_confirmation', 'no_scale', 'fit_failed']),
   error: z.string().nullable(),
 });

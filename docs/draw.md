@@ -5,7 +5,7 @@ Results are **hints for the fitter, never ground truth**: every candidate is `so
 quality-gated and carries its prompt-template version. Dimensions still come from calibrated photos or the user.
 
 Code: contract, prompts and quality gate in `packages/draw`; backends, guard, routes, CLI in `apps/server/src/draw`;
-Python caller in `services/draw/draw_client.py`.
+the "draw a missing view of a draft object" path in `apps/server/src/tools/draw-view.ts`; Python caller in `services/draw/draw_client.py`.
 
 ## Backends
 
@@ -47,7 +47,7 @@ Success: `{ok:true, backend, images:[{path,mime,bytes,sha256,width,height}], met
 
 ## Quota / guard state
 
-`~/.local/share/hsw-editor/draw/guard.json` (mode 600), per backend: send timestamps (rolling 24 h), `blockedUntil`
+`~/.local/share/hsw-editor/draw/guard.json` (mode 600; the data dir is `HSW_EDITOR_DATA_DIR`, else the daemon's `HSW_EDITOR_HOME`, else the XDG data dir, so the CLI and the daemon agree), per backend: send timestamps (rolling 24 h), `blockedUntil`
 (parsed from "resets in N hours M minutes", default 1 h, min 1 min), `loginRequiredAt`, `challengeAt`, `lastOkAt`.
 A blocked backend refuses locally without touching the browser. A login wall is re-checked after 2 min or by a status
 probe; a challenge is cleared only by a healthy probe/login after the human acted.
@@ -59,8 +59,52 @@ probe; a challenge is cleared only by a healthy probe/login after the human acte
   checked on every call (cheap `omp models ls --kind image`, 60 s cache); the ChatGPT page is loaded only with `probe=1`.
 - `GET|PUT /api/draw/settings` `{backend: auto|omp|chatgpt-browser|manual}`.
 - `GET /api/draw/manual/:id` → prompt, refs, uploaded count; `POST /api/draw/manual/:id/inbox` raw image body (<= 35 MiB,
-  magic-byte validated) → the next `draw.views` run with the same inputs collects it.
-- Generation itself is the job kind `draw.views` on the job runner (one draw at a time, server-wide).
+  magic-byte validated) → the next `tools.draw_view` run with the same inputs collects it.
+- `/api/draw/*` is mounted by the daemon (`apps/server/src/draw/module.ts`); the routes and the jobs share ONE in-process runtime
+  (`draw/shared.ts`, under the daemon's data home), and the CLI (its own process) reads the same guard and settings files, so a quota or login
+  state learned by one is seen by the others.
+- Generation itself is the job kind `tools.draw_view` (below); one draw at a time, server-wide.
+
+## Drawing a missing view of a draft object (`tools.draw_view`)
+
+`POST /api/tools/drafts/:id/objects/:key/draw-view` `{ views?: front|side|top|back[] (default ["side","top"]), backend? }` queues the job (a draw takes minutes;
+follow `GET /api/jobs/:id/events`; the web wizard hook is VisionPolish's). What it does, in order:
+
+1. The object's UPRIGHT cut-out (`images.cutout`, long axis horizontal) is flattened on white and becomes reference 1 (`subject`). The prompt comes from
+   `packages/draw` (`buildViewPrompt`, template version 1) with the object's name (user name, else class name, else "tool") and its real size
+   (length x width x thickness -> wide x high x deep) when the photo has a scale. **View convention**: the object description tells the generator that the
+   reference IS the FRONT view (long axis horizontal), so `side` (from the right) is the object's END (width x thickness), `top` (from above) its PROFILE along
+   the length (length x thickness), `back` the front mirrored. The sidecar compares each drawing at exactly that direction
+   (`GENERATED_VIEW_ANGLES` in `hsw_vision/stages/multiview.py`, pinned by a test); the default request is `side` + `top`, the two views a top-down photo lacks.
+2. One request per view runs through `generateViews` (earlier accepted views are chained as `view` refs), each image through the CV quality gate.
+   The gate's proportion check is NOT used here: the drawn orientation is free, so the sidecar's rotation-invariant silhouette agreement (below) is the
+   proportion check instead.
+3. An ACCEPTED drawing is copied to `<draft>/drawn/<object key>/<subject id>/<view>.<ext>` the moment it is kept (a later view that fails does not hide it);
+   every candidate (accepted or rejected, with the gate's reasons) is recorded in `views.json` next to it (`GET .../objects/:key/drawn`; the file is served at
+   `.../drawn/<view>.<ext>`). The subject id is a hash of the cut-out's bytes: object keys are reused when a draft is analysed again, so a re-analysis that gives
+   the key another picture starts without the old drawings (and the manual upload job, keyed on the same id, does not inherit the old object's upload). A rejected
+   retry never replaces an accepted drawing; the manual backend collects the NEWEST upload (modification time; `touch` a file moved in by hand), so a bad first upload is replaced by uploading another; a manual job is identified by its tag, prompt and subject/style refs, NOT by earlier drawn views chained as `view` refs (their paths change run to run).
+   Nothing is attached to a tool or a wall: a drawing is `source: 'generated'`, a hint for the fitter, never ground truth, and dimensions still come from the photo.
+4. Each accepted drawing is scored against the sidecar's fit of that object (`vision/<photo>/objects.json`) by `POST /multiview` `generated_views`
+   (docs/vision.md "Multi-view check"): `check: { state: "checked", source: "generated", iou, flag, usable, azimuthDeg, elevationDeg }`, or
+   `{ state: "unavailable", reason }` (no fit: no scale / fit failed; or the sidecar could not score it). The check is a flagged hint and never changes the
+   object's `confidence` or `needsView`.
+
+Honest states. A **pinned** backend (body `backend`, or the draw setting) that cannot run now is refused by the route before any job exists:
+`409 { error: { code, message, details: { backend, steps[], retryAfterMs? } } }`, `code` = `login_required` | `quota_exhausted` | `challenge` |
+`backend_unavailable`, `steps` the literal commands (`omp login openai-codex`, `hsw-editor draw login chatgpt`, ...). With `auto` the job runs the chain and the
+result says how it ended (the job itself `succeeded`; the draw state is in the result):
+
+| `result.status` | meaning | what the UI shows |
+|---|---|---|
+| `done` | every requested view was drawn (`views[]`; some may be `accepted: false`) | the drawings with their gate reasons / check |
+| `manual_pending` | no automatic backend could run; `manual: { jobId, prompt, refCount }`, `view`, `automation: [{id, state, message, steps[]}]` (what would automate it) | the prompt + refs; upload with `POST /api/draw/manual/<jobId>/inbox`, then run the same request again to collect it |
+| `failed` | `error: { code, message, retryAfterMs? }` (quota, challenge, timeout, refused, ...), `view`, `automation[]`; `views[]` keeps what was drawn before | the reason, the wait, the steps |
+
+`DrawnView` = `{ source: "generated", view, backend, sha256, width, height, mime, promptTemplateVersion, accepted, quality (the gate's report), file | null, check | null, drawnAt }`.
+
+Tested with fake backends and a fake sidecar (`apps/server/src/tools/draw-view.test.ts`): accepted, rejected, no fit, pinned `login_required` (no job), quota stop,
+auto -> `manual_pending` -> upload -> `done`, bad requests. The real ChatGPT/omp backends were NOT called (they need the user's login).
 
 ## CLI
 
@@ -72,6 +116,8 @@ hsw-editor draw stop                        # stop the dedicated automation brow
 hsw-editor draw settings [auto|omp|chatgpt-browser|manual]
 hsw-editor draw run [--backend id] < request.json
 ```
+
+`draw` is a registered verb of `hsw-editor` (`cli/draw_verb.py`; it was missing from the verb table, so `hsw-editor draw status` said `invalid choice: 'draw'`).
 
 ## Prompts (`packages/draw/src/prompts.ts`, `PROMPT_TEMPLATE_VERSION = 1`)
 

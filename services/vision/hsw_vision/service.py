@@ -25,7 +25,7 @@ from hsw_vision.engines import build_manager
 from hsw_vision.errors import BadRequest, CalibrationNeeded, Cancelled, VisionServiceError, translate_library_error
 from hsw_vision.geometry import Camera, camera_from_calibration
 from hsw_vision.manager import ModelManager
-from hsw_vision.schemas import CalibrateParams, ImageRef, SegmentParams
+from hsw_vision.schemas import CalibrateParams, GeneratedView, ImageRef, SegmentParams
 from hsw_vision.stages import appearance as stage_appearance
 from hsw_vision.stages import calibrate as stage_calibrate
 from hsw_vision.stages import embed as stage_embed
@@ -53,6 +53,7 @@ class Stages:
     write_glb: Callable[[dict[str, Any], Path], dict[str, float]] = stage_fit.write_glb
     check_fit: Callable[..., dict[str, Any]] = stage_multiview.check_fit
     register_views: Callable[..., dict[str, Any]] = stage_multiview.register_views
+    check_generated: Callable[..., list[dict[str, Any]]] = stage_multiview.check_generated
     colours_available: Callable[[], bool] = stage_appearance.available
     sample_colours: Callable[..., dict[str, Any]] = stage_appearance.sample_colours
     render_overlay: Callable[..., np.ndarray] = stage_fit.render_overlay
@@ -362,8 +363,24 @@ class VisionService:
         return {**result, "cached": cached}
 
     def check(self, fit: dict[str, Any], views: list[dict[str, Any]], flag_below: float) -> dict[str, Any]:
+        views = stage_multiview.resolve_views(views)  # mask files are decoded before the lock: disk I/O must not hold the GPU
         with self.run_lock:
             return self.stages.check_fit(fit, views, flag_below=flag_below)
+
+    def check_generated(
+        self, fit: dict[str, Any], views: list[GeneratedView], flag_below: float
+    ) -> list[dict[str, Any]]:
+        """Agreement of the fit with DRAWN views (hints, never the confidence): see `stages.multiview.check_generated`."""
+        if not views:
+            return []
+        items = []
+        for view in views:
+            image = stage_multiview.load_drawing(view.image_path)
+            items.append(
+                {"image": image, "view": view.view, "azimuth_deg": view.azimuth_deg, "elevation_deg": view.elevation_deg, "name": view.name}
+            )
+        with self.run_lock:
+            return self.stages.check_generated(fit, items, flag_below=flag_below)
 
     def status(self) -> dict[str, Any]:
         return {"manager": self.manager.status(), "libraryVersion": library_version()}
