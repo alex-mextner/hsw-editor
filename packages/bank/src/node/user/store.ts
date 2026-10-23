@@ -419,8 +419,8 @@ export function createUserBank(paths: BankPaths, options: UserBankOptions = {}):
     if (kind === 'none') return { kind, cells: [] };
     if (wanted && wanted.cells.length > 0) return { kind, cells: wanted.cells };
     const inside = new Set(footprint.map(cellKey));
-    const detected =
-      kind === 'm3-screw' ? conversion.mountingCells.filter((c) => inside.has(cellKey(c))) : [];
+    // the same cells the dialog shows as pegs (screw holes of the silhouette, else the whole footprint)
+    const detected = conversion.mountingCells.filter((c) => inside.has(cellKey(c)));
     return { kind, cells: detected.length > 0 ? detected : [...footprint] };
   }
 

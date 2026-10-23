@@ -186,7 +186,15 @@ export function DetailsStep({
           (progress) => setSubmit({ phase: 'running', step: progress?.message }),
           controller.signal,
         );
-        if (outcome.status === 'cancelled') return;
+        if (outcome.status === 'cancelled') {
+          // our own abort (Stop waiting) needs no message; a job cancelled elsewhere must not leave the form locked
+          if (!controller.signal.aborted)
+            setSubmit({
+              phase: 'error',
+              error: { key: 'bank.user.error.jobFailed', detail: 'cancelled' },
+            });
+          return;
+        }
         if (outcome.status === 'failed') {
           setSubmit({
             phase: 'error',

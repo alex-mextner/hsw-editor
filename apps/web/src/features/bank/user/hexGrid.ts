@@ -68,6 +68,9 @@ export interface CellWindow {
 
 /** Extra columns / half-rows shown around the footprint on every side, so a cell can be added next to it. */
 export const WINDOW_MARGIN = 2;
+/** Half-extent limits (columns / half-rows) of the box-derived part of the editor window. */
+const MAX_WINDOW_COLS = 24;
+const MAX_WINDOW_ROWS2 = 24;
 
 export function cellWindow(
   cells: readonly CellOffset[],
@@ -102,9 +105,17 @@ export function windowCells(window: CellWindow): CellOffset[] {
  */
 export function boxExtent(bbox: BboxMm): CellOffset[] {
   const half = HSW_ROW_PITCH_MM / 2;
+  // a wrong unit can make the model kilometres wide: the editor window stays a sane size
+  const clamp = (n: number, limit: number): number => Math.max(-limit, Math.min(limit, n));
   return [
-    { dCol: Math.floor(bbox.min.x / HSW_COL_PITCH_MM), dRow2: Math.floor(bbox.min.y / half) },
-    { dCol: Math.ceil(bbox.max.x / HSW_COL_PITCH_MM), dRow2: Math.ceil(bbox.max.y / half) },
+    {
+      dCol: clamp(Math.floor(bbox.min.x / HSW_COL_PITCH_MM), MAX_WINDOW_COLS),
+      dRow2: clamp(Math.floor(bbox.min.y / half), MAX_WINDOW_ROWS2),
+    },
+    {
+      dCol: clamp(Math.ceil(bbox.max.x / HSW_COL_PITCH_MM), MAX_WINDOW_COLS),
+      dRow2: clamp(Math.ceil(bbox.max.y / half), MAX_WINDOW_ROWS2),
+    },
   ];
 }
 
