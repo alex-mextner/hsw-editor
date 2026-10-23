@@ -8,7 +8,9 @@
  */
 import { mkdir, readdir, readFile, rename, stat } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { ToolModel } from '../model.ts';
+import type { HoldingInterface, ToolModel } from '../model.ts';
+import { applyPatch } from '../custom/rebuild.ts';
+import { getToolClass, hasToolClass } from '../registry.ts';
 import { exportGlb } from '../glb.ts';
 import { CustomToolSchema, type CustomTool, ToolIdSchema } from '../custom/schema.ts';
 import { KeyedQueue, writeAtomic } from './fsutil.ts';
@@ -27,7 +29,17 @@ export interface ToolSummary {
   id: string;
   name: CustomTool['name'];
   classId: string | null;
+  /** Bank class of the tool's generator (null for a generic loft). */
+  bankClass: string | null;
+  tags: string[];
+  fit: { method: CustomTool['fit']['method'] };
   dimensionsMm: CustomTool['dimensionsMm'];
+  /** Bounding box in the tool frame: x = width, y = length, z = thickness (mm). */
+  dimsMm: { x: number; y: number; z: number };
+  /** `holding.dims` of the model (mm, by grip name), computed once per tool revision. */
+  holdingDims: Record<string, number>;
+  /** Relative URL of the thumbnail. */
+  thumb: string;
   confidence: number;
   createdAt: string;
   updatedAt: string;
@@ -45,16 +57,70 @@ export interface ToolFiles {
 }
 
 /** Path segments of `/api/tools/<segment>` that are routes, not tools. */
-const RESERVED_IDS: ReadonlySet<string> = new Set(['classes', 'drafts']);
+const RESERVED_IDS: ReadonlySet<string> = new Set(['classes', 'drafts', 'vision']);
 
 const SAFE_FILE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,120}$/;
 
+export interface ToolHolding {
+  holding: HoldingInterface;
+  bboxMm: ToolModel['bounds'];
+  /** Bank class of the generator; null for a generic loft. */
+  bankClass: string | null;
+}
+
+const HOLDING_MEMO_SIZE = 4096;
+const holdingMemo = new Map<string, ToolHolding>();
+
+/**
+ * Holding interface of a stored tool, rebuilt from its tool.json (the same rebuild a PATCH does) and memoised by
+ * id + updatedAt, so listing the library does not rebuild every tool on every call.
+ */
+export function holdingOf(tool: CustomTool): ToolHolding {
+  const key = `${tool.id}@${tool.updatedAt}`;
+  const known = holdingMemo.get(key);
+  if (known) return known;
+  const model = applyPatch(tool, {}).model;
+  const out: ToolHolding = {
+    holding: model.holding,
+    bboxMm: model.bounds,
+    bankClass:
+      tool.classId !== null && hasToolClass(tool.classId)
+        ? getToolClass(tool.classId).bankClass
+        : null,
+  };
+  if (holdingMemo.size >= HOLDING_MEMO_SIZE) {
+    const oldest = holdingMemo.keys().next();
+    if (!oldest.done) holdingMemo.delete(oldest.value);
+  }
+  holdingMemo.set(key, out);
+  return out;
+}
+
 export function summarize(tool: CustomTool): ToolSummary {
+  // a tool that no longer rebuilds (its class changed under it) stays listed, just without holding data
+  let holdingDims: Record<string, number> = {};
+  let bankClass: string | null = null;
+  try {
+    const h = holdingOf(tool);
+    holdingDims = h.holding.dims;
+    bankClass = h.bankClass;
+  } catch {
+    if (tool.classId !== null && hasToolClass(tool.classId)) {
+      bankClass = getToolClass(tool.classId).bankClass;
+    }
+  }
+  const d = tool.dimensionsMm;
   return {
     id: tool.id,
     name: tool.name,
     classId: tool.classId,
-    dimensionsMm: tool.dimensionsMm,
+    bankClass,
+    tags: tool.tags,
+    fit: { method: tool.fit.method },
+    dimensionsMm: d,
+    dimsMm: { x: d.width, y: d.length, z: d.thickness },
+    holdingDims,
+    thumb: `/api/tools/${encodeURIComponent(tool.id)}/thumb.webp`,
     confidence: tool.fit.confidence,
     createdAt: tool.createdAt,
     updatedAt: tool.updatedAt,

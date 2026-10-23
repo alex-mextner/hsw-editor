@@ -24,6 +24,7 @@ import {
 } from '../custom/draft.ts';
 import { type FittedObject, fitObject } from '../custom/create.ts';
 import { type ColorSegment, type CustomTool, ObservedProfileSchema } from '../custom/schema.ts';
+import { MAX_TAGS, unionTags } from '../custom/tags.ts';
 import { exportGlb } from '../glb.ts';
 import { getToolClass, hasToolClass } from '../registry.ts';
 import { type PrototypeIndex, suggestClasses } from '../recognize/fuse.ts';
@@ -338,6 +339,7 @@ function newObject(photoIndex: number, o: SidecarObject, key: string): DraftObje
     alsoSeenIn: [],
     status: 'pending',
     name: {},
+    tags: [],
     suggestions: [],
     classId: null,
     classOverridden: false,
@@ -546,6 +548,7 @@ export async function patchDraftObject(
       throw new DraftError('conflict', `${key} is already in the library`);
     }
     if (patch.name) obj.name = { ...obj.name, ...patch.name };
+    if (patch.tags) obj.tags = patch.tags;
     if (patch.status) obj.status = patch.status;
     let refit = false;
     if (patch.classId !== undefined) {
@@ -574,6 +577,7 @@ function groupInPlace(draft: Draft, keys: readonly string[]): DraftObject {
     if (m === primary) continue;
     primary.alsoSeenIn.push(m.key, ...m.alsoSeenIn);
     primary.suggestions = mergeSuggestions(primary.suggestions, m.suggestions);
+    primary.tags = unionTags(primary.tags, m.tags).slice(0, MAX_TAGS);
     m.status = 'discarded';
     m.preview = null;
   }
@@ -615,9 +619,11 @@ async function adoptEdited(
   draft: Draft,
   photoIndex: number,
   edited: SidecarObject,
+  tags: readonly string[],
 ): Promise<DraftObject> {
   const outDir = join(deps.drafts.dir(draft.id), 'vision', String(photoIndex));
   const obj = newObject(photoIndex, edited, freeKey(draft, `${photoIndex}:${edited.id}`));
+  obj.tags = unionTags(tags).slice(0, MAX_TAGS);
   obj.suggestions = await suggestionsFor(deps, outDir, edited, new Map());
   obj.classId = obj.suggestions[0]?.classId ?? null;
   await refitObject(deps, draft, obj);
@@ -648,7 +654,8 @@ export async function mergeDraftObjects(
       m.status = 'discarded';
       m.preview = null;
     }
-    d.objects.push(await adoptEdited(deps, d, photo, merged));
+    const tags = members.flatMap((m) => m.tags);
+    d.objects.push(await adoptEdited(deps, d, photo, merged, tags));
   });
   return draft;
 }
@@ -667,7 +674,7 @@ export async function splitDraftObject(
     const parts = await deps.vision.splitObject(outDir, obj.objectId, how, signal);
     obj.status = 'discarded';
     obj.preview = null;
-    for (const p of parts) d.objects.push(await adoptEdited(deps, d, obj.photo, p));
+    for (const p of parts) d.objects.push(await adoptEdited(deps, d, obj.photo, p, obj.tags));
   });
   return draft;
 }
@@ -712,6 +719,7 @@ async function commitObject(
   obj: DraftObject & { observation: NonNullable<DraftObject['observation']> },
   fitted: FittedObject,
   now: string,
+  extraTags: readonly string[],
 ): Promise<CustomTool> {
   const dir = deps.drafts.dir(draft.id);
   const clsName = fitted.classId
@@ -729,6 +737,7 @@ async function commitObject(
         name: { en: obj.name.en ?? clsName.en, ru: obj.name.ru ?? clsName.ru },
         createdAt: now,
         updatedAt: now,
+        tags: unionTags(obj.tags, extraTags),
         classId: fitted.classId,
         classCandidates: obj.suggestions.slice(0, 5),
         params: fitted.params,
@@ -763,6 +772,7 @@ export async function commitDraft(
   draftId: string,
   keys?: readonly string[],
   now = new Date(),
+  extraTags: readonly string[] = [],
 ): Promise<CommitResult> {
   const { value } = await deps.drafts.update(draftId, async (draft) => {
     assertReviewable(draft, 'add tools');
@@ -778,6 +788,17 @@ export async function commitDraft(
     const chosen = draft.objects.filter((o) =>
       keys ? keys.includes(o.key) : o.status === 'accepted',
     );
+    // refuse before anything is saved: a merged list over the limit would fail halfway through the commit
+    const tooMany = chosen.find(
+      (o) =>
+        o.status !== 'added' &&
+        o.status !== 'discarded' &&
+        o.observation !== null &&
+        unionTags(o.tags, extraTags).length > MAX_TAGS,
+    );
+    if (tooMany) {
+      throw new DraftError('invalid', `${tooMany.key}: a tool takes at most ${MAX_TAGS} tags`);
+    }
     for (const obj of chosen) {
       if (obj.status === 'added') {
         result.skipped.push({ key: obj.key, reason: 'already added' });
@@ -804,6 +825,7 @@ export async function commitDraft(
         { ...obj, observation: obj.observation },
         fitted,
         now.toISOString(),
+        extraTags,
       );
       obj.status = 'added';
       obj.toolId = saved.id;

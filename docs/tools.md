@@ -32,8 +32,13 @@ const glb = exportGlb(model); // Uint8Array, millimetres
 - GLB: one node and mesh per part, materials with `extras.kind`/`extras.grip`, scene `extras` with `classId`, `params`,
   `holding`.
 
-REST: `GET /api/tools/classes`, `GET /api/tools/classes/:id` (schema, presets), `GET /api/tools/classes/:id/model.glb?preset=&p={json}&lod=`,
-`GET /api/tools/classes/:id/holding?...` (see [api.md](api.md)).
+REST: `GET /api/tools/classes`, `GET /api/tools/classes/:id` (schema, presets, `thumb`, `dimsMm`, `holdingDims`), `GET /api/tools/classes/:id/model.glb?preset=&p={json}&lod=`,
+`GET /api/tools/classes/:id/holding?...`, `GET /api/tools/classes/:id/thumb.webp?preset=&p=` (see [api.md](api.md)).
+
+**Class thumbnails** are rendered on demand by the software renderer (`renderThumbWebp`) and cached in memory and in
+`$HSW_EDITOR_HOME/cache/tool-thumbs/`. The cache key hashes the class id, the resolved parameters and the generated GLB
+bytes, so changing a generator invalidates its thumbnails without a version bump; concurrent requests render once.
+`apps/server/src/tools/thumbs.test.ts` renders every class (default and every preset) and checks the output is not blank.
 
 ### Contact sheets (visual review)
 
@@ -64,6 +69,9 @@ photo(s) --sidecar photo_to_objects--> objects (mask, crop, class top-k, closed-
   a refit. A photo without a scale still gets masks, classes and colours, the objects say `needsScale`.
 - **Several photos of one tool**: group the objects; the most informative observation is the primary, the suggestions of
   the others are merged, all photos are kept in `source/`.
+- **Tags**: free-form labels on a tool (`tags`, normalised: trimmed, lower-cased, de-duplicated, 1-40 characters, at most 20) for
+  filtering the library. Set on import (`hsw-editor tools import --tag`), on the draft object, in the commit body or
+  by PATCH; tools written before tags existed read as untagged.
 - **Unknown objects**: generic loft, one part per colour segment, thickness from the user / the sidecar's profile kind.
 
 ### Storage

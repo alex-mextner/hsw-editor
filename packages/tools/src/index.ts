@@ -11,6 +11,7 @@ export * from './build/rings.ts';
 export * from './build/primitives.ts';
 export * from './build/profile.ts';
 export * from './custom/schema.ts';
+export * from './custom/tags.ts';
 export * from './custom/draft.ts';
 export * from './custom/fit.ts';
 export * from './custom/create.ts';

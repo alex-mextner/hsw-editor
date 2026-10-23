@@ -105,7 +105,9 @@ export function createToolsModule(options: ToolsModuleOptions = {}): ServerModul
       lastHome = deps.config.home;
       const url = new URL(request.url);
       if (url.pathname !== '/api/tools' && !url.pathname.startsWith('/api/tools/')) return null;
-      return depsFor(deps.config.home).then((d) => handleToolsRequest(request, d));
+      return depsFor(deps.config.home).then((d) =>
+        handleToolsRequest(request, d, deps.config.home),
+      );
     },
   };
 }

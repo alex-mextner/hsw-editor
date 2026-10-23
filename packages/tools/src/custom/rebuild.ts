@@ -37,7 +37,13 @@ function buildClassModel(tool: ToolDoc, lod: 0 | 1): ToolModel {
 function rebuildDirect(tool: ToolDoc): Rebuilt {
   const model = buildClassModel(tool, 0);
   return {
-    tool: { ...tool, dimensionsMm: { ...dimensionsOf(model), source: tool.dimensionsMm.source } },
+    tool: {
+      ...tool,
+      dimensionsMm: {
+        ...dimensionsOf(model),
+        source: tool.dimensionsMm.source,
+      },
+    },
     model,
     modelLod1: buildClassModel(tool, 1),
   };
@@ -97,6 +103,7 @@ export function applyPatch(tool: CustomTool, patch: CustomToolPatch): Rebuilt {
     name: { ...tool.name, ...patch.name },
     updatedAt: new Date().toISOString(),
     ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+    ...(patch.tags !== undefined ? { tags: patch.tags } : {}),
   };
   const classChanges = patch.classId !== undefined && patch.classId !== tool.classId;
   // generic lofts have no generator parameters: every edit goes through the (deterministic) fit

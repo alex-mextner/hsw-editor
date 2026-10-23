@@ -48,9 +48,9 @@ hsw-editor wall undo garage
 | Command | Effect |
 | --- | --- |
 | `tools classes [ID]` | built-in tool classes; with an id: every parameter with its default and range, and the presets |
-| `tools list` | the user's tools: id, class, size, fit confidence, created, name |
-| `tools import <photo...> [--single] [--mm-per-px X \| --two-point X1,Y1,X2,Y2 --distance-mm D] [--class ID\|generic] [--name N] [--length-mm L] [--add]` | upload the photos as an import draft, run the analysis job, print the objects found with their top-3 classes, size and fit; `--add` adds every object to the library, without it the draft is left for the editor wizard. `--single`: all photos show ONE tool |
-| `tools show ID` | class, fit quality, dimensions and where they came from, colours, files |
+| `tools list` | the user's tools: id, class, size, fit confidence, created, tags, name |
+| `tools import <photo...> [--single] [--mm-per-px X \| --two-point X1,Y1,X2,Y2 --distance-mm D] [--class ID\|generic] [--name N] [--length-mm L] [--tag T]... [--add]` | upload the photos as an import draft, run the analysis job, print the objects found with their top-3 classes, size and fit; `--add` adds every object to the library, without it the draft is left for the editor wizard. `--single`: all photos show ONE tool; `--tag` (repeatable) labels every found object, tags are normalised (lower-case, 1-40 characters, at most 20) |
+| `tools show ID` | class, tags, fit quality, dimensions and where they came from, colours, files |
 | `tools rm ID` | move the tool to `tools/.trash/` (recoverable) |
 
 All accept `--json`. Objects without a scale are listed with `needs scale` and are not added until the photo is calibrated.

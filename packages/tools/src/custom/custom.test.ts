@@ -11,7 +11,8 @@ import { fitObject, observeModel } from './create.ts';
 import { ToolInputError } from './errors.ts';
 import { createManualTool } from './manual.ts';
 import { applyPatch } from './rebuild.ts';
-import { CustomToolSchema, type CustomTool } from './schema.ts';
+import { CustomToolPatchSchema, CustomToolSchema, type CustomTool } from './schema.ts';
+import { normalizeTags, unionTags } from './tags.ts';
 
 describe('profile fit', () => {
   test('recovers a screwdriver of a different size from its silhouette profile', () => {
@@ -123,6 +124,7 @@ describe('tool store', () => {
         {
           version: 1,
           id,
+          tags: ['kept'],
           name: { en: 'My screwdriver' },
           createdAt: now,
           updatedAt: now,
@@ -148,10 +150,16 @@ describe('tool store', () => {
         'tool.json',
       ]);
       expect((await store.list()).map((t) => t.id)).toEqual([id]);
-      const patched = applyPatch(saved as CustomTool, {
-        name: { ru: 'Моя отвёртка' },
-        partColors: { handle: '#2455a8' },
-      });
+      expect((await store.list())[0]?.tags).toEqual(['kept']);
+      const patched = applyPatch(
+        saved as CustomTool,
+        CustomToolPatchSchema.parse({
+          name: { ru: 'Моя отвёртка' },
+          partColors: { handle: '#2455a8' },
+          tags: ['Blue ', 'blue', 'Driver'],
+        }),
+      );
+      expect(patched.tool.tags).toEqual(['blue', 'driver']);
       expect(patched.tool.name).toEqual({ en: 'My screwdriver', ru: 'Моя отвёртка' });
       expect(patched.model.parts.find((p) => p.name === 'handle')?.material.color).toBe('#2455a8');
       await store.remove(id);
@@ -177,6 +185,7 @@ describe('tool patches', () => {
     return {
       version: 1,
       id: 'x',
+      tags: [],
       name: {},
       createdAt: now,
       updatedAt: now,
@@ -275,5 +284,58 @@ describe('tool patches', () => {
     const edited = applyPatch(doc, { params: { shaftLength: 200 } });
     const thicker = applyPatch({ ...doc, ...edited.tool }, { dimensionsMm: { thickness: 30 } });
     expect(thicker.tool.dimensionsMm.length).toBeGreaterThan(edited.tool.dimensionsMm.length - 12);
+  });
+});
+
+describe('tags', () => {
+  test('are trimmed, lower-cased, deduplicated and bounded', () => {
+    expect(normalizeTags([' Hand tool', 'hand tool', '', 'ЭЛЕКТРО'])).toEqual([
+      'hand tool',
+      'электро',
+    ]);
+    expect(unionTags(['a', 'B'], ['b', 'c'])).toEqual(['a', 'b', 'c']);
+    const patch = (tags: string[]) => CustomToolPatchSchema.safeParse({ tags });
+    expect(patch(['x'.repeat(40)]).success).toBe(true);
+    expect(patch(['x'.repeat(41)]).success).toBe(false);
+    expect(patch(Array.from({ length: 20 }, (_, i) => `t${i}`)).success).toBe(true);
+    expect(patch(Array.from({ length: 21 }, (_, i) => `t${i}`)).success).toBe(false);
+  });
+
+  test('a tool.json written before tags existed reads as untagged', () => {
+    const manual = createManualTool({ id: 'old', classId: 'screwdriver' });
+    const stored = { ...manual.tool } as Record<string, unknown>;
+    delete stored['tags'];
+    const full = {
+      ...stored,
+      model: {
+        glb: 'model.glb',
+        glbLod1: 'model-lod1.glb',
+        thumb: 'thumb.webp',
+        triangles: 1,
+        bboxMm: { min: [0, 0, 0], max: [1, 1, 1] },
+      },
+    };
+    const parsed = CustomToolSchema.parse(full);
+    expect(parsed.tags).toEqual([]);
+  });
+});
+
+describe('listing', () => {
+  test('a tool whose class no longer exists stays listed without holding data', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'hsw-tools-'));
+    try {
+      const store = new ToolStore(root);
+      const manual = createManualTool({ id: 'gone', classId: 'screwdriver', tags: ['x'] });
+      await store.save(manual.tool, manual);
+      const file = join(root, 'gone', 'tool.json');
+      const doc = JSON.parse(await Bun.file(file).text()) as { classId: string };
+      doc.classId = 'removed-class';
+      await Bun.write(file, JSON.stringify(doc));
+      const listed = await store.list();
+      expect(listed.map((t) => t.id)).toEqual(['gone']);
+      expect(listed[0]).toMatchObject({ holdingDims: {}, bankClass: null, tags: ['x'] });
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 });
