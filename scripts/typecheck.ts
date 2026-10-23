@@ -17,6 +17,7 @@ const projects = [
   'packages/compat',
   'packages/commands',
   'packages/draw',
+  'packages/omp-protocol',
   'packages/user-settings',
   'packages/overlay',
   'apps/server',
