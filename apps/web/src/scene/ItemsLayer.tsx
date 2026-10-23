@@ -46,13 +46,7 @@ interface ItemsLayerProps {
   readonly onItemPointerDown: (id: string, event: ThreeEvent<PointerEvent>) => void;
 }
 
-export function ItemsLayer({
-  wall,
-  bank,
-  bankReady,
-  palette,
-  onItemPointerDown,
-}: ItemsLayerProps) {
+export function ItemsLayer({ wall, bank, bankReady, palette, onItemPointerDown }: ItemsLayerProps) {
   const { t, locale } = useI18n();
   const editor = useStore(editorStore);
   // Re-render when a regenerated model arrives: `resolveModel` reads that cache outside React state.

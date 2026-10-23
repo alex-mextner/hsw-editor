@@ -68,7 +68,7 @@ photo overlay. Region meshes are merged into one geometry (one draw call per pas
   left board edge". Hovering a stripe shows the reasons of that region. Strings: `i18n/catalog/invalidZones.ts` (ru/en).
 - Outlines of the regions are computed in the worker together with the region (three's `EdgesGeometry` on the render thread cost ~58 ms per
   update with 127 striped items and made drags stutter).
-- The offline PWA precaches `manifold.wasm` (`vite.config.ts` workbox `globPatterns`).
+- The offline PWA precaches `manifold.wasm` (`PRECACHE_GLOBS` in `src/pwa/pluginOptions.ts`).
 - `?bench` also records the worker round trip of every solve in `document.documentElement.dataset.zoneSolveMs` (read by the perf proof).
 
 ## Benchmark and choice
