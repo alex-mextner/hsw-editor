@@ -305,9 +305,9 @@ describe('app_command through the omp session', () => {
     });
     await page.until((p) => uiCalls(p).length > 0);
     const call = uiCalls(page)[0];
-    expect(call).toBeDefined();
+    if (call === undefined) throw new Error('no ui_call reached the page');
     await page.until((p) => p.find('ui_cancel') !== undefined);
-    expect(page.find('ui_cancel')).toEqual({ t: 'ui_cancel', id: call?.id });
+    expect(page.find('ui_cancel')).toEqual({ t: 'ui_cancel', id: call.id });
   });
 
   test('a restart during a pending call tells the page to stop', async () => {
