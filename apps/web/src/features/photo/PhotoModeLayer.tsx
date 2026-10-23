@@ -3,6 +3,7 @@ import { ImagePlus, Loader2 } from 'lucide-react';
 import type { Wall } from '@hsw-editor/core';
 import { isTypingTarget } from '@/commands/typing.ts';
 import { Button } from '@/components/ui/button.tsx';
+import { activeRequest, useRequests } from '@/widgets/requests.ts';
 import { useI18n } from '@/i18n/index.ts';
 import { useStore } from '@/state/react.ts';
 import { CalibrationWizard } from '@/widgets/CalibrationWizard.tsx';
@@ -79,6 +80,10 @@ export function PhotoModeLayer({ wall }: { readonly wall: Wall }) {
   const photo = useStore(photoStore);
   const importing = useStore(importStore);
   const target = wall.photos.find((entry) => entry.id === photo.photoId);
+  // One wizard per photo: while an agent's calibration request for it is open, its card is the wizard.
+  const requests = useRequests();
+  const open = requests.wallId === wall.id ? activeRequest(requests) : undefined;
+  const agentWizard = open?.kind === 'calibration' && open.payload.photoId === photo.photoId;
 
   // A photo removed from the wall (undo of the import, another tab) ends photo mode instead of showing nothing.
   const missing = photo.photoId !== null && target === undefined && importing.phase === 'idle';
@@ -103,7 +108,7 @@ export function PhotoModeLayer({ wall }: { readonly wall: Wall }) {
           </div>
         </div>
       ) : null}
-      {photo.calibrating && target ? (
+      {photo.calibrating && target && !agentWizard ? (
         <section
           aria-label={t('calibration.title')}
           className="absolute inset-0 z-20 flex flex-col gap-3 overflow-y-auto bg-background p-3"
@@ -114,7 +119,7 @@ export function PhotoModeLayer({ wall }: { readonly wall: Wall }) {
           </header>
           <CalibrationWizard
             photoId={target.id}
-            mode="two-point"
+            mode={target.calibration?.method === 'grid' ? 'grid' : 'two-point'}
             className="flex-1"
             onDone={finishCalibration}
             onCancel={() => (target.calibration ? finishCalibration() : leavePhotoMode())}

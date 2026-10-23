@@ -62,6 +62,15 @@ export const photoEn = {
   'photo.unusable.body':
     'Its geometry does not describe a flat wall seen by a camera. Calibrate the photo again.',
   'photo.unusable.action': 'Calibrate again',
+  'photo.snap.requested': 'You asked for {requested}; it will be {snapped}.',
+  'photo.snap.exact': 'exactly as typed',
+  'photo.snap.step': 'rounded to the {step} mm step',
+  'photo.snap.rung': 'nearest available size',
+  'photo.snap.cells': 'whole cells ({cells})',
+  'photo.snap.min': 'raised to the minimum, {limit} mm',
+  'photo.snap.max': 'lowered to the maximum, {limit} mm',
+  'photo.snap.printable': 'cut back to what the printer bed allows, {limit} mm',
+  'photo.snap.unbuildable': 'cannot be printed: even the smallest size is over {limit} mm',
 } as const;
 
 export const photoRu: FeatureRu<typeof photoEn> = {
@@ -125,4 +134,13 @@ export const photoRu: FeatureRu<typeof photoEn> = {
   'photo.unusable.body':
     'Её геометрия не описывает плоскую стену, снятую камерой. Откалибруйте фото заново.',
   'photo.unusable.action': 'Калибровать заново',
+  'photo.snap.requested': 'Вы просили {requested}; будет {snapped}.',
+  'photo.snap.exact': 'ровно как введено',
+  'photo.snap.step': 'округлено до шага {step} мм',
+  'photo.snap.rung': 'ближайший доступный размер',
+  'photo.snap.cells': 'целое число ячеек ({cells})',
+  'photo.snap.min': 'поднято до минимума, {limit} мм',
+  'photo.snap.max': 'снижено до максимума, {limit} мм',
+  'photo.snap.printable': 'урезано до размера стола принтера, {limit} мм',
+  'photo.snap.unbuildable': 'не напечатать: даже наименьший размер больше {limit} мм',
 };

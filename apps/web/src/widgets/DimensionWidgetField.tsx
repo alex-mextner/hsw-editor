@@ -7,6 +7,8 @@ import { Label } from '@/components/ui/label.tsx';
 import { Slider } from '@/components/ui/slider.tsx';
 import { useI18n } from '@/i18n/index.ts';
 import { cn } from '@/lib/cn.ts';
+import type { SizeSnap } from '@hsw-editor/overlay';
+import { snapReasonKey, snapReasonParams } from './sizeSnap.ts';
 import { formatNumber, parseLength, parseNumber, type LengthUnit } from './units.ts';
 
 export type StepSize = 1 | 10 | 0.1;
@@ -62,6 +64,8 @@ interface DimensionWidgetFieldProps {
   readonly disabled: boolean;
   /** Text being typed, or null while the field shows the formatted value. */
   readonly text: string | null;
+  /** What the last typed size was snapped to and why. */
+  readonly snap: SizeSnap | null;
   readonly onText: (text: string) => void;
   /** Live change from the slider; committed on release. */
   readonly onSlide: (value: number) => void;
@@ -82,6 +86,7 @@ export function DimensionWidgetField({
   unit,
   disabled,
   text,
+  snap,
   onText,
   onSlide,
   onSlideEnd,
@@ -186,6 +191,15 @@ export function DimensionWidgetField({
           </IconButton>
         </div>
       </div>
+      {snap && text === null && snap.changed ? (
+        <p className="text-[11px] text-warn" data-slot="snap-note">
+          {t('photo.snap.requested', {
+            requested: fieldText(def, snap.requested, unit),
+            snapped: fieldText(def, snap.snapped, unit),
+          })}{' '}
+          {t(snapReasonKey(snap.reason), snapReasonParams(snap.reason))}
+        </p>
+      ) : null}
     </div>
   );
 }

@@ -300,6 +300,8 @@ export class WallSync {
   async resync(): Promise<void> {
     try {
       const response = await this.api.getWall(this.wallId);
+      // A GET that started before an upload/ack answered must not move the wall back in time.
+      if (this.confirmed && response.wall.rev < this.confirmed.rev) return;
       this.confirmed = response.wall;
       this.publish({
         status: 'ready',

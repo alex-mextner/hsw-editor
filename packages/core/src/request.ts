@@ -51,7 +51,7 @@ const VariantPayload = z.strictObject({
 const ComparePayload = z.strictObject({ modelRefIds: z.array(IdSchema).min(2).max(12) });
 const CalibrationPayload = z.strictObject({
   photoId: IdSchema,
-  mode: z.enum(['two-point', 'grid']),
+  mode: z.enum(['two-point', 'corners', 'grid']),
 });
 
 /** What a client sends to open a request (server fills id/status/createdBy/createdAt). */
