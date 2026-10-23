@@ -215,6 +215,16 @@ export const shellEn = {
   'pwa.updateLater': 'Later',
   'pwa.updateFailed': 'Could not save the offline state: {reason}',
   'pwa.offlineReady': 'Ready to work offline.',
+  'conflict.title': 'Your offline edits clash with changes made meanwhile',
+  'conflict.count.one': '{count} of your edits touches something that changed on the daemon.',
+  'conflict.count.other': '{count} of your edits touch something that changed on the daemon.',
+  'conflict.diverged':
+    'The daemon has an older version of this wall than this device (restored backup?).',
+  'conflict.overlap': 'Changed on both sides: {what}',
+  'conflict.refused': 'No longer possible: {reason}',
+  'conflict.rebase': 'Rebase: my edits on top of theirs',
+  'conflict.keepMine': 'Keep mine (also restore what was removed)',
+  'conflict.keepTheirs': 'Keep theirs (drop my clashing edits)',
 } as const;
 
 export const shellRu: FeatureRu<typeof shellEn> = {
@@ -443,4 +453,16 @@ export const shellRu: FeatureRu<typeof shellEn> = {
   'pwa.updateLater': 'Позже',
   'pwa.updateFailed': 'Не удалось сохранить офлайн-состояние: {reason}',
   'pwa.offlineReady': 'Готово к работе без сети.',
+  'conflict.title': 'Ваши офлайн-правки конфликтуют с изменениями за это время',
+  'conflict.count.one': '{count} ваша правка затрагивает то, что изменилось на демоне.',
+  'conflict.count.few': '{count} ваши правки затрагивают то, что изменилось на демоне.',
+  'conflict.count.many': '{count} ваших правок затрагивают то, что изменилось на демоне.',
+  'conflict.count.other': '{count} ваших правки затрагивают то, что изменилось на демоне.',
+  'conflict.diverged':
+    'У демона более старая версия стены, чем на этом устройстве (восстановлена копия?).',
+  'conflict.overlap': 'Изменено с обеих сторон: {what}',
+  'conflict.refused': 'Больше невозможно: {reason}',
+  'conflict.rebase': 'Перенести: мои правки поверх чужих',
+  'conflict.keepMine': 'Оставить мои (и вернуть удалённое)',
+  'conflict.keepTheirs': 'Оставить чужие (убрать мои конфликтующие)',
 };

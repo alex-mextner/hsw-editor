@@ -3,6 +3,7 @@ import { CommandPalette } from '@/commands/CommandPalette.tsx';
 import { registerEditorCommands } from '@/commands/editorCommands.ts';
 import { useShortcuts } from '@/commands/useShortcuts.ts';
 import { TooltipProvider } from '@/components/ui/tooltip.tsx';
+import { ConflictDialog } from '@/features/notices/ConflictDialog.tsx';
 import { UpdateToast } from '@/features/notices/UpdateToast.tsx';
 import { Toaster } from '@/features/notices/Toaster.tsx';
 import { LeftPanel } from '@/features/palette/LeftPanel.tsx';
@@ -32,6 +33,7 @@ export function App() {
       <NewWallDialog />
       <Toaster />
       <UpdateToast />
+      <ConflictDialog />
     </TooltipProvider>
   );
 }
