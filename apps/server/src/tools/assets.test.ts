@@ -10,16 +10,9 @@ import {
   readGlbMeta,
   type ToolAssetIndex,
 } from '@hsw-editor/tools';
-import type { VisionPort } from '@hsw-editor/tools/node';
 import type { JobRegistry } from '../jobs.ts';
 import { startServer, type RunningServer } from '../server.ts';
 import { createToolsModule } from './module.ts';
-
-const vision: VisionPort = {
-  photoToObjects: () => Promise.reject(new Error('not used')),
-  mergeObjects: () => Promise.reject(new Error('not used')),
-  splitObject: () => Promise.reject(new Error('not used')),
-};
 
 let running: RunningServer;
 let root = '';
@@ -35,7 +28,7 @@ beforeAll(async () => {
   home = join(root, 'home');
   running = await startServer(
     { port: 0, host: '127.0.0.1', home, webDist: dist, allowedOrigins: [], heartbeatMs: 1000 },
-    { modules: [createToolsModule({ vision, jobRegistry })], jobRegistry },
+    { modules: [createToolsModule({ jobRegistry })], jobRegistry },
   );
   base = running.url;
 });
