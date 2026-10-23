@@ -11,6 +11,7 @@
     "dist/**",
     "bun.lock",
     "apps/web/src/components/ui/**",
-    "docs/**"
+    "docs/**",
+    "packages/bank/seed/**"
   ]
 }
