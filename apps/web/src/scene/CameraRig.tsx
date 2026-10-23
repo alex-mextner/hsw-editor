@@ -52,7 +52,8 @@ function useSpacePan(): boolean {
  * Perspective orbit camera, or an orthographic front view locked to the wall plane (pan + zoom only).
  * Left drag on the background orbits (pans in the front view; Shift or Space switches to pan), middle
  * drag pans, the wheel zooms, the right button belongs to the context menu. Dragging an item never
- * moves the camera: the controls are switched off while an item is held (see `bindCameraLock`).
+ * moves the camera: the controls are switched off while an item is held or a non-select tool is
+ * active (see `bindCameraLock`).
  */
 export function CameraRig({
   view,
