@@ -1,43 +1,75 @@
 /**
  * The bank ingestion pipeline: sources + generators -> normalised GLB (LOD0/LOD1) + thumbnails +
- * `index.json` / `search-index.json` / `report.json` in the bank dir.
+ * `index.json` / `search-index.json` / `report.json` as a new verified generation of the bank dir
+ * (see generations.ts): nothing is served until the whole tree has been verified.
  *
  * Idempotent and incremental: every element has a content key (source hash, part, orientation, tool
  * versions); built artefacts live under `<cache>/elements/<key>/` and are reused. A fingerprint over
  * all inputs makes an unchanged rerun a no-op that only stats the source files.
  */
-import { copyFile, mkdir, readdir, rm, stat } from 'node:fs/promises';
+import { mkdir, rm, stat } from 'node:fs/promises';
 import { join, relative } from 'node:path';
+import { z } from 'zod';
 import { SOURCE_CURATION, SOURCE_SKIPS, type CurationEntry } from '../../curation/sources.ts';
 import { BANK_CATEGORIES } from '../categories.ts';
 import { expandFamily, FamilyFileSchema, type FamilySpec, type Rung } from '../families.ts';
 import {
-  BANK_SCHEMA_VERSION,
+  BankIndexSchema,
+  type AssetRef,
   type BankElement,
   type BankIndex,
   type FitsTool,
   type License,
   type Provenance,
+  type UnavailableElement,
 } from '../schema.ts';
-import { categoryVocabulary } from '../categories.ts';
-import { toolClassVocabulary } from '../toolClasses.ts';
-import { buildSearchIndex, serializeSearchIndex } from '../search.ts';
 import { TOOL_CLASSES } from '../toolClasses.ts';
-import { validateBankIndex } from '../validate.ts';
 import { compressGlb } from './compress.ts';
 import { clusterParts, type Candidate, type Cluster } from './dedupe.ts';
 import { runMeshTool } from './exec.ts';
+import {
+  createStaging,
+  currentGeneration,
+  publishGeneration,
+  type PublishResult,
+} from './generations.ts';
 import { normalizeLicense } from './license.ts';
 import type { AnchorMode, BuildItem, BuildResult, Orientation } from './meshTool.ts';
 import type { BankPaths } from './paths.ts';
 import { buildCodeHash, codeFingerprint } from './fingerprint.ts';
 import { artefactInputs, geometryOf } from './geometry.ts';
-import { collectVariantGarbage } from './variant.ts';
+import { composeVerified, copyInto, migrateFlatBank } from './publish.ts';
 import { renderMissing, scadKey, stlHash, type ScadJob } from './scad.ts';
+import { collectVariantGarbage } from './variant.ts';
 import { MESH_TOOL_VERSION, scanSources, type SourceFile } from './sources.ts';
+import { sha256Hex } from './hash.ts';
+import { verifyBank } from './verify.ts';
 
 const BUILD_BATCH = 24;
 const GENERATOR_ORIENT: Orientation = { out: '+z', up: '+y' };
+
+/** What `.fingerprint` records: the inputs of the last ingest and the generation it published. */
+const FingerprintSchema = z.object({ inputs: z.string(), contentHash: z.string() });
+
+const REPORT_LISTS = [
+  'ingested',
+  'skipped',
+  'failed',
+  'uncurated',
+  'orphans',
+  'unreadable',
+  'notRedistributable',
+] as const;
+
+/** `report.json` written by ingest (adopt writes a different shape into the same slot). */
+function isIngestReport(value: unknown): value is IngestReport {
+  if (typeof value !== 'object' || value === null) return false;
+  return (
+    REPORT_LISTS.every((key) => Array.isArray(Reflect.get(value, key))) &&
+    typeof Reflect.get(value, 'counts') === 'object' &&
+    typeof Reflect.get(value, 'bytes') === 'object'
+  );
+}
 
 export interface IngestOptions {
   /** Rebuild every element even when cached. */
@@ -67,6 +99,10 @@ export interface IngestReport {
   orphans: ReportEntry[];
   unreadable: ReportEntry[];
   notRedistributable: { id: string; license: string }[];
+  /** Ids published before that this run no longer lists (look here first when a model disappears). */
+  removed: string[];
+  /** The generation this run published; absent for an up-to-date no-op. */
+  published?: PublishResult;
   /** Sizes of the built bank, bytes. */
   bytes: { glb: number; thumbnails: number };
 }
@@ -102,10 +138,6 @@ interface ElementBuild {
 
 type PartCandidate = Candidate & { file: SourceFile; partId: string };
 
-function sha256(text: string | Uint8Array): string {
-  return new Bun.CryptoHasher('sha256').update(text).digest('hex');
-}
-
 function priorityOf(file: SourceFile): number {
   let priority = file.kind === 'stl' ? -30 : file.kind === '3mf' ? -20 : -10;
   if (file.rel.startsWith('sources/catalog')) priority -= 5;
@@ -128,6 +160,10 @@ async function loadFamilies(paths: BankPaths): Promise<{ spec: FamilySpec; rungs
 }
 
 export async function ingest(paths: BankPaths, options: IngestOptions = {}): Promise<IngestReport> {
+  const { only } = options;
+  /** `--only` narrows the run to elements whose id contains the text. */
+  const inSelection = (id: string): boolean =>
+    only === undefined || only === '' || id.includes(only);
   const log = options.log ?? ((line: string) => console.info(line));
   await mkdir(paths.cacheDir, { recursive: true });
   // Per-element artefacts depend only on the mesh tool and the compressor; the fingerprint on everything.
@@ -191,6 +227,7 @@ export async function ingest(paths: BankPaths, options: IngestOptions = {}): Pro
     orphans: [],
     unreadable: inventory.unreadable.map((u) => ({ source: u.rel, reason: u.error })),
     notRedistributable: [],
+    removed: [],
     bytes: { glb: 0, thumbnails: 0 },
   };
 
@@ -240,7 +277,7 @@ export async function ingest(paths: BankPaths, options: IngestOptions = {}): Pro
     }));
     plans.push({
       id: entry.id,
-      key: sha256(
+      key: sha256Hex(
         JSON.stringify([
           'src',
           buildCode,
@@ -277,6 +314,7 @@ export async function ingest(paths: BankPaths, options: IngestOptions = {}): Pro
   // ---- 2. plans from generator families
   const families = await loadFamilies(paths);
   const scadJobs: { plan: Omit<Plan, 'build' | 'key'>; job: ScadJob; anchor: AnchorMode }[] = [];
+  const renderFailures: UnavailableElement[] = [];
   for (const { spec, rungs } of families) {
     for (const rung of rungs) {
       const job: ScadJob = {
@@ -329,16 +367,21 @@ export async function ingest(paths: BankPaths, options: IngestOptions = {}): Pro
       const scadHash = await scadKey(paths, job);
       const stl = rendered.stl.get(scadHash);
       if (stl === undefined) {
-        report.failed.push({
-          id: plan.id,
-          reason: rendered.failed.get(scadHash) ?? 'OpenSCAD produced no STL',
-        });
+        const reason = rendered.failed.get(scadHash) ?? 'OpenSCAD produced no STL';
+        report.failed.push({ id: plan.id, reason });
+        // Listed as unavailable (not silently dropped) so clients can say why the element has no model.
+        if (inSelection(plan.id))
+          renderFailures.push({
+            id: plan.id,
+            name: plan.name,
+            reason: 'OpenSCAD render failed (see the ingest report)',
+          });
         continue;
       }
       plan.provenance.geometryHash = await stlHash(stl);
       plans.push({
         ...plan,
-        key: sha256(
+        key: sha256Hex(
           JSON.stringify([
             'gen',
             buildCode,
@@ -353,7 +396,7 @@ export async function ingest(paths: BankPaths, options: IngestOptions = {}): Pro
     }
   }
 
-  const selected = options.only ? plans.filter((p) => p.id.includes(options.only!)) : plans;
+  const selected = plans.filter((p) => inSelection(p.id));
   const ids = new Set<string>();
   for (const plan of selected) {
     if (ids.has(plan.id)) throw new Error(`duplicate element id ${plan.id}`);
@@ -361,19 +404,33 @@ export async function ingest(paths: BankPaths, options: IngestOptions = {}): Pro
   }
 
   // ---- 3. fast path: nothing changed since the last successful run
-  const fingerprint = sha256(
+  const fingerprint = sha256Hex(
     JSON.stringify([code, generatorsCode, selected.map((p) => p.key).sort(), options.only ?? null]),
   );
   const fingerprintFile = join(paths.bankDir, '.fingerprint');
-  if (
-    !options.force &&
-    (await Bun.file(fingerprintFile).exists()) &&
-    (await Bun.file(fingerprintFile).text()) === fingerprint
-  ) {
-    const existing = JSON.parse(
-      await Bun.file(join(paths.bankDir, 'report.json')).text(),
-    ) as IngestReport;
-    return { ...existing, upToDate: true };
+  // Up to date only when the inputs are unchanged AND the published generation is the one this ingest
+  // produced and is intact: a deleted or truncated file, or a different generation adopted since, must
+  // trigger a rebuild.
+  const published = await currentGeneration(paths);
+  if (!options.force && published) {
+    const stored = FingerprintSchema.safeParse(
+      await Bun.file(fingerprintFile)
+        .json()
+        .catch(() => null),
+    );
+    const check = await verifyBank(published.root, { quick: true });
+    if (
+      stored.success &&
+      stored.data.inputs === fingerprint &&
+      stored.data.contentHash === check.contentHash &&
+      check.issues.length === 0
+    ) {
+      const existing: unknown = await Bun.file(join(published.root, 'report.json'))
+        .json()
+        .catch(() => null);
+      // `removed` described the run that published this generation; a no-op run removes nothing.
+      if (isIngestReport(existing)) return { ...existing, removed: [], upToDate: true };
+    }
   }
 
   // ---- 4. build missing elements
@@ -431,118 +488,143 @@ export async function ingest(paths: BankPaths, options: IngestOptions = {}): Pro
     log(`built ${Math.min(i + BUILD_BATCH, missing.length)}/${missing.length}`);
   }
 
-  // ---- 5. assemble the index
-  await mkdir(join(paths.bankDir, 'glb'), { recursive: true });
-  await mkdir(join(paths.bankDir, 'thumb'), { recursive: true });
+  // ---- 5. assemble the index in a private staging tree (published only after full verification)
+  // A flat bank from before generations is adopted as the first generation (old asset names stay
+  // resolvable for open tabs) and its files are removed; a no-op once migrated.
+  await migrateFlatBank(paths);
+  const staging = await createStaging(paths);
   const elements: BankElement[] = [];
-  const referenced = new Set<string>();
-  const failedIds = new Set(report.failed.map((f) => f.id));
-  for (const plan of selected) {
-    if (failedIds.has(plan.id)) continue;
-    const doneFile = Bun.file(join(dirOf(plan), 'done.json'));
-    if (!(await doneFile.exists())) {
-      report.failed.push({ id: plan.id, reason: 'no build artefacts' });
-      continue;
-    }
-    const build = (await doneFile.json()) as ElementBuild;
-    const asset = async (kind: 'glb' | 'thumb', name: string, ext: string) => {
-      const bytes = new Uint8Array(await Bun.file(join(dirOf(plan), name)).arrayBuffer());
-      const hash = sha256(bytes);
-      const path = `${kind}/${hash.slice(0, 16)}.${ext}` as const;
-      referenced.add(path);
-      const target = join(paths.bankDir, path);
-      if (!(await Bun.file(target).exists())) await copyFile(join(dirOf(plan), name), target);
-      return { path, bytes: bytes.length, sha256: hash };
+  const unavailable: UnavailableElement[] = [...renderFailures];
+  try {
+    const withhold = (plan: Plan, reason: string): void => {
+      unavailable.push({ id: plan.id, name: plan.name, reason });
     };
-    const lod0 = await asset('glb', build.lod0, 'glb');
-    const lod1 =
-      build.trianglesLod1 === build.trianglesLod0 ? lod0 : await asset('glb', build.lod1, 'glb');
-    const thumbnail = await asset('thumb', build.thumbnail, 'webp');
-    const geometry = geometryOf(build.result, plan.mountKind);
-    elements.push({
-      id: plan.id,
-      name: plan.name,
-      category: plan.category,
-      tags: plan.tags,
-      toolClasses: plan.toolClasses,
-      fitsTool: plan.fitsTool,
-      footprint: geometry.footprint,
-      bboxMm: geometry.bboxMm,
-      dimsMm: geometry.dimsMm,
-      mounting: { kind: plan.mountKind, cells: geometry.mountingCells },
-      ...(plan.params ? { params: plan.params } : {}),
-      ...(plan.family ? { family: plan.family } : {}),
-      ...(plan.variantLabel ? { variantLabel: plan.variantLabel } : {}),
-      generated: plan.provenance.origin === 'generated',
-      assets: {
-        lod0,
-        lod1,
-        thumbnail,
-        triangles: { lod0: build.trianglesLod0, lod1: build.trianglesLod1 },
-      },
-      ...(plan.printNotes ? { printNotes: plan.printNotes } : {}),
-      provenance: { ...plan.provenance, orientation: plan.orientation },
-      license: plan.license,
-    });
-  }
-  elements.sort((a, b) => a.category.localeCompare(b.category) || a.id.localeCompare(b.id));
-
-  const generated = elements.filter((e) => e.generated).length;
-  const base = {
-    version: BANK_SCHEMA_VERSION,
-    grid: paths.grid,
-    counts: {
-      total: elements.length,
-      fromSources: elements.length - generated,
-      generated,
-      redistributable: elements.filter((e) => e.license.redistributable).length,
-    },
-    categories: [...BANK_CATEGORIES],
-    toolClasses: [...TOOL_CLASSES],
-    elements,
-  };
-  const index: BankIndex = { ...base, contentHash: sha256(JSON.stringify(base)) };
-  const validation = validateBankIndex(index);
-  if (!validation.ok)
-    throw new Error(`generated index is invalid:\n${validation.errors.slice(0, 30).join('\n')}`);
-
-  await Bun.write(join(paths.bankDir, 'index.json'), JSON.stringify(index));
-  await Bun.write(
-    join(paths.bankDir, 'search-index.json'),
-    serializeSearchIndex(
-      buildSearchIndex(elements, {
-        categories: categoryVocabulary(index.categories),
-        toolClasses: toolClassVocabulary(index.toolClasses),
-      }),
-      index.contentHash,
-    ),
-  );
-  await collectGarbage(paths, referenced);
-
-  report.ingested = elements.map((e) => e.id);
-  report.counts = { ...report.counts, ...index.counts };
-  report.notRedistributable = elements
-    .filter((e) => !e.license.redistributable)
-    .map((e) => ({ id: e.id, license: e.license.spdx }));
-  for (const e of elements) {
-    report.bytes.glb +=
-      e.assets.lod0.bytes + (e.assets.lod1.path === e.assets.lod0.path ? 0 : e.assets.lod1.bytes);
-    report.bytes.thumbnails += e.assets.thumbnail.bytes;
-  }
-  await Bun.write(join(paths.bankDir, 'report.json'), JSON.stringify(report, null, 2));
-  if (report.failed.length === 0) await Bun.write(fingerprintFile, fingerprint);
-  return report;
-}
-
-/** Removes asset files no longer referenced by the index, and stale on-demand variants. */
-async function collectGarbage(paths: BankPaths, referenced: Set<string>): Promise<void> {
-  for (const kind of ['glb', 'thumb'] as const) {
-    const dir = join(paths.bankDir, kind);
-    for (const name of await readdir(dir)) {
-      if (!referenced.has(`${kind}/${name}`)) await rm(join(dir, name));
+    const failedIds = new Set(report.failed.flatMap((f) => (f.id ? [f.id] : [])));
+    for (const plan of selected) {
+      if (failedIds.has(plan.id)) {
+        // The detail (tool stderr, paths, timings) stays in the report: the index text must be
+        // deterministic, otherwise every run would hash differently and publish a new generation.
+        withhold(plan, 'mesh build failed (see the ingest report)');
+        continue;
+      }
+      const doneFile = Bun.file(join(dirOf(plan), 'done.json'));
+      if (!(await doneFile.exists())) {
+        report.failed.push({ id: plan.id, reason: 'no build artefacts' });
+        withhold(plan, 'no build artefacts');
+        continue;
+      }
+      const build = (await doneFile.json()) as ElementBuild;
+      const asset = async (kind: 'glb' | 'thumb', name: string, ext: string) => {
+        const source = join(dirOf(plan), name);
+        const bytes = new Uint8Array(await Bun.file(source).arrayBuffer());
+        const hash = sha256Hex(bytes);
+        const path = `${kind}/${hash.slice(0, 16)}.${ext}` as const;
+        await copyInto(staging, path, source);
+        return { path, bytes: bytes.length, sha256: hash };
+      };
+      let lod0: AssetRef;
+      let lod1: AssetRef;
+      let thumbnail: AssetRef;
+      try {
+        lod0 = await asset('glb', build.lod0, 'glb');
+        lod1 =
+          build.trianglesLod1 === build.trianglesLod0
+            ? lod0
+            : await asset('glb', build.lod1, 'glb');
+        thumbnail = await asset('thumb', build.thumbnail, 'webp');
+      } catch (error) {
+        // A cached artefact that vanished or cannot be read must not make a listed element undrawable.
+        report.failed.push({
+          id: plan.id,
+          reason: `unreadable build artefact: ${error instanceof Error ? error.message : String(error)}`,
+        });
+        withhold(plan, 'unreadable build artefact');
+        continue;
+      }
+      const geometry = geometryOf(build.result, plan.mountKind);
+      elements.push({
+        id: plan.id,
+        name: plan.name,
+        category: plan.category,
+        tags: plan.tags,
+        toolClasses: plan.toolClasses,
+        fitsTool: plan.fitsTool,
+        footprint: geometry.footprint,
+        bboxMm: geometry.bboxMm,
+        dimsMm: geometry.dimsMm,
+        mounting: { kind: plan.mountKind, cells: geometry.mountingCells },
+        ...(plan.params ? { params: plan.params } : {}),
+        ...(plan.family ? { family: plan.family } : {}),
+        ...(plan.variantLabel ? { variantLabel: plan.variantLabel } : {}),
+        generated: plan.provenance.origin === 'generated',
+        assets: {
+          lod0,
+          lod1,
+          thumbnail,
+          triangles: { lod0: build.trianglesLod0, lod1: build.trianglesLod1 },
+        },
+        ...(plan.printNotes ? { printNotes: plan.printNotes } : {}),
+        provenance: { ...plan.provenance, orientation: plan.orientation },
+        license: plan.license,
+      });
     }
+    elements.sort((a, b) => a.category.localeCompare(b.category) || a.id.localeCompare(b.id));
+
+    // Everything is built in `staging`; nothing is visible to the server until the whole tree verifies.
+    const index = await composeVerified(staging, {
+      grid: paths.grid,
+      categories: [...BANK_CATEGORIES],
+      toolClasses: [...TOOL_CLASSES],
+      elements,
+      unavailable,
+    });
+    // Elements withheld by the verification (corrupt file, bounds drift) are failures of this run too.
+    for (const u of index.unavailable ?? [])
+      if (!report.failed.some((f) => f.id === u.id))
+        report.failed.push({ id: u.id, reason: u.reason });
+    report.ingested = index.elements.map((e) => e.id);
+    report.counts = { ...report.counts, ...index.counts };
+    report.notRedistributable = index.elements
+      .filter((e) => !e.license.redistributable)
+      .map((e) => ({ id: e.id, license: e.license.spdx }));
+    for (const e of index.elements) {
+      report.bytes.glb +=
+        e.assets.lod0.bytes + (e.assets.lod1.path === e.assets.lod0.path ? 0 : e.assets.lod1.bytes);
+      report.bytes.thumbnails += e.assets.thumbnail.bytes;
+    }
+    // Elements that were published before and are gone now: the first thing to look at when a wall item
+    // suddenly has no model.
+    const previous = published
+      ? BankIndexSchema.safeParse(
+          await Bun.file(join(published.root, 'index.json'))
+            .json()
+            .catch(() => null),
+        )
+      : null;
+    const kept = new Set(report.ingested);
+    // A partial (`--only`) index drops everything else by design: nothing is "removed" then.
+    report.removed =
+      previous?.success && !only
+        ? previous.data.elements.map((e) => e.id).filter((id) => !kept.has(id))
+        : [];
+    await Bun.write(join(staging, 'report.json'), JSON.stringify(report, null, 2));
+    // A partial `--only` bank must not push the last full generation out of the retention window.
+    report.published = await publishGeneration(paths, staging, {
+      fullVerify: false,
+      prune: !only,
+    });
+  } catch (error) {
+    // A throw anywhere between staging and publish must not leave a full copy of the bank behind.
+    await rm(staging, { recursive: true, force: true });
+    throw error;
   }
   await collectVariantGarbage(paths);
+  if (report.failed.length === 0)
+    await Bun.write(
+      fingerprintFile,
+      JSON.stringify({ inputs: fingerprint, contentHash: report.published.contentHash }),
+    );
+  return report;
 }
 
 export function reportMarkdown(report: IngestReport): string {
@@ -569,5 +651,9 @@ export function reportMarkdown(report: IngestReport): string {
   section('Uncurated geometries', report.uncurated);
   section('Curation entries without geometry', report.orphans);
   section('Unreadable source files', report.unreadable);
+  section(
+    'Removed since the previous generation',
+    report.removed.map((id) => ({ id, reason: 'no longer in the bank' })),
+  );
   return lines.join('\n');
 }

@@ -115,6 +115,12 @@ export function validateBankIndex(raw: unknown): ValidationResult {
     }
     if (!e.generated) hashes.set(e.provenance.geometryHash, e.id);
   }
+  const withheld = new Set<string>();
+  for (const u of index.unavailable ?? []) {
+    if (ids.has(u.id)) errors.push(`${u.id}: listed both as an element and as unavailable`);
+    if (withheld.has(u.id)) errors.push(`${u.id}: duplicate unavailable entry`);
+    withheld.add(u.id);
+  }
   const categoryIds = new Set(index.categories.map((c) => c.id));
   for (const c of index.categories) {
     if (c.parent !== undefined && !categoryIds.has(c.parent))

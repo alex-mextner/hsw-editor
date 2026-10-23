@@ -1,4 +1,6 @@
-"""Contact sheet of bank thumbnails for visual review: contact_sheet.py <bank dir> <out.png> [id-substring ...]."""
+"""Contact sheet of bank thumbnails for visual review: contact_sheet.py <bank root> <out.png> [id-substring ...].
+
+<bank root> is a directory with index.json + glb/ + thumb/: a generation (<bankDir>/current) or the seed."""
 
 import json
 import sys

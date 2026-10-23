@@ -59,7 +59,8 @@ stemmer (`text.ts`): AND over the query words first, OR + fuzzy as fallback.
 | `GET /api/bank/search-index` | Serialised MiniSearch index matching the same `ETag`; feed it to `createBank`. |
 | `GET /api/bank/elements/:id` | one `BankElement`, 404 if unknown. |
 | `GET /api/bank/search?q=&category=&tool=&mounting=&limit=` | `{ results: [{ id, score }] }` ranked. |
-| `GET /bank/assets/<glb\|thumb\|variant>/<16 hex>.<glb\|webp>` | Asset bytes, `Cache-Control: public, max-age=31536000, immutable` (names are content hashes → safe for the service worker). |
+| `GET /bank/assets/<glb\|thumb\|variant>/<16 hex>.<glb\|webp>` | Asset bytes, `Cache-Control: public, max-age=31536000, immutable` (names are content hashes → safe for the service worker), `X-Bank-Index-Hash: <contentHash of the served index>`. A name no retained generation has: `404` `{ "error": "asset_not_found", "path", "indexHash", "referencedByIndex", "message", "hint" }`, `Cache-Control: no-store`. |
+| `GET /api/bank/health[?deep=1]` | `{ ok, served: { root, contentHash }, elements, unavailable, withheld[], generations[], rejected[], retainedDamaged[], deep?: { problems[] } }`; 503 when no bank can be served. `rejected`: unusable roots ranked above the served one (unreadable/inconsistent index); `withheld`: elements of the served root left out because their files are damaged; `retainedDamaged`: damaged older roots (only the retention of old asset names suffers); `ok` is false for the first three. `deep=1` also hashes every file and decodes every GLB (cached 30 s). |
 | `POST /api/bank/elements/:id/variant` body `{ params: { key: number } }` | `VariantResponse` `{ glbUrl, bboxMm, dimsMm, footprint, mountingCells, paramHash, params, cached }`. 400 invalid, 404 unknown element, 409 element has no generator, 500 render/build failed, 503 OpenSCAD unavailable. Values are clamped to the element's `params` ranges. Results are cached by a hash of the parameters plus the mesh-tool/compressor code, at most 2 variant builds run at once, and `variant/` files older than 14 days (or beyond 256 MiB, oldest first) are removed by `bank:ingest`. |
 
 Asset URLs are `/bank/assets/` + `asset.path` from the index. Read routes answer only `GET`/`HEAD` and the variant route
@@ -67,11 +68,53 @@ only `POST` (otherwise 405 with `Allow`); the asset extension must match its kin
 `.webp` under `thumb/`).
 
 Mounting in the server: `apps/server/src/bank-routes.ts` is a server module (`bankModule` in `modules.ts`) that runs after
-the loopback guard and before the wall API. It calls `createBankHandler({ roots: [bankDir, paths.seedDir], paths })`, where
-`bankDir` is `$HSW_BANK_DIR` or `<HSW_EDITOR_HOME>/bank`, and the handler returns `null` for URLs that are not bank routes.
-It serves the built bank and falls back to the committed seed, reloads when the `index.json` of any root changes (including
-a built bank appearing after the seed was loaded), keeps serving the bank in use when a new index cannot be read (an
-ingest mid-write), and never needs a restart after `bank:ingest`.
+the loopback guard and before the wall API. It calls `createBankHandler({ paths })`, where `paths.bankDir` is `$HSW_BANK_DIR`
+or `<HSW_EDITOR_HOME>/bank`; the handler returns `null` for URLs that are not bank routes. It serves the current generation of
+the built bank, falls back to older generations and finally the committed seed, reloads when the `index.json` of any root
+changes (including a built bank appearing after the seed was loaded), and never needs a restart after `bank:ingest`. When the
+index of the first root that has one cannot be read or verified (an ingest mid-write, a failed read, damage) the bank already
+in use stays (the damaged root is listed under `rejected`, `ok: false`, retried every 5 s or as soon as the file changes);
+a fresh process with no bank in use falls through to the next root, an older generation first.
+
+A root whose `index.json` is unreadable or inconsistent is **not served** (logged once, listed under `rejected` in
+`/api/bank/health`) and the next best root takes over. A root whose index is fine but whose files for some elements are
+missing or truncated **is** served, with exactly those elements moved to `unavailable` (the ETag changes with the view),
+so one lost file costs one element, not the whole bank. The check (existence + recorded size, no hashing) runs when a root
+is loaded, when any root's `index.json` changed (re-validated at most every 500 ms, concurrent requests share one run),
+every 5 s while a root is rejected, and, debounced to once per 2 s, when an asset request proves the served root is damaged.
+It does not watch files inside a served generation: `bank:verify` / `/api/bank/health?deep=1` is the full check.
+A hashed asset is served only from a root whose own index lists it **with the recorded size**, so a truncated copy in a
+damaged generation is never sent under the `immutable` header while an intact copy of the same name exists in an older one.
+
+## Integrity: generations, verification, retention
+
+The built bank is never edited in place. Layout of the bank dir (`HSW_BANK_DIR`, else `<HSW_EDITOR_HOME>/bank`):
+
+```
+current -> generations/<UTC stamp>-<contentHash12>     one atomic symlink swap publishes a bank
+generations/<id>/{index.json, search-index.json, report.json, glb/, thumb/}   complete, verified, immutable
+generations/.staging-*                                  a build in progress, never served
+variant/                                                content-addressed OpenSCAD variants, shared
+```
+
+- `bank:ingest` (and `bank:adopt`) assemble the tree in `.staging-*`, run the **full** verification (schema, `contentHash`,
+  every file's existence/size/sha256, GLB bounds = `bboxMm`) and only then rename it into `generations/` and swap `current`.
+  A tree that fails is deleted and `current` stays as it was (`BankVerificationError`, exit code 1).
+- Elements that cannot be built or whose files are missing are **withheld**: they are not in `elements[]`, they are listed
+  in the optional index field `unavailable: [{ id, name, reason }]` (and in `report.failed`), so a client can say why a
+  wall item has no model instead of crashing on a 404.
+- The previous generations stay on disk (3 in total, `HSW_BANK_KEEP_GENERATIONS`), so an index a browser tab fetched before
+  a rebuild keeps resolving its hashed asset names. The ingest report lists `removed` elements (published before, gone now).
+- `bun run bank:verify [--seed] [--all] [--root <dir>] [--quick] [--no-bounds] [--json]` is the gate: exit `0` consistent, `1` problems
+  (missing glb/thumbnail, size or sha256 mismatch, edited index, wrong GLB bounds), `2` usage error, `3` nothing built. CI runs
+  `bank:verify --seed` and `bun run check` includes it; `GET /api/bank/health` exposes the same verdict of a running server that mounts the bank handler.
+- `bun run bank:adopt <dir>` publishes a flat bank (legacy tree, seed copy, another machine's export) as a verified generation
+  (exit `0` published, `1` refused, `2` usage). The source's own index must verify (schema, `contentHash`); elements with a
+  missing/corrupt file or GLB bounds that disagree with the index are withheld into `unavailable`.
+- A flat bank written by an older ingest (`<bankDir>/index.json`, `glb/`, `thumb/`) is adopted as the first generation by the next
+  `bank:ingest` and its flat files are removed, so old asset names stay resolvable from that retained generation.
+- `bank:ingest --only <text>` publishes a partial bank without pruning older generations and does not report the rest as `removed`.
+- `bank:ingest --seed` stages and verifies the new seed next to `packages/bank/seed` and swaps it in only when complete.
 
 ## Ingestion pipeline (`bun run bank:ingest`)
 

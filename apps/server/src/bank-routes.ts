@@ -11,7 +11,7 @@ function handlerFor(home: string): BankHandler {
   let handler = handlers.get(home);
   if (handler === undefined) {
     const paths = bankPaths({ ...process.env, HSW_EDITOR_HOME: home });
-    handler = createBankHandler({ roots: [paths.bankDir, paths.seedDir], paths });
+    handler = createBankHandler({ paths });
     handlers.set(home, handler);
   }
   return handler;

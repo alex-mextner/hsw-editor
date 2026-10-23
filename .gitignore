@@ -11,3 +11,6 @@ __pycache__/
 test-results/
 playwright-report/
 *.tsbuildinfo
+# in-flight / crashed bank seed export (see packages/bank/src/node/publish.ts replaceDirectory)
+packages/bank/seed.next-*/
+packages/bank/seed.old-*/
