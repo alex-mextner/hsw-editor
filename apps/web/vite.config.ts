@@ -27,7 +27,9 @@ function demoSeedBank() {
       // Generated tool models of the showcase wall (`bun scripts/tools/demo-assets.ts`, run by `bun run build`).
       const tools = fileURLToPath(new URL('./.generated/tools-assets', import.meta.url));
       if (!existsSync(`${tools}/index.json`)) {
-        throw new Error('demo build: run `bun scripts/tools/demo-assets.ts` first (tool model assets are missing)');
+        throw new Error(
+          'demo build: run `bun scripts/tools/demo-assets.ts` first (tool model assets are missing)',
+        );
       }
       mkdirSync(`${out}/api/tools/assets`, { recursive: true });
       cpSync(`${tools}/index.json`, `${out}/api/tools/assets/index`);
@@ -72,6 +74,9 @@ export default defineConfig(({ mode }) => {
     ],
     define: { __STATE_BACKEND__: JSON.stringify(useStateLib ? 'state-lib' : 'baseline') },
     resolve: {
+      // tunnel-rat (drei) is linked from the shared ~/.bun store, where its react peer can be missing on an
+      // old store entry; resolving react from the app root makes a fresh clone build on any machine.
+      dedupe: ['react', 'react-dom'],
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
         '#state-backend': fileURLToPath(
