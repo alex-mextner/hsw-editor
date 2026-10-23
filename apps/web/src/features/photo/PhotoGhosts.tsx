@@ -35,7 +35,7 @@ const CONFIDENT_AT = 0.6;
 const CONFIDENT_COLOUR = '#22c55e';
 const UNSURE_COLOUR = '#f59e0b';
 /** The bar with the count and Add all / Discard all: room kept free at the top of the stage. */
-const BAR_HALF_WIDTH = 190;
+const BAR_HALF_WIDTH = 272;
 const BAR_HEIGHT = 44;
 const CHIP_HEIGHT = 26;
 const CHIP_GAP = 2;
@@ -106,8 +106,8 @@ export function PhotoGhosts({ wall, view }: { readonly wall: Wall; readonly view
         // The proposals bar: centred at the top.
         reserved: [
           {
-            left: stage.width / 2 - BAR_HALF_WIDTH,
-            right: stage.width / 2 + BAR_HALF_WIDTH,
+            left: Math.max(0, stage.width / 2 - BAR_HALF_WIDTH),
+            right: Math.min(stage.width, stage.width / 2 + BAR_HALF_WIDTH),
             top: 0,
             bottom: BAR_HEIGHT,
           },

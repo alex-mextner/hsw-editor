@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { createEmptyWall, type HistoryEntry, type LeafOp, type Op, type Wall } from '@hsw-editor/core';
+import {
+  createEmptyWall,
+  type HistoryEntry,
+  type LeafOp,
+  type Op,
+  type Wall,
+} from '@hsw-editor/core';
 import type { HswPromptAnswer, ViewportCall, ViewportResult } from '@hsw-editor/omp-protocol';
 import { testConfig } from './testing/harness.ts';
 import type { HostTool, PromptDraft } from './tool-types.ts';
@@ -173,9 +179,9 @@ describe('destructive op policy', () => {
       historyEntry('undo', 4, batchOf(addItem('a')), batchOf(removeItem('a')), 3),
     ];
     expect(countUndoRedoRemovals(removedThenUndone, 1, true)).toBe(1);
-    expect(
-      countUndoRedoRemovals([...removedThenUndone, historyOp(5, add, undoAdd)], 1, true),
-    ).toBe(0);
+    expect(countUndoRedoRemovals([...removedThenUndone, historyOp(5, add, undoAdd)], 1, true)).toBe(
+      0,
+    );
   });
 });
 
@@ -341,6 +347,72 @@ describe('wall_get / wall_view / wall_select', () => {
   });
 });
 
+describe('wall_clean_background', () => {
+  const photo = {
+    id: 'p-1',
+    file: 'photos/p-1.jpg',
+    mime: 'image/jpeg' as const,
+    width: 100,
+    height: 80,
+    origin: 'upload' as const,
+  };
+
+  function cleaning(states: string[]) {
+    let polls = 0;
+    const base = createEmptyWall('w1', 'Test');
+    return harness({
+      wall: { ...base, photos: [photo] },
+      reply: (request) => {
+        if (request.method === 'POST' && request.path === '/api/jobs') {
+          return { status: 202, body: { job: { id: 'j1', state: 'queued' } } };
+        }
+        if (request.path === '/api/jobs/j1') {
+          const state = states[Math.min(polls, states.length - 1)] ?? 'failed';
+          polls += 1;
+          return {
+            status: 200,
+            body: {
+              job: {
+                id: 'j1',
+                state,
+                result: { status: 'ok', method: 'basic', ai: 'login_required' },
+                error: 'boom',
+              },
+            },
+          };
+        }
+        return null;
+      },
+    });
+  }
+
+  test('starts photo.clean for the first photo and returns the finished result', async () => {
+    const h = cleaning(['succeeded']);
+    const result = await run(h, 'wall_clean_background', {});
+    expect(JSON.parse(resultText(result))).toEqual({
+      status: 'ok',
+      method: 'basic',
+      ai: 'login_required',
+    });
+    const start = h.requests.find((request) => request.path === '/api/jobs');
+    expect(start?.body).toEqual({
+      kind: 'photo.clean',
+      wallId: 'w1',
+      input: { wallId: 'w1', photoId: 'p-1', method: 'auto', refresh: false },
+    });
+  });
+
+  test('a failed job is a tool failure, a wall without photos has nothing to clean', async () => {
+    const failed = await run(cleaning(['failed']), 'wall_clean_background', {
+      photoId: 'p-1',
+      method: 'basic',
+    });
+    expect(resultText(failed)).toContain('Cleaning failed');
+    const empty = await run(harness({}), 'wall_clean_background', {});
+    expect(resultText(empty)).toContain('no photo');
+  });
+});
+
 describe('wall_request_input', () => {
   const dimension = {
     request: {
@@ -466,7 +538,11 @@ describe('wall_undo and wall_bank_search', () => {
   test('undoing a batch that removes more than the threshold asks first; declining undoes nothing', async () => {
     const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
     const history = [
-      historyOp(1, { type: 'batch', ops: ids.map(addItem) }, { type: 'batch', ops: ids.map(removeItem) }),
+      historyOp(
+        1,
+        { type: 'batch', ops: ids.map(addItem) },
+        { type: 'batch', ops: ids.map(removeItem) },
+      ),
     ];
     const reply = (request: Recorded) =>
       request.path.startsWith('/api/walls/w1/history')

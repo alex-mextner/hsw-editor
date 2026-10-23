@@ -5,7 +5,7 @@ import { notify } from '@/features/notices/notices.ts';
 import { localeStore, t } from '@/i18n/index.ts';
 import { toolClassName } from '@/wall/attachReasons.ts';
 import { placeToolAt, type PlaceToolResult } from '@/wall/placeTool.ts';
-import { discardGhost, type ToolGhost } from './visionGhosts.ts';
+import { discardGhost, ghostPose, type ToolGhost } from './visionGhosts.ts';
 
 /** What accepting a ghost came to: the placement outcomes, or that its spot is not on the wall plane. */
 export type AcceptResult = PlaceToolResult | 'off-plane';
@@ -32,13 +32,14 @@ function added(result: AcceptResult): boolean {
 
 /** Adds the ghost's tool and drops the ghost; the photo point is mapped through the calibration onto the wall. */
 function addGhostTool(ghost: ToolGhost, name: string, map: PhotoMap): AcceptResult {
-  const at = map.pxToWall([ghost.centrePx[0], ghost.centrePx[1]]);
-  if (at === null) return 'off-plane';
+  const pose = ghostPose(ghost, (px) => map.pxToWall([px[0], px[1]]));
+  if (pose === null) return 'off-plane';
   const result = placeToolAt({
     toolClass: ghost.toolClass,
     label: name,
     dimsMm: ghost.dimsMm,
-    at: { x: at[0], y: at[1] },
+    at: { x: pose.x, y: pose.y },
+    rotZ: pose.rotZ,
   });
   if (added(result)) discardGhost(ghost.id);
   return result;

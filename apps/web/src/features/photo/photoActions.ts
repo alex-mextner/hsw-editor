@@ -4,6 +4,7 @@ import { api } from '@/api/http.ts';
 import { notify } from '@/features/notices/notices.ts';
 import { t } from '@/i18n/index.ts';
 import { sessionStore } from '@/wall/session.ts';
+import { autoCleanStore, forgetAsked, planClean, runClean } from './cleanBackground.ts';
 import { findToolsStore, runFindTools } from './findTools.ts';
 import { exportComposite, exportFileName } from './photoExport.ts';
 import { choosePhotoFile } from './photoImport.ts';
@@ -32,7 +33,7 @@ export function togglePhotoMode(): void {
     leavePhotoMode();
     return;
   }
-  const first = sessionStore.get()?.wall?.photos[0];
+  const first = sessionStore.get()?.wall?.photos.find((photo) => photo.cleanOf === undefined);
   if (first) showPhoto(first);
   else choosePhotoFile();
 }
@@ -41,12 +42,21 @@ function shownPhoto(): {
   readonly wallId: string;
   readonly wallName: string;
   readonly photo: Photo;
+  /** Its cleaned variant, when one has been made. */
+  readonly variant: Photo | null;
 } | null {
   const session = sessionStore.get();
   const { photoId } = photoStore.get();
   const wall = session?.wall;
   const photo = wall?.photos.find((entry) => entry.id === photoId);
-  return wall && photo ? { wallId: wall.id, wallName: wall.name, photo } : null;
+  return wall && photo
+    ? {
+        wallId: wall.id,
+        wallName: wall.name,
+        photo,
+        variant: wall.photos.find((entry) => entry.cleanOf === photo.id) ?? null,
+      }
+    : null;
 }
 
 /** Downloads the photo with the HSW overlay and the banner as one PNG. */
@@ -54,9 +64,11 @@ export async function exportPhotoPng(): Promise<void> {
   const shown = shownPhoto();
   if (!shown || photoStore.get().calibrating) return;
   try {
-    const { overlayOpacity, photoHidden } = photoStore.get();
+    const { overlayOpacity, photoHidden, showCleaned } = photoStore.get();
+    // The cleaned wall is what the layout is meant to hang on; the picture shows what the viewport shows.
+    const variant = shown.variant !== null && showCleaned ? shown.variant : shown.photo;
     const blob = await exportComposite({
-      photoUrl: api.photoUrl(shown.wallId, shown.photo.id),
+      photoUrl: api.photoUrl(shown.wallId, variant.id),
       image: { width: shown.photo.width, height: shown.photo.height },
       overlayOpacity,
       photoHidden,
@@ -107,3 +119,21 @@ export function calibrateShownPhoto(): void {
 }
 
 export { togglePhotoHidden, toggleSplit };
+
+/** Makes the cleaned background again, also when the footprint has not moved (the AI is asked once more). */
+export function cleanPhotoBackground(): void {
+  const { photoId } = photoStore.get();
+  const wall = sessionStore.get()?.wall;
+  const plan = wall && photoId !== null ? planClean(wall, photoId) : null;
+  if (!wall || photoId === null || plan === null) {
+    notify('info', t('photo.clean.needsCalibration'));
+    return;
+  }
+  forgetAsked(photoId);
+  void runClean(wall.id, photoId, plan.signature, { refresh: true });
+}
+
+/** The "auto-clean background" setting on / off. */
+export function toggleAutoClean(): void {
+  autoCleanStore.set(!autoCleanStore.get());
+}

@@ -8,6 +8,7 @@ import { useI18n } from '@/i18n/index.ts';
 import { useStore } from '@/state/react.ts';
 import { CalibrationWizard } from '@/widgets/CalibrationWizard.tsx';
 import { firstImage, importPhotoFile, importStore } from './photoImport.ts';
+import { useAutoClean } from './useAutoClean.ts';
 import { photoViewState } from '@/scene/photoView.ts';
 import { finishCalibration, leavePhotoMode, photoStore, startCalibration } from '@/state/photo.ts';
 
@@ -77,6 +78,7 @@ function usePhotoIntake(): boolean {
 export function PhotoModeLayer({ wall }: { readonly wall: Wall }) {
   const { t } = useI18n();
   const dragging = usePhotoIntake();
+  useAutoClean(wall);
   const photo = useStore(photoStore);
   const importing = useStore(importStore);
   const target = wall.photos.find((entry) => entry.id === photo.photoId);

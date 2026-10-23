@@ -84,6 +84,8 @@ export interface ToolDraftExtras {
   readonly customToolId?: string;
   /** Id of the generator class (`screwdriver`, `pliers-combination`) the tool was added from; it draws the tool on the wall. */
   readonly generatorClass?: string;
+  /** Turn about the tool's origin, degrees (default 0: tip up). */
+  readonly rotZ?: number;
 }
 
 /** `source.by` of the model reference: the library tool, the generator class or a plain preset (see `generatorRef`). */
@@ -117,7 +119,7 @@ export function toolDraftOps(
     modelRefId: model.id,
     toolClass: toolClassId,
     label,
-    pose: { x: position.x, y: position.y, z: 40, rotX: 0, rotY: 0, rotZ: 0 },
+    pose: { x: position.x, y: position.y, z: 40, rotX: 0, rotY: 0, rotZ: extras.rotZ ?? 0 },
     params: { ...extras.params },
     source: { type: 'manual' },
     locked: false,

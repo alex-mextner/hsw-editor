@@ -1,0 +1,334 @@
+/**
+ * `photo.clean`: makes the cleaned variant of a calibrated wall photo. The board footprint (calibration -> polygon,
+ * plus a margin) is the mask. A basic local fill is produced first and stored at once; then, when an image backend of
+ * `draw` is ready, the model's edit replaces it. The original photo is never touched: a variant is a second photo of
+ * the wall (`cleanOf`, `view: 'clean'`), added and replaced with ordinary, undoable ops.
+ */
+import { mkdir } from 'node:fs/promises';
+import { join } from 'node:path';
+import { type DrawBackendId, type DrawRequest, type DrawResult } from '@hsw-editor/draw';
+import { type Actor, type Photo, type Wall, newId } from '@hsw-editor/core';
+import {
+  CLEAN_MARGIN_MM,
+  boardExtent,
+  boardFootprintPx,
+  fillWall,
+  footprintDrift,
+  footprintSignature,
+  materialDrift,
+  photoMapFromCalibration,
+  rasterisePolygon,
+} from '@hsw-editor/overlay';
+import { z } from 'zod';
+import { type JobContext, type JobRegistry, defaultJobRegistry, registerJob } from '../jobs.ts';
+import { compositeEdited, outsideDrift } from './composite.ts';
+import {
+  type Pixels,
+  canvasPng,
+  encodeJpeg,
+  placeOnCanvas,
+  readPixels,
+  uncanvas,
+} from './pixels.ts';
+
+export const PHOTO_CLEAN_KIND = 'photo.clean';
+export const CLEAN_ACTOR: Actor = { kind: 'agent', name: 'photo-clean' };
+
+/** The model must leave the unmasked part alone: a mean per-channel difference above this means it redrew the photo. */
+export const MAX_OUTSIDE_DRIFT = 14;
+
+export const PhotoCleanInputSchema = z.strictObject({
+  wallId: z.string().min(1),
+  photoId: z.string().min(1),
+  /** `auto`: basic first, then the AI edit when a backend is ready. `basic`: the local fill only. */
+  method: z.enum(['auto', 'basic']).default('auto'),
+  /** Make the variant again even when the footprint has not moved. */
+  refresh: z.boolean().default(false),
+});
+export type PhotoCleanInput = z.infer<typeof PhotoCleanInputSchema>;
+
+/** What the AI step came to; the editor shows a quiet note for everything but `done`. */
+export type AiState =
+  | 'done'
+  | 'not-asked'
+  | 'login_required'
+  | 'quota_exhausted'
+  | 'unavailable'
+  | 'rejected'
+  | 'failed'
+  | 'disabled';
+
+export interface PhotoCleanResult {
+  readonly status: 'ok' | 'current' | 'needs_calibration' | 'no_footprint' | 'photo_not_found';
+  /** The variant photo now shown for the original, when there is one. */
+  readonly variantId: string | null;
+  readonly method: 'basic' | 'ai' | null;
+  readonly ai: AiState;
+  readonly aiMessage?: string;
+}
+
+/** The slice of the draw runtime the clean needs; tests pass a fake. */
+export interface CleanDraw {
+  /** Backends to try, in order (empty: the user turned the AI off or pinned `manual`). */
+  order(): Promise<readonly DrawBackendId[]>;
+  run(req: DrawRequest, signal: AbortSignal, forced: DrawBackendId): Promise<DrawResult>;
+}
+
+export interface PhotoCleanDeps {
+  readonly wallDir: (wallId: string) => string;
+  readonly draw: CleanDraw | null;
+}
+
+const EDIT_PROMPT = [
+  'Image 1 is a photo of a wall. Image 2 is a black-and-white mask with the same framing: the WHITE area marks the part of the wall to clean.',
+  'Edit image 1: inside the white area remove everything that is there (old boards, perforated panels, hooks, tools, screws, holes, stains, cables, clutter) and replace it with a clean, empty wall surface that continues the wall around it: the same colour, paint texture, lighting gradient and perspective.',
+  'Outside the white area change nothing: keep every pixel, object and edge exactly as in image 1. The grey bars at the edges are padding: keep them as they are.',
+  'Add nothing new: no text, no borders, no objects. Output only the edited photo, with the same framing and aspect ratio as image 1.',
+].join(' ');
+
+function variantOf(wall: Wall, originalId: string): Photo | undefined {
+  return wall.photos.find((photo) => photo.cleanOf === originalId);
+}
+
+async function storeVariant(
+  ctx: JobContext,
+  wallId: string,
+  original: Photo,
+  previous: Photo | undefined,
+  pixels: Pixels,
+  backend: string,
+  footprint: string,
+): Promise<Photo> {
+  const bytes = await encodeJpeg(pixels);
+  const file = await ctx.walls.addAsset(wallId, {
+    dir: 'photos/derived',
+    ext: 'jpg',
+    bytes,
+    prefix: 'clean',
+  });
+  const variant: Photo = {
+    id: newId('p'),
+    file,
+    mime: 'image/jpeg',
+    width: pixels.width,
+    height: pixels.height,
+    name: `${original.name ?? original.id} (clean)`,
+    origin: 'generated',
+    view: 'clean',
+    backend,
+    cleanOf: original.id,
+    cleanFootprint: footprint,
+  };
+  await ctx.walls.apply(wallId, {
+    ops: [
+      ...(previous ? [{ type: 'removePhoto' as const, id: previous.id }] : []),
+      { type: 'addPhoto' as const, photo: variant },
+    ],
+    actor: CLEAN_ACTOR,
+    label: `clean background (${backend})`,
+  });
+  return variant;
+}
+
+function failureState(code: string): AiState {
+  if (code === 'login_required') return 'login_required';
+  if (code === 'quota_exhausted') return 'quota_exhausted';
+  if (code === 'backend_unavailable') return 'unavailable';
+  return 'failed';
+}
+
+interface AiOutcome {
+  readonly state: AiState;
+  readonly message?: string;
+  readonly pixels?: Pixels;
+  readonly backend?: DrawBackendId;
+}
+
+/** Asks the first ready draw backend to edit the photo, and puts only the masked area of its answer back. */
+async function aiClean(
+  deps: PhotoCleanDeps,
+  ctx: JobContext,
+  original: Pixels,
+  mask: Uint8Array,
+  workDir: string,
+): Promise<AiOutcome> {
+  if (deps.draw === null) return { state: 'disabled', message: 'image backends are not set up' };
+  const order = await deps.draw.order();
+  if (order.length === 0)
+    return { state: 'disabled', message: 'the AI clean is switched off in the draw settings' };
+  const placement = placeOnCanvas(original.width, original.height);
+  await mkdir(workDir, { recursive: true });
+  const photoPath = join(workDir, 'photo.png');
+  const maskPath = join(workDir, 'mask.png');
+  const maskBytes = new Uint8Array(mask.length);
+  for (let i = 0; i < mask.length; i += 1) maskBytes[i] = mask[i] ? 255 : 0;
+  await Bun.write(photoPath, await canvasPng(original, placement));
+  await Bun.write(
+    maskPath,
+    await canvasPng(
+      { width: original.width, height: original.height, data: maskBytes, channels: 1 },
+      placement,
+    ),
+  );
+  const request: DrawRequest = {
+    version: 1,
+    prompt: EDIT_PROMPT,
+    refs: [
+      { path: photoPath, role: 'subject' },
+      { path: maskPath, role: 'view' },
+    ],
+    n: 1,
+    size: placement.size,
+    outDir: join(workDir, 'out'),
+    tag: ctx.id,
+  };
+  let last: AiOutcome = { state: 'unavailable', message: 'no image backend answered' };
+  for (const backend of order) {
+    if (ctx.signal.aborted) break;
+    const result = await deps.draw.run(request, ctx.signal, backend);
+    if (result.ok) {
+      const image = result.images[0];
+      if (!image) {
+        last = { state: 'failed', message: 'the backend returned no image' };
+        continue;
+      }
+      const edited = await uncanvas(image.path, placement, original.width, original.height);
+      const drift = outsideDrift(original.data, edited.data, original.width, original.height, mask);
+      if (drift > MAX_OUTSIDE_DRIFT) {
+        return {
+          state: 'rejected',
+          message: `the model redrew the photo (off by ${drift.toFixed(0)} levels outside the area)`,
+        };
+      }
+      const featherPx = Math.max(2, 0.004 * Math.max(original.width, original.height));
+      const data = compositeEdited(
+        original.data,
+        edited.data,
+        original.width,
+        original.height,
+        mask,
+        featherPx,
+      );
+      return {
+        state: 'done',
+        pixels: { width: original.width, height: original.height, data },
+        backend: result.backend,
+      };
+    }
+    last = { state: failureState(result.error.code), message: result.error.message };
+    // Only an unavailable or logged-out backend hands over to the next one; quota and challenge stop the chain.
+    if (result.error.code !== 'login_required' && result.error.code !== 'backend_unavailable')
+      break;
+  }
+  return last;
+}
+
+export async function runPhotoClean(
+  deps: PhotoCleanDeps,
+  input: PhotoCleanInput,
+  ctx: JobContext,
+): Promise<PhotoCleanResult> {
+  const none = (status: PhotoCleanResult['status']): PhotoCleanResult => ({
+    status,
+    variantId: null,
+    method: null,
+    ai: 'not-asked',
+  });
+  const { wall } = await ctx.walls.get(input.wallId);
+  const asked = wall.photos.find((photo) => photo.id === input.photoId);
+  // A variant stands for its original: asking to clean the clean one cleans the photo it came from.
+  const original =
+    asked?.cleanOf === undefined ? asked : wall.photos.find((photo) => photo.id === asked.cleanOf);
+  if (original === undefined) return none('photo_not_found');
+  if (original.calibration === undefined) return none('needs_calibration');
+  const image = { width: original.width, height: original.height };
+  const extent = boardExtent(wall.board);
+  const map = photoMapFromCalibration(original.calibration, image, extent);
+  const polygon = map === null ? null : boardFootprintPx(map, extent, CLEAN_MARGIN_MM);
+  if (polygon === null) return none('no_footprint');
+  const signature = footprintSignature(polygon, image);
+
+  const existing = variantOf(wall, original.id);
+  const upToDate =
+    existing !== undefined &&
+    !input.refresh &&
+    footprintDrift(existing.cleanFootprint ?? '', polygon, image) <= materialDrift(image);
+  const wantsAi = input.method === 'auto';
+  if (upToDate && (!wantsAi || existing.backend !== 'basic')) {
+    return {
+      status: 'current',
+      variantId: existing.id,
+      method: existing.backend === 'basic' ? 'basic' : 'ai',
+      ai: existing.backend === 'basic' ? 'not-asked' : 'done',
+    };
+  }
+
+  ctx.progress({ fraction: 0.05, message: 'reading the photo…' });
+  const wallDir = deps.wallDir(input.wallId);
+  const source = await readPixels(join(wallDir, original.file));
+  const mask = rasterisePolygon(polygon, source.width, source.height);
+
+  let variant = existing;
+  if (!upToDate) {
+    ctx.progress({ fraction: 0.2, message: 'cleaning the wall (basic)…' });
+    const filled = fillWall(source.data, source.width, source.height, 3, mask);
+    variant = await storeVariant(
+      ctx,
+      input.wallId,
+      original,
+      existing,
+      {
+        width: source.width,
+        height: source.height,
+        data: new Uint8Array(filled.buffer, filled.byteOffset, filled.length),
+      },
+      'basic',
+      signature,
+    );
+  }
+  if (variant === undefined) return none('no_footprint');
+  if (!wantsAi) {
+    return { status: 'ok', variantId: variant.id, method: 'basic', ai: 'not-asked' };
+  }
+
+  ctx.progress({ fraction: 0.5, message: 'asking the image model…' });
+  const outcome = await aiClean(deps, ctx, source, mask, join(ctx.home, 'photo-clean', ctx.id));
+  if (outcome.state === 'done' && outcome.pixels !== undefined && outcome.backend !== undefined) {
+    const upgraded = await storeVariant(
+      ctx,
+      input.wallId,
+      original,
+      variant,
+      outcome.pixels,
+      outcome.backend,
+      signature,
+    );
+    return { status: 'ok', variantId: upgraded.id, method: 'ai', ai: 'done' };
+  }
+  return {
+    status: 'ok',
+    variantId: variant.id,
+    method: 'basic',
+    ai: outcome.state,
+    ...(outcome.message === undefined ? {} : { aiMessage: outcome.message }),
+  };
+}
+
+export function registerPhotoCleanJob(
+  deps: PhotoCleanDeps,
+  registry: JobRegistry = defaultJobRegistry,
+): void {
+  registerJob(
+    {
+      kind: PHOTO_CLEAN_KIND,
+      inputSchema: PhotoCleanInputSchema,
+      // The AI step waits on the human-paced draw queue; the basic step is quick. One run at a time per kind.
+      async run(input, ctx) {
+        const result = await runPhotoClean(deps, input, ctx);
+        ctx.progress({ fraction: 1, message: result.method ?? result.status });
+        return JSON.parse(JSON.stringify(result));
+      },
+    },
+    registry,
+  );
+}

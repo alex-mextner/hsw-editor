@@ -34,6 +34,8 @@ export interface PhotoModeState {
   readonly align: AlignMode | null;
   /** Outline and shading of the white web so it shows on a white wall: auto from the photo, or forced on / off. */
   readonly webContrast: WebContrastMode;
+  /** Show the cleaned variant of the photo (the wall without the old board) when there is one. */
+  readonly showCleaned: boolean;
   /** The calibration while a board drag is in progress; committed as one `setCalibration` on release. */
   readonly draft: Calibration | null;
 }
@@ -48,6 +50,7 @@ const INITIAL: PhotoModeState = {
   split: null,
   align: null,
   webContrast: 'auto',
+  showCleaned: true,
   draft: null,
 };
 
@@ -107,4 +110,9 @@ export function toggleAlign(mode: AlignMode): void {
 /** Cycles the web outline auto -> on -> off. */
 export function cycleWebContrast(): void {
   patchPhoto({ webContrast: nextWebContrastMode(photoStore.get().webContrast) });
+}
+
+/** Cleaned / original background. */
+export function toggleShowCleaned(): void {
+  patchPhoto({ showCleaned: !photoStore.get().showCleaned });
 }

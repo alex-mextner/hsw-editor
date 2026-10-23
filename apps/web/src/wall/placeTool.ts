@@ -18,7 +18,10 @@ export interface PlaceToolRequest {
   readonly toolClass: string;
   readonly label: string;
   readonly dimsMm: Dims3;
+  /** Where the tool's butt goes (the origin of its frame: +Y runs along it, towards the tip). */
   readonly at: { readonly x: number; readonly y: number };
+  /** Turn about the butt, degrees; 0 = tip up. */
+  readonly rotZ?: number;
 }
 
 /**
@@ -55,7 +58,9 @@ export function placeToolAt(request: PlaceToolRequest): PlaceToolResult {
   const bank = bankStore.get();
   if (!wall) return 'no-wall';
   if (bank.status !== 'ready') return 'bank-not-ready';
-  const { item, ops } = toolDraftOps(request.toolClass, request.label, request.at, request.dimsMm);
+  const { item, ops } = toolDraftOps(request.toolClass, request.label, request.at, request.dimsMm, {
+    ...(request.rotZ === undefined ? {} : { rotZ: request.rotZ }),
+  });
   const setup: readonly LeafOp[] = ops.filter((op) => op.type === 'addModelRef');
   const add: LeafOp = { type: 'addItem', item };
   let virtual: Wall;
@@ -66,6 +71,8 @@ export function placeToolAt(request: PlaceToolRequest): PlaceToolResult {
     throw error;
   }
   const { resolution } = planToolDrag(virtual, bank.byId, item, request.at, { x: 0, y: 0 }, false);
+  // Dropped there by hand, a spot inside a holder that cannot take the tool is refused: so is accepting a ghost.
+  if (resolution.kind === 'refuse') return 'refused';
   const attach = resolution.kind === 'attach';
   const placed = attach ? planAddHung(item, resolution.target) : add;
   if (!submitOps([...setup, placed], attach ? 'add-and-hang' : 'add-tool').ok) return 'refused';

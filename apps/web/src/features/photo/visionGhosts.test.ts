@@ -4,6 +4,7 @@ import {
   discardGhost,
   ghostStore,
   parseToolGhosts,
+  ghostPose,
   scaleGhosts,
   setGhosts,
   splitByBoard,
@@ -51,6 +52,7 @@ describe('parseToolGhosts', () => {
           [100, 360],
         ],
         centrePx: [120, 280],
+        axisUnit: [0, 1],
         dimsMm: { x: 21, y: 187, z: 20 },
         measured: true,
       },
@@ -118,6 +120,35 @@ describe('ghost store', () => {
     expect(ghostStore.get().ghosts.map((ghost) => ghost.id)).toEqual([2]);
     discardAllGhosts();
     expect(ghostStore.get()).toEqual({ photoId: null, ghosts: [] });
+  });
+});
+
+describe('ghostPose', () => {
+  // 1 px = 1 mm, wall y up while photo y is down.
+  const toWall = (px: readonly [number, number]): readonly [number, number] => [
+    px[0],
+    1000 - px[1],
+  ];
+  const base = { centrePx: [200, 300] as const, dimsMm: { x: 30, y: 200, z: 20 } };
+
+  test('a tool lying along the photo x axis is turned a quarter, its butt half a length behind the centre', () => {
+    const pose = ghostPose({ ...base, axisUnit: [1, 0] }, toWall);
+    expect(pose?.rotZ).toBeCloseTo(-90, 6);
+    expect(pose?.x).toBeCloseTo(200 - 100, 6);
+    expect(pose?.y).toBeCloseTo(700, 6);
+  });
+
+  test('a tool pointing up the photo stands upright with the butt below the centre', () => {
+    // Up in the photo is -y, so the axis from the wide end to the narrow end is (0, -1).
+    const pose = ghostPose({ ...base, axisUnit: [0, -1] }, toWall);
+    expect(pose?.rotZ).toBeCloseTo(0, 6);
+    expect(pose?.x).toBeCloseTo(200, 6);
+    expect(pose?.y).toBeCloseTo(700 - 100, 6);
+  });
+
+  test('without an axis the tool stands upright on the centre; off the wall plane there is no pose', () => {
+    expect(ghostPose({ ...base, axisUnit: null }, toWall)).toEqual({ x: 200, y: 600, rotZ: 0 });
+    expect(ghostPose({ ...base, axisUnit: [1, 0] }, () => null)).toBeNull();
   });
 });
 

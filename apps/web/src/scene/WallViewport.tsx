@@ -36,7 +36,7 @@ import { PhotoBoard } from './PhotoBoard.tsx';
 import { PhotoCameraRig } from './PhotoCameraRig.tsx';
 import { wallExtent } from './wallExtent.ts';
 import { PhotoFrame } from './PhotoStage.tsx';
-import { photoViewState } from './photoView.ts';
+import { photoViewState, shownPhoto } from './photoView.ts';
 import { SelectionFrames } from './SelectionFrames.tsx';
 import { boardSizeMm } from '@hsw-editor/core';
 import { DimensionLayer } from '@/widgets/DimensionLayer.tsx';
@@ -189,7 +189,7 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
           {photoView ? (
             <PhotoBoard
               board={wall.board}
-              photoUrl={api.photoUrl(wall.id, photoView.photo.id)}
+              photoUrl={api.photoUrl(wall.id, shownPhoto(photoView, photoMode.showCleaned).id)}
               image={photoView.image}
               calibration={photoView.photo.calibration ?? photoView.calibration}
             />

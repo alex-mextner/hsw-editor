@@ -75,7 +75,8 @@ export function PhotoAlign({ wall, view }: { readonly wall: Wall; readonly view:
     gesture.current = null;
     const { draft } = photoStore.get();
     patchPhoto({ draft: null });
-    if (commit && draft) {
+    // A snapped drag shorter than half a cell lands on the stored calibration: nothing to record.
+    if (commit && draft && JSON.stringify(draft) !== JSON.stringify(view.photo.calibration)) {
       submitOps(
         [{ type: 'setCalibration', photoId: view.photo.id, calibration: draft }],
         'align-board',

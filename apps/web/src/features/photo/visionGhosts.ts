@@ -15,7 +15,7 @@ const ObjectSchema = z.looseObject({
   bboxXywh: z.tuple([z.number(), z.number(), z.number(), z.number()]),
   /** Simplified outer contour of the mask, original photo pixels (y down). */
   polygon: z.array(Point).optional(),
-  axis: z.looseObject({ centerPx: Point.optional() }).optional(),
+  axis: z.looseObject({ centerPx: Point.optional(), unit: Point.optional() }).optional(),
   class: z.looseObject({
     toolClass: z.string().nullable(),
     label: z.string().nullable().optional(),
@@ -46,6 +46,8 @@ export interface ToolGhost {
   readonly polygonPx: readonly (readonly [number, number])[];
   /** Where the object is in the photo: the middle of its principal axis, else of its box. */
   readonly centrePx: readonly [number, number];
+  /** Direction of the tool's long axis in the photo, wide end towards narrow end (a unit vector, y down), or null. */
+  readonly axisUnit: readonly [number, number] | null;
   /** Measured width / length / thickness as the tool item's box; the class preset when nothing was measured. */
   readonly dimsMm: Dims3;
   readonly measured: boolean;
@@ -112,6 +114,7 @@ export function parseToolGhosts(result: unknown): ParsedGhosts | null {
       needsConfirmation: object.data.status !== 'ok',
       polygonPx: polygon !== undefined && polygon.length >= 3 ? polygon : boxOutline(bboxXywh),
       centrePx: axis?.centerPx ?? [x + w / 2, y + h / 2],
+      axisUnit: axis?.unit ?? null,
       dimsMm: dims,
       measured,
     });
@@ -165,6 +168,41 @@ export function scaleGhosts(
     polygonPx: ghost.polygonPx.map(([x, y]) => [x * sx, y * sy] as const),
     centrePx: [ghost.centrePx[0] * sx, ghost.centrePx[1] * sy],
   }));
+}
+
+/** Where a tool of a ghost's size goes on the wall, in the tool's own frame: the butt, and the turn. */
+export interface GhostPose {
+  readonly x: number;
+  readonly y: number;
+  readonly rotZ: number;
+}
+
+/**
+ * The pose that lays the tool's box over the ghost: its length along the detected axis, its middle at the detected
+ * centre (the tool frame has its origin at the butt and +Y towards the tip). Null when the centre is not on the
+ * wall plane. Without an axis the tool stands upright on the centre.
+ */
+export function ghostPose(
+  ghost: Pick<ToolGhost, 'centrePx' | 'axisUnit' | 'dimsMm'>,
+  toWall: (px: readonly [number, number]) => readonly [number, number] | null,
+): GhostPose | null {
+  const centre = toWall(ghost.centrePx);
+  if (centre === null) return null;
+  if (ghost.axisUnit === null) return { x: centre[0], y: centre[1] - ghost.dimsMm.y / 2, rotZ: 0 };
+  const [ux, uy] = ghost.axisUnit;
+  const ahead = toWall([ghost.centrePx[0] + ux * 10, ghost.centrePx[1] + uy * 10]);
+  if (ahead === null) return { x: centre[0], y: centre[1] - ghost.dimsMm.y / 2, rotZ: 0 };
+  const length = Math.hypot(ahead[0] - centre[0], ahead[1] - centre[1]);
+  if (length === 0) return { x: centre[0], y: centre[1] - ghost.dimsMm.y / 2, rotZ: 0 };
+  const dx = (ahead[0] - centre[0]) / length;
+  const dy = (ahead[1] - centre[1]) / length;
+  const half = ghost.dimsMm.y / 2;
+  // +Y turned by rotZ points at (-sin, cos): solve for the direction (dx, dy).
+  return {
+    x: centre[0] - dx * half,
+    y: centre[1] - dy * half,
+    rotZ: (Math.atan2(-dx, dy) * 180) / Math.PI,
+  };
 }
 
 export interface BoardSplit {

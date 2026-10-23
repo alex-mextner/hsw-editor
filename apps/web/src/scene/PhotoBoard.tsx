@@ -22,6 +22,8 @@ function useBackdropLuma(
   calibration: Calibration,
 ): number | null {
   const hidden = useStore(photoStore).photoHidden;
+  // The size, not the `image` object: that is rebuilt on every render of the viewport.
+  const { width, height } = image;
   const [measured, setMeasured] = useState<{ url: string; luma: number | null } | null>(null);
   useEffect(() => {
     if (hidden) return undefined;
@@ -29,7 +31,7 @@ function useBackdropLuma(
     const picture = new Image();
     picture.onload = () => {
       if (!live) return;
-      const map = photoMapFromCalibration(calibration, image, boardExtent(board));
+      const map = photoMapFromCalibration(calibration, { width, height }, boardExtent(board));
       setMeasured({ url: photoUrl, luma: map ? measureBackdropLuma(picture, board, map) : null });
     };
     picture.src = photoUrl;
@@ -37,7 +39,7 @@ function useBackdropLuma(
       live = false;
       picture.onload = null;
     };
-  }, [photoUrl, image, board, calibration, hidden]);
+  }, [photoUrl, width, height, board, calibration, hidden]);
   // A number measured on another photo, or on a photo that is hidden now, does not count.
   return hidden || measured?.url !== photoUrl ? null : measured.luma;
 }

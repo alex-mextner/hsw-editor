@@ -75,6 +75,7 @@ export function PhotoFrame({
   const photo = useStore(photoStore);
   const box: Box | null = view && size ? fitBox(size, view.image) : null;
   const showPhoto = view !== null && !photo.photoHidden;
+  const showCleaned = photo.showCleaned && view?.clean != null;
   const overlayStyle =
     view === null
       ? undefined
@@ -91,13 +92,33 @@ export function PhotoFrame({
         style={box ?? { inset: 0 }}
       >
         {showPhoto ? (
-          <img
-            src={api.photoUrl(wall.id, view.photo.id)}
-            alt=""
-            draggable={false}
-            onError={() => notify('error', t('calibration.photo.error'))}
-            className="absolute inset-0 size-full max-w-none select-none"
-          />
+          <>
+            {/* Under the divider the original shows on the left and the cleaned wall on the right. */}
+            {showCleaned && photo.split === null ? null : (
+              <img
+                src={api.photoUrl(wall.id, view.photo.id)}
+                alt=""
+                draggable={false}
+                onError={() => notify('error', t('calibration.photo.error'))}
+                className="absolute inset-0 size-full max-w-none select-none"
+              />
+            )}
+            {showCleaned && view.clean !== null ? (
+              <img
+                src={api.photoUrl(wall.id, view.clean.id)}
+                alt=""
+                data-clean-photo={view.clean.id}
+                draggable={false}
+                onError={() => notify('error', t('calibration.photo.error'))}
+                style={
+                  photo.split === null
+                    ? undefined
+                    : { clipPath: `inset(0 0 0 ${photo.split * 100}%)` }
+                }
+                className="absolute inset-0 size-full max-w-none select-none"
+              />
+            ) : null}
+          </>
         ) : null}
         <div className="absolute inset-0" style={overlayStyle}>
           {children}

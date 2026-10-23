@@ -17,6 +17,8 @@ export function WallPanel({ wall }: { readonly wall: Wall }) {
   const size = boardSizeMm(wall.board);
   const warnings = useStore(sessionStore)?.warnings ?? [];
   const photoMode = useStore(photoStore);
+  // A cleaned variant is a second picture of the same photo, not a photo of its own.
+  const originals = wall.photos.filter((photo) => photo.cleanOf === undefined);
   const tools = wall.items.filter((item) => item.kind === 'tool').length;
   const holders = wall.items.filter(
     (item) => item.kind === 'holder' || item.kind === 'board-part',
@@ -49,11 +51,11 @@ export function WallPanel({ wall }: { readonly wall: Wall }) {
         <h3 className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
           {t('wallpanel.photos')}
         </h3>
-        {wall.photos.length === 0 ? (
+        {originals.length === 0 ? (
           <p className="text-xs text-muted-foreground">{t('wallpanel.noPhotos')}</p>
         ) : (
           <ul className="grid gap-2">
-            {wall.photos.map((photo) => {
+            {originals.map((photo) => {
               const shown = photoMode.photoId === photo.id;
               return (
                 <li

@@ -22,6 +22,12 @@ needs an entry here first.
   with Coulomb contacts and a bump/pull margin (levitating, penetrates, falls, tips, slides off, swings, needs retention,
   overloaded); `RemovalProbe` sweeps the extraction path with manifold-3d (free, needs tilt, needs two hands, blocked, clearance);
   `rankHolders` orders holder suggestions by fit, stability and removal convenience. Tools may overhang the board edge.
+- Photo mode (#160): the white web gets a hairline outline and a shaded plate on bright walls (auto from the photo, or forced on/off); typed sizes on
+  holders that come in fixed sizes snap to the nearest bank variant, say what was asked and what it became, and offer the neighbouring sizes as chips;
+  "Find tools" draws the recognised tools as ghosts (outline, class, confidence) to accept - hung on a suggested holder - or discard; a grid-calibrated
+  board moves in whole cells; the grid detector runs as `vision.calibrate`. `vision.photo_to_objects` accepts the sidecar's `needsViews` shape.
+- Automatic background clean (#168): `photo.clean` job, cleaned photo variants (`Photo.cleanOf`), `fillWall` in `@hsw-editor/overlay`, the
+  `wall_clean_background` omp tool, the "auto-clean background" setting, a before/after toggle and the `/api/draw/*` routes ([docs/api.md](docs/api.md)).
 - Tool Library (`apps/web/src/features/tools`, [docs/tools.md](docs/tools.md#ui-tool-library-and-add-from-photo), #46): the Tools tab lists
   built-in classes and the user's tools with generated thumbnails, grouped by type, searchable in ru/en and filterable by tag;
   click or drag a tool onto the wall; detail page with live 3D preview, parameters, materials and the holding interface; the

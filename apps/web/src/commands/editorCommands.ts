@@ -36,6 +36,8 @@ export interface EditorActions {
   readonly calibratePhoto: () => void;
   readonly togglePhotoVisible: () => void;
   readonly togglePhotoSplit: () => void;
+  readonly cleanPhotoBackground: () => void;
+  readonly toggleAutoClean: () => void;
   readonly togglePanel: (panel: PanelKey) => void;
   /** Opens the panel and moves keyboard focus into it. */
   readonly focusPanel: (panel: PanelKey) => void;
@@ -365,6 +367,24 @@ export function createEditorCommands(actions: EditorActions): readonly Command[]
       when: `hasWall && ${FREE}`,
       mutates: false,
       handler: effect(actions.togglePhotoSplit),
+    }),
+    defineCommand({
+      id: 'photo.cleanBackground',
+      title: msg('photo.cmd.cleanBackground'),
+      keywords: ['clean', 'erase', 'background', 'inpaint', 'очистить', 'фон', 'стена'],
+      group: 'view',
+      when: `hasWall && ${FREE}`,
+      mutates: true,
+      handler: effect(actions.cleanPhotoBackground),
+    }),
+    defineCommand({
+      id: 'photo.autoClean',
+      title: msg('photo.cmd.autoClean'),
+      keywords: ['clean', 'auto', 'background', 'авто', 'фон', 'очистка'],
+      group: 'view',
+      when: FREE,
+      mutates: false,
+      handler: effect(actions.toggleAutoClean),
     }),
     ...PANELS.map(({ panel, key }) =>
       defineCommand({

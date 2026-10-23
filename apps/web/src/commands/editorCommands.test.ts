@@ -50,6 +50,8 @@ function recordingActions(): { actions: EditorActions; calls: string[] } {
     calibratePhoto: record('calibratePhoto'),
     togglePhotoVisible: record('togglePhotoVisible'),
     togglePhotoSplit: record('togglePhotoSplit'),
+    cleanPhotoBackground: record('cleanPhotoBackground'),
+    toggleAutoClean: record('toggleAutoClean'),
     togglePanel: record('panel'),
     focusPanel: record('focusPanel'),
     newWall: record('newWall'),

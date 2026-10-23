@@ -115,6 +115,36 @@ export const photoEn = {
   'photo.cmd.calibrate': 'Calibrate the photo',
   'photo.cmd.hide': 'Hide / show the photo behind the board',
   'photo.cmd.split': 'Before / after divider',
+  'photo.cmd.cleanBackground': 'Clean the wall under the board again',
+  'photo.cmd.autoClean': 'Auto-clean the background under the board: on / off',
+  'photo.clean.show': 'Show the cleaned wall (click for the original photo)',
+  'photo.clean.hide': 'Show the original photo (click for the cleaned wall)',
+  'photo.clean.make': 'Clean the wall under the board',
+  'photo.clean.needsCalibration':
+    'Calibrate the photo first: the cleaning follows the board footprint.',
+  'photo.clean.running': 'Cleaning the wall…',
+  'photo.clean.basic': 'basic clean',
+  'photo.clean.ai': 'AI clean',
+  'photo.clean.short.login_required': 'sign in for AI',
+  'photo.clean.short.quota_exhausted': 'AI out of quota',
+  'photo.clean.short.unavailable': 'AI unavailable',
+  'photo.clean.short.rejected': 'AI edit dropped',
+  'photo.clean.short.failed': 'AI failed',
+  'photo.clean.short.disabled': 'AI off',
+  'photo.clean.status.basic': 'Basic clean (a local fill).',
+  'photo.clean.status.ai': 'Cleaned by the image model.',
+  'photo.clean.ai.login_required':
+    'Sign in to an image backend for the AI clean: run `hsw-editor draw status`.',
+  'photo.clean.ai.quota_exhausted':
+    'The image backend is out of quota for now; the basic clean stays.',
+  'photo.clean.ai.unavailable': 'No image backend is available; the basic clean stays.',
+  'photo.clean.ai.rejected':
+    'The image model changed the rest of the photo, so its edit was dropped.',
+  'photo.clean.ai.failed': 'The image model could not clean the photo; the basic clean stays.',
+  'photo.clean.ai.disabled':
+    'The AI clean is switched off in the draw settings; the basic clean stays.',
+  'photo.clean.failed': 'Cleaning failed: {message}',
+  'photo.clean.unavailable': 'The daemon cannot clean backgrounds.',
 } as const;
 
 export const photoRu: FeatureRu<typeof photoEn> = {
@@ -232,4 +262,31 @@ export const photoRu: FeatureRu<typeof photoEn> = {
   'photo.cmd.calibrate': 'Калибровать фото',
   'photo.cmd.hide': 'Скрыть / показать фото под панелью',
   'photo.cmd.split': 'Разделитель «до / после»',
+  'photo.cmd.cleanBackground': 'Заново очистить стену под доской',
+  'photo.cmd.autoClean': 'Автоочистка фона под доской: вкл / выкл',
+  'photo.clean.show': 'Показана чистая стена (нажмите, чтобы увидеть исходное фото)',
+  'photo.clean.hide': 'Показано исходное фото (нажмите, чтобы увидеть чистую стену)',
+  'photo.clean.make': 'Очистить стену под доской',
+  'photo.clean.needsCalibration': 'Сначала откалибруйте фото: очистка следует контуру доски.',
+  'photo.clean.running': 'Очищаю стену…',
+  'photo.clean.basic': 'базовая очистка',
+  'photo.clean.ai': 'очистка ИИ',
+  'photo.clean.short.login_required': 'войдите для ИИ',
+  'photo.clean.short.quota_exhausted': 'квота ИИ исчерпана',
+  'photo.clean.short.unavailable': 'ИИ недоступен',
+  'photo.clean.short.rejected': 'правка ИИ отброшена',
+  'photo.clean.short.failed': 'ИИ не справился',
+  'photo.clean.short.disabled': 'ИИ выключен',
+  'photo.clean.status.basic': 'Базовая очистка (локальная заливка).',
+  'photo.clean.status.ai': 'Очищено моделью изображений.',
+  'photo.clean.ai.login_required':
+    'Войдите в сервис изображений для очистки ИИ: `hsw-editor draw status`.',
+  'photo.clean.ai.quota_exhausted':
+    'У сервиса изображений пока закончилась квота; остаётся базовая очистка.',
+  'photo.clean.ai.unavailable': 'Сервис изображений недоступен; остаётся базовая очистка.',
+  'photo.clean.ai.rejected': 'Модель изменила остальную часть фото, поэтому её правка отброшена.',
+  'photo.clean.ai.failed': 'Модель не смогла очистить фото; остаётся базовая очистка.',
+  'photo.clean.ai.disabled': 'Очистка ИИ выключена в настройках draw; остаётся базовая очистка.',
+  'photo.clean.failed': 'Не удалось очистить: {message}',
+  'photo.clean.unavailable': 'Демон не умеет очищать фон.',
 };

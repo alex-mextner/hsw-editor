@@ -417,6 +417,7 @@ export const HSW_TOOL_NAMES = [
   'wall_select',
   'wall_view',
   'wall_request_input',
+  'wall_clean_background',
   'app_command',
 ] as const;
 export type HswToolName = (typeof HSW_TOOL_NAMES)[number];
