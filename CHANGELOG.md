@@ -8,6 +8,11 @@ needs an entry here first.
 
 ### Added
 
+- Tools on the wall are drawn as their generated realistic models ([docs/tools.md](docs/tools.md#tool-models-on-the-wall), #162): an immutable content-hashed tool model store
+  (`/tools/assets/glb/*`, `/api/tools/assets/index|health`) with the bank's verify/repair/error-boundary guarantees, instanced PBR rendering with LOD, models rebuilt
+  in a worker for typed sizes and class parameters (proportions and sizes held to real tools, `realism.ts`), hung tools seated with the model's own holding
+  interface and re-hung after a resize, invalid-zone checks on the tool mesh, offline caching and pinning, the inspector's model card, a camera that frames tools
+  overhanging the board, and a Pages demo wall of generated tools.
 - Invalid-zone stripes turn white where the invalid part itself is red (red screwdriver handles etc., #166): the colour is chosen per region from
   the GLB material colours (`stripeColour.ts`), the legend shows both swatches; photo overlay and PNG export inherit it. See
   [docs/invalid-zones.md](docs/invalid-zones.md#rendering).

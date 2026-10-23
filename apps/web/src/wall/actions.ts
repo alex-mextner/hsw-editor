@@ -267,6 +267,7 @@ export function addToolFromPayload(payload: ToolDragPayload): string | null {
     {
       ...(payload.params ? { params: payload.params } : {}),
       ...(payload.customToolId === undefined ? {} : { customToolId: payload.customToolId }),
+      ...(payload.generatorClass === undefined ? {} : { generatorClass: payload.generatorClass }),
     },
   );
   if (!submitOps(ops, 'add-tool').ok) return null;

@@ -14,6 +14,8 @@ It replaces the earlier `generateSW` config because that cannot do a user-accept
 | Bank models | `/bank/assets/(glb\|variant)/<16 hex>.glb` | cache-first | `hsw-media-v1` | yes (LRU, byte budget) |
 | Bank thumbnails | `/bank/assets/thumb/<16 hex>.webp` | cache-first | `hsw-media-v1` | yes |
 | Wall photos / models | `/api/walls/:id/photos/:pid/file`, `/models/:mid/file` | cache-first | `hsw-media-v1` | yes |
+| Tool models | `/tools/assets/glb/<16 hex>.glb` (generated LOD0/LOD1 of every tool class and library tool) | cache-first | `hsw-media-v1` | yes |
+| Tool model index | `/api/tools/assets/index` | stale-while-revalidate | `hsw-bank-index-v1` | never (without it tools on the wall are boxes offline) |
 | Bank index | `/api/bank/index`, `/api/bank/search-index`, `/api/bank/elements/:id` | stale-while-revalidate | `hsw-bank-index-v1` | never (a few hundred KB; without it the bank cannot open offline) |
 
 Rules live in `cachePolicy.ts` (pure, unit-tested), mechanics in `assetCache.ts`. Names under `/bank/assets/` are content hashes, so a
@@ -27,7 +29,7 @@ cached copy is correct forever: it is served even if the server later answers 40
 - URLs with a query string or `Range` requests (they go to the network), non-GET requests.
 
 A failed revalidation never replaces a good cached copy. Everything else under `/api/*` (wall JSON, ops, SSE, jobs, settings, the bank
-variant POST) is untouched and goes to the network: the app keeps its own IndexedDB mirror of walls. Navigations to `/api/*` and `/bank/*`
+variant POST) is untouched and goes to the network: the app keeps its own IndexedDB mirror of walls. Navigations to `/api/*`, `/bank/*` and `/tools/*`
 never fall back to the app shell.
 
 ## Budget, LRU, pinning

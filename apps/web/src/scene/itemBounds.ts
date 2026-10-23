@@ -2,6 +2,7 @@ import type { Vec3 } from '@hsw-editor/bank';
 import type { Wall, WallItem } from '@hsw-editor/core';
 import { lastKnownElement } from '@/bank/client.ts';
 import { bboxCentre, resolveModel } from '@/bank/models.ts';
+import { resolveToolModel } from '@/toolmodels/resolve.ts';
 import type { BankLookup } from '@/wall/edits.ts';
 import { toolBoxCentre } from '@/wall/attach.ts';
 import { toolDims } from '@/wall/toolPresets.ts';
@@ -35,6 +36,8 @@ export function itemBounds(item: WallItem, wall: Wall, bank: BankLookup): ItemBo
   const source = resolveModel(item, bank);
   if (source) return { dims: source.dimsMm, centre: source.centreMm };
   if (item.kind === 'tool') {
+    const model = resolveToolModel(item, wall);
+    if (model) return { dims: model.dimsMm, centre: model.centreMm };
     const dims = toolDims(item, wall);
     if (dims) return { dims, centre: toolBoxCentre(dims) };
   }

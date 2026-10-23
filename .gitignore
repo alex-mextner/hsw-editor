@@ -14,3 +14,6 @@ playwright-report/
 # in-flight / crashed bank seed export (see packages/bank/src/node/publish.ts replaceDirectory)
 packages/bank/seed.next-*/
 packages/bank/seed.old-*/
+
+# generated tool model assets of the demo build (scripts/tools/demo-assets.ts)
+.generated/

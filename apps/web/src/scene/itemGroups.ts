@@ -1,6 +1,7 @@
 import type { BankElement, Vec3 } from '@hsw-editor/bank';
 import type { Wall, WallItem } from '@hsw-editor/core';
 import { resolveModel, type ModelSource } from '@/bank/models.ts';
+import { resolveToolModel, type ToolModelSource } from '@/toolmodels/resolve.ts';
 import { placeholderBounds } from './itemBounds.ts';
 
 /** An element a wall item points at that the loaded bank does not have (kept, drawn as a placeholder). */
@@ -12,6 +13,8 @@ export interface MissingElement {
 
 export interface ItemGroup {
   readonly source: ModelSource | null;
+  /** Generated model of a tool item (no bank element): the group is drawn from it instead of a box. */
+  readonly tool: ToolModelSource | null;
   /** Box stand-in for items without a bank model (tool presets, missing assets). */
   readonly boxMm: Vec3;
   /** Box centre relative to the item origin (mm). */
@@ -35,13 +38,17 @@ export function groupItems(
   for (const item of wall.items) {
     if (item.kind === 'photo-ref') continue;
     const source = resolveModel(item, bank);
+    const tool = source === null ? resolveToolModel(item, wall) : null;
     const missingId =
       source === null && bankReady && item.bankId !== undefined && !bank.has(item.bankId)
         ? item.bankId
         : null;
-    const bounds = placeholderBounds(item, wall);
+    const bounds = tool
+      ? { dims: tool.dimsMm, centre: tool.centreMm }
+      : placeholderBounds(item, wall);
     const key =
       source?.key ??
+      tool?.key ??
       (missingId === null
         ? `box:${bounds.centre.y}:${bounds.dims.x}x${bounds.dims.y}x${bounds.dims.z}`
         : `missing:${missingId}`);
@@ -50,6 +57,7 @@ export function groupItems(
     else {
       byKey.set(key, {
         source,
+        tool,
         boxMm: bounds.dims,
         centreMm: bounds.centre,
         items: [item],

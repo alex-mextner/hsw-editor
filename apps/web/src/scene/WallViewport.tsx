@@ -5,6 +5,8 @@ import type { Wall } from '@hsw-editor/core';
 import { ViewportContextMenu } from '@/features/viewport/ViewportContextMenu.tsx';
 import { bankStore } from '@/bank/client.ts';
 import { variantVersion } from '@/bank/models.ts';
+import { toolAssetsStore } from '@/toolmodels/assets.ts';
+import { toolModelVersion } from '@/toolmodels/regen.ts';
 import { itemNamer } from '@/features/invalid-zones/itemNames.ts';
 import { useI18n } from '@/i18n/index.ts';
 import { editorStore, setSelection } from '@/state/editor.ts';
@@ -31,6 +33,7 @@ import { PlacementMarker } from './PlacementMarker.tsx';
 import { PhotoExportInstaller } from './PhotoExportInstaller.tsx';
 import { PhotoBoard } from './PhotoBoard.tsx';
 import { PhotoCameraRig } from './PhotoCameraRig.tsx';
+import { wallExtent } from './wallExtent.ts';
 import { PhotoFrame } from './PhotoStage.tsx';
 import { photoViewState } from './photoView.ts';
 import { SelectionFrames } from './SelectionFrames.tsx';
@@ -53,6 +56,8 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
   const editor = useStore(editorStore);
   const zonesEnabled = useStore(invalidZonesEnabledStore);
   const variants = useStore(variantVersion);
+  const toolVersion = useStore(toolModelVersion);
+  const toolAssets = useStore(toolAssetsStore);
   const photoMode = useStore(photoStore);
   const photoState = photoViewState(
     wall,
@@ -82,8 +87,11 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
         editor.dragging,
       ),
       variants,
+      // A tool model arriving (index loaded, size rebuilt) changes which solid a tool item is.
+      toolVersion,
+      toolAssets,
     }),
-    [wall, bank, editor.dragging, variants],
+    [wall, bank, editor.dragging, variants, toolVersion, toolAssets],
   );
   const zones = useInvalidZones(
     zonesEnabled && bankState.status === 'ready',
@@ -117,6 +125,10 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
       });
   }, [wall, bank, locale, t, zones]);
 
+  // Cheap (one pass over the items) and depends on the tool models, which arrive outside React state: not memoised.
+  const extent = wallExtent(wall, bank);
+  const overhangs =
+    extent.x0 < 0 || extent.y0 < 0 || extent.x1 > size.width || extent.y1 > size.height;
   const occupied = useMemo(
     () => occupiedCells(wall.items, wall.board, bank),
     [wall.items, wall.board, bank],
@@ -166,6 +178,8 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
           ) : (
             <CameraRig
               view={editor.view}
+              extent={extent}
+              overhangs={overhangs}
               widthMm={size.width}
               heightMm={size.height}
               fitToken={editor.fitToken}

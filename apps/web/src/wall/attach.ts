@@ -11,6 +11,7 @@ import {
 import type { GridCell, LeafOp, Wall, WallItem } from '@hsw-editor/core';
 import type { AttachHolderState, AttachPreview, Vec2 } from '@/state/editor.ts';
 import { toolClassOfItem, toolInterfaceOf } from './toolInterface.ts';
+import { resolveToolModel } from '@/toolmodels/resolve.ts';
 import { presetDims, toolDims, type Dims3 } from './toolPresets.ts';
 
 export function attachContext(wall: Wall, bank: ReadonlyMap<string, HolderSpec>): AttachContext {
@@ -25,13 +26,20 @@ const FALLBACK_BOX: Dims3 = { x: 40, y: 150, z: 30 };
 
 /** Box the scene draws for a tool (its params and model win over the class preset). */
 export function toolBox(tool: WallItem, wall: Wall): Dims3 {
+  const model = resolveToolModel(tool, wall);
+  if (model) return model.dimsMm;
   const toolClass = toolClassOfItem(tool, wall);
   return toolDims(tool, wall) ?? (toolClass === undefined ? FALLBACK_BOX : presetDims(toolClass));
 }
 
-/** Where the tool's box sits in the tool frame: origin on the principal axis at the butt, +Y towards the tip. */
+/** Where a tool's box sits in the tool frame: origin on the principal axis at the butt, +Y towards the tip. */
 export function toolBoxCentre(box: Dims3): Dims3 {
   return { x: 0, y: box.y / 2, z: 0 };
+}
+
+/** Centre of the box `toolBox` returns: the generated model's own centre, else the stand-in box's. */
+export function toolBoxCentreOf(tool: WallItem, wall: Wall): Dims3 {
+  return resolveToolModel(tool, wall)?.centreMm ?? toolBoxCentre(toolBox(tool, wall));
 }
 
 /** Where a dragged item ends up: a lattice cell (snapped) or the exact point (free). */
@@ -106,7 +114,7 @@ export function planToolDrag(
   const resolution = resolveDrop(ctx, tool, point);
   const box = toolBox(tool, wall);
   const dimsMm = { x: box.x, y: box.y, z: box.z };
-  const centreMm = toolBoxCentre(box);
+  const centreMm = toolBoxCentreOf(tool, wall);
   const toolClass = toolClassOfItem(tool, wall) ?? '';
   switch (resolution.kind) {
     case 'attach':

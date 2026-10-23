@@ -24,3 +24,8 @@ export * from './custom/manual.ts';
 export * from './recognize/classes.ts';
 export * from './recognize/fuse.ts';
 export * from './physics/mass.ts';
+export * from './dims.ts';
+export * from './wallModel.ts';
+export * from './glbMeta.ts';
+export * from './assetIndex.ts';
+export * from './realism.ts';

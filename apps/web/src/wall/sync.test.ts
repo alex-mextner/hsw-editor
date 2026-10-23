@@ -11,9 +11,12 @@ import {
 } from '@hsw-editor/core';
 import { ApiError, NetworkError } from '@/api/http.ts';
 import type { ChangeEntry, OpResponse, WallResponse } from '@/api/schemas.ts';
+import { SHOWCASE_LAYOUT } from '@/demo/showcaseLayout.ts';
 import { createMemoryStore } from '@/offline/kv.ts';
 import { WallMirror } from '@/offline/mirror.ts';
 import { parseWallRecord, type WallRecord } from '@/offline/record.ts';
+import { installFetch, restoreFetch } from '@/test/fetchStub.ts';
+import { showcaseToolIndex } from '@/toolmodels/testing.ts';
 import { WallSync, type OfflineStore, type SyncApi } from './sync.ts';
 
 const ME: Actor = { kind: 'human', name: 'web-test' };
@@ -368,6 +371,17 @@ describe('offline mirror and queue', () => {
 
 describe('demo API (read-only)', () => {
   test('an edit is refused with the demo notice, leaves the wall as it was and does not go offline', async () => {
+    const seed = await Bun.file(
+      new URL('../../../../packages/bank/seed/index.json', import.meta.url),
+    ).text();
+    const tools = showcaseToolIndex(
+      SHOWCASE_LAYOUT.flatMap((holder) => holder.tools.map((tool) => tool.classId)),
+    );
+    installFetch((url) =>
+      url === '/api/bank/index'
+        ? new Response(seed, { headers: { 'content-type': 'application/json' } })
+        : Response.json(tools),
+    );
     const { demoApi } = await import('@/demo/demoApi.ts');
     const sync = new WallSync('demo', demoApi, ME);
     await sync.load();
@@ -381,6 +395,7 @@ describe('demo API (read-only)', () => {
     expect(state.status).toBe('ready');
     expect(state.wall?.rev).toBe(before);
     sync.dispose();
+    restoreFetch();
   });
 });
 

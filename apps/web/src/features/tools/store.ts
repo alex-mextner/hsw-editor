@@ -5,6 +5,7 @@
 import { createValueStore } from '#state-backend';
 import { createPersistedStore } from '@/state/persisted.ts';
 import { NetworkError } from '@/api/http.ts';
+import { refreshToolAssets } from '@/toolmodels/assets.ts';
 import { fetchClasses, fetchTools, type ToolClassInfo, type ToolSummary } from './api.ts';
 import { NO_QUERY, type LibraryQuery } from './model.ts';
 
@@ -44,6 +45,8 @@ export function refreshToolLibrary(fresh = false): Promise<void> {
   const run = inflight === null ? load() : inflight.then(load);
   const tracked = run.finally(() => {
     if (inflight === tracked) inflight = null;
+    // The library changed: the tool models on the wall come from an index that has to know its newest tool.
+    if (fresh) void refreshToolAssets({ force: true });
   });
   inflight = tracked;
   return tracked;

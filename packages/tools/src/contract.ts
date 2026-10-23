@@ -4,3 +4,5 @@
  */
 export * from './custom/schema.ts';
 export * from './custom/draft.ts';
+export * from './assetIndex.ts';
+export * from './dims.ts';

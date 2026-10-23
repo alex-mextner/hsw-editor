@@ -6,11 +6,16 @@ import { isTypingTarget } from '@/commands/typing.ts';
 import { editorStore } from '@/state/editor.ts';
 import { bindCameraLock, mouseButtonsFor, touchesFor } from './cameraControls.ts';
 import { mm } from './units.ts';
+import type { Extent } from './wallExtent.ts';
 
 export type ViewMode = 'perspective' | 'front';
 
 interface CameraRigProps {
   readonly view: ViewMode;
+  /** What the view frames: the board and whatever overhangs it (`wallExtent`). Read when framing, so an edit never re-frames. */
+  readonly extent: Extent;
+  /** Something overhangs the board: the view frames again when this turns on (the tools' boxes only exist once their models are known). */
+  readonly overhangs: boolean;
   readonly widthMm: number;
   readonly heightMm: number;
   /** Incremented to re-frame the wall (the "fit" command). */
@@ -49,7 +54,18 @@ function useSpacePan(): boolean {
  * drag pans, the wheel zooms, the right button belongs to the context menu. Dragging an item never
  * moves the camera: the controls are switched off while an item is held (see `bindCameraLock`).
  */
-export function CameraRig({ view, widthMm, heightMm, fitToken }: CameraRigProps) {
+export function CameraRig({
+  view,
+  extent,
+  overhangs,
+  widthMm,
+  heightMm,
+  fitToken,
+}: CameraRigProps) {
+  const extentRef = useRef(extent);
+  useEffect(() => {
+    extentRef.current = extent;
+  });
   const controls = useRef<ComponentRef<typeof OrbitControls>>(null);
   const getState = useThree((state) => state.get);
   const invalidate = useThree((state) => state.invalidate);
@@ -66,10 +82,21 @@ export function CameraRig({ view, widthMm, heightMm, fitToken }: CameraRigProps)
     return control ? bindCameraLock(control, editorStore) : undefined;
   }, [activeCamera]);
 
+  // The view frames again for overhang once per framing: later edits that put a tool over the edge or take it back never move it.
+  const framing = useRef<{ key: string; camera: unknown; overhangFramed: boolean } | null>(null);
+
   useEffect(() => {
     const control = controls.current;
     if (!control) return;
-    const target = new Vector3(mm(widthMm / 2), mm(heightMm / 2), 0);
+    const key = `${view}|${widthMm}|${heightMm}|${fitToken}`;
+    const last = framing.current;
+    const sameFraming = last?.key === key && last.camera === activeCamera;
+    if (sameFraming && (!overhangs || last.overhangFramed)) return;
+    framing.current = { key, camera: activeCamera, overhangFramed: sameFraming || overhangs };
+    const framed = extentRef.current;
+    const frameWidth = Math.max(widthMm, framed.x1 - framed.x0);
+    const frameHeight = Math.max(heightMm, framed.y1 - framed.y0);
+    const target = new Vector3(mm((framed.x0 + framed.x1) / 2), mm((framed.y0 + framed.y1) / 2), 0);
     // Read the canvas size at fit time instead of subscribing: a window resize must not re-frame the view.
     const { size } = getState();
     const aspect = size.width / Math.max(size.height, 1);
@@ -77,8 +104,8 @@ export function CameraRig({ view, widthMm, heightMm, fitToken }: CameraRigProps)
     if (camera instanceof ThreeOrthographicCamera) {
       // Fit the wall (+12% margin) in the orthographic frustum, 1 world unit == `zoom` pixels.
       const fitZoom = Math.min(
-        size.width / (mm(widthMm) * 1.12),
-        size.height / (mm(heightMm) * 1.12),
+        size.width / (mm(frameWidth) * 1.12),
+        size.height / (mm(frameHeight) * 1.12),
       );
       camera.position.set(target.x, target.y, 5);
       camera.zoom = fitZoom;
@@ -86,15 +113,15 @@ export function CameraRig({ view, widthMm, heightMm, fitToken }: CameraRigProps)
     } else {
       const fov = 40;
       const distance = Math.max(
-        (mm(heightMm) * 0.62) / Math.tan((fov * Math.PI) / 360),
-        (mm(widthMm) * 0.62) / (Math.tan((fov * Math.PI) / 360) * aspect),
+        (mm(frameHeight) * 0.62) / Math.tan((fov * Math.PI) / 360),
+        (mm(frameWidth) * 0.62) / (Math.tan((fov * Math.PI) / 360) * aspect),
       );
       camera.position.set(target.x, target.y - distance * 0.12, distance);
     }
     control.target.copy(target);
     control.update();
     invalidate();
-  }, [view, widthMm, heightMm, fitToken, activeCamera, getState, invalidate]);
+  }, [view, widthMm, heightMm, fitToken, overhangs, activeCamera, getState, invalidate]);
 
   return (
     <>

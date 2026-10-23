@@ -12,6 +12,8 @@ export interface RetryTarget {
   readonly url: string;
   /** Bank element the asset belongs to; absent for assets that are not bank elements (photos, models). */
   readonly bankId?: string;
+  /** Revalidates the index that lists a non-bank asset (tool models) before the loader is asked again. */
+  readonly revalidate?: () => Promise<void>;
 }
 
 export type RetryOutcome =
@@ -45,7 +47,10 @@ export function prepareRetry(
   if (running) return running;
   const run = (async (): Promise<RetryOutcome> => {
     markRetrying(target.url);
-    if (target.bankId === undefined) return { kind: 'reload' };
+    if (target.bankId === undefined) {
+      await target.revalidate?.();
+      return { kind: 'reload' };
+    }
     await deps.refresh();
     const gone = goneReasonFor(target.bankId);
     if (gone === null) return { kind: 'reload' };

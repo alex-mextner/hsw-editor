@@ -57,6 +57,8 @@ export interface AssetBoundaryProps {
   readonly placeholder: (view: FailureView) => ReactNode;
   /** Shown while the children suspend (loading). */
   readonly fallback?: ReactNode;
+  /** Revalidates whatever index lists this asset before a retry (assets that are not bank elements: tool models). */
+  readonly revalidate?: () => Promise<void>;
   /** Register the failure but raise no toast (hover previews, background work). */
   readonly quiet?: boolean;
   /** Test seam: how a retry revalidates the bank index. */
@@ -196,6 +198,7 @@ export class AssetBoundary extends Component<AssetBoundaryProps, BoundaryState> 
       {
         url: startedWith,
         ...(this.props.bankId === undefined ? {} : { bankId: this.props.bankId }),
+        ...(this.props.revalidate === undefined ? {} : { revalidate: this.props.revalidate }),
       },
       this.props.recovery,
     );

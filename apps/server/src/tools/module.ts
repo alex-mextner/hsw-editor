@@ -1,7 +1,8 @@
 /**
  * Server module for tools: mounts `/api/tools/*` and registers the `tools.analyze` job.
  *
- * Data (under the daemon's `config.home`): `tools/` (library + `.drafts/`), `tools-prototypes/` (recognition
+ * Data (under the daemon's `config.home`): `tools/` (library + `.drafts/`), `tools-assets/` (content-hashed LOD0/LOD1 GLBs
+ * of every class and user tool, served at `/tools/assets/*`), `tools-prototypes/` (recognition
  * prototypes built by `bun run tools:prototypes`; optional). The class vocabulary for the sidecar (`classes.json`)
  * is written next to the prototypes whenever the registered classes change.
  *
@@ -14,6 +15,7 @@ import { listToolClasses, recognitionCategories } from '@hsw-editor/tools';
 import {
   DraftStore,
   HttpVisionPort,
+  ToolAssetStore,
   ToolStore,
   analyzeDraft,
   loadPrototypeIndex,
@@ -26,6 +28,7 @@ import { defaultJobRegistry, registerJob, type JobRegistry } from '../jobs.ts';
 import type { ServerModule } from '../modules.ts';
 import type { VisionClient } from '../vision/client.ts';
 import { visionClient as sharedVisionClient } from '../vision/shared.ts';
+import { handleToolAssets } from './assets.ts';
 import { handleToolsRequest } from './routes.ts';
 import { ManagedVisionTransport } from './vision-transport.ts';
 
@@ -72,6 +75,7 @@ export function createToolsModule(options: ToolsModuleOptions = {}): ServerModul
     options.vision ??
     new HttpVisionPort(new ManagedVisionTransport(options.visionClient ?? sharedVisionClient));
   const opened = new Map<string, Promise<DraftDeps>>();
+  const assetStores = new Map<string, Promise<ToolAssetStore>>();
   /** Data directory of the daemon this module is mounted in (jobs carry no config; set by the first request). */
   let lastHome: string | null = null;
 
@@ -107,13 +111,30 @@ export function createToolsModule(options: ToolsModuleOptions = {}): ServerModul
     options.jobRegistry ?? defaultJobRegistry,
   );
 
+  // One store per data directory, created once even when the first requests arrive together (it owns the write queue).
+  const assetsFor = (home: string): Promise<ToolAssetStore> => {
+    let store = assetStores.get(home);
+    if (!store) {
+      store = depsFor(home).then(
+        (deps) => new ToolAssetStore(join(home, 'tools-assets'), deps.tools),
+      );
+      assetStores.set(home, store);
+      store.catch(() => assetStores.delete(home));
+    }
+    return store;
+  };
+
   return {
     name: 'tools',
     handle(request, deps) {
       lastHome = deps.config.home;
-      const url = new URL(request.url);
-      if (url.pathname !== '/api/tools' && !url.pathname.startsWith('/api/tools/')) return null;
-      if (url.pathname === '/api/tools/vision') {
+      const { pathname } = new URL(request.url);
+      const home = deps.config.home;
+      if (pathname.startsWith('/tools/assets/') || pathname.startsWith('/api/tools/assets/')) {
+        return assetsFor(home).then((store) => handleToolAssets(request, store));
+      }
+      if (pathname !== '/api/tools' && !pathname.startsWith('/api/tools/')) return null;
+      if (pathname === '/api/tools/vision') {
         // answers even when the tool store cannot be opened: it only asks the sidecar (never starts it)
         if (request.method !== 'GET') {
           return Response.json(
@@ -123,9 +144,7 @@ export function createToolsModule(options: ToolsModuleOptions = {}): ServerModul
         }
         return vision.status().then((status) => Response.json(status));
       }
-      return depsFor(deps.config.home).then((d) =>
-        handleToolsRequest(request, d, deps.config.home),
-      );
+      return depsFor(home).then((d) => handleToolsRequest(request, d, home));
     },
   };
 }

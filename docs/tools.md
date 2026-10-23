@@ -51,6 +51,36 @@ bun packages/tools/scripts/sheet.ts <class|family ...> [--tile 300] [--lod 1] [-
 Software renderer (no GPU, no dependencies): one row per preset with front / side / iso views and a working-end close-up.
 Reviewed sheets live under `~/.cache/hsw-editor/proofs/tools/` and are attached to the PRs.
 
+## Tool models on the wall
+
+Ticket [#162](https://github.com/alex-mextner/hsw-editor/issues/162). A tool item on the wall is drawn as its generated model (LOD0 close,
+LOD1 far), not as a box: PBR parts (metals reflect a generated studio environment, so they work offline), instanced per model.
+
+- **Asset store** (`packages/tools/src/node/assets.ts`, `ToolAssetStore`, data under `$HSW_EDITOR_HOME/tools-assets/`): LOD0/LOD1 GLBs of every
+  built-in class (its default build) and every library tool under content-hash names, plus `index.json`. Same guarantees as the bank: files are
+  written before the index that lists them and atomically, a file is served only while it hashes to its name, a damaged or lost file is
+  rebuilt (the request that hit it and the next index call), `health()`/`?deep=1` report problems, orphans are swept after a day. Routes:
+  [api.md](api.md#tools) (`/tools/assets/glb/*`, `/api/tools/assets/index|health`). The web client loads the index once (`toolmodels/assets.ts`),
+  and the scene wraps every model load in the bank's `AssetBoundary` (placeholder + retry with backoff; a retry revalidates the tool index).
+- **Which model**: `toolmodels/resolve.ts`. The model reference's `source.by` names the generator (`gen:<class>`) or library tool (`tool:<id>`) a tool was
+  added from, else the bank class (then its `broader` classes) picks a generator. No generator: the box stand-in stays.
+- **Sizes**: the dimension widget's width/length/thickness and the item's named class parameters (`shaftDiameter`, ...) are wishes; a wish that is not the
+  class default is built in a worker (`toolmodels/regenWorker.ts`, one build at a time, only the newest wish per class waits, cached by entry + wish,
+  both LODs as blob URLs). `solveToolDims` (`packages/tools/src/wallModel.ts`) finds the class values: parameters that move an axis are scaled together (a longer
+  screwdriver gets a longer handle *and* blade), every part is held to what a real one measures, and a size no real tool has builds the nearest real one
+  (`reached: false`; the inspector says "closest buildable"). While a rebuild runs the class default is drawn. After a size edit of a hung tool it is hung again
+  in its slot (`wall/rehang.ts`, one more undo step).
+- **Realistic sizes** (`packages/tools/src/realism.ts`): per class, the overall length/width/thickness and named parts (handle, blade, head) of real tools, and ratios
+  such as blade/handle. `realism.test.ts` fails when any default or preset leaves them; the solver never leaves them. Tools may hang beyond the board edge: the scene
+  never clips them and the camera frames the board plus whatever overhangs it (`scene/wallExtent.ts`).
+- **Holding interface**: a hung tool's `ToolInterface` (length, hang point, widest section, dims) is the model's own (`toolmodels/holdingInterface.ts`), so
+  `@hsw-editor/compat` seats the real shape. Box sizes (`width`/`length`/`thickness`) are never holding dimensions.
+- **Invalid zones** check the tool's LOD1 mesh; a tool still may interpenetrate the holder it hangs on (`parentId`).
+- **Offline**: models are runtime-cached (`cache-first`, immutable), the index is stale-while-revalidate; "Offline storage → Tool models" downloads and pins every model.
+  The Pages demo ships the tools of the showcase wall (`scripts/tools/demo-assets.ts`, run by `bun run build`).
+- **Showcase wall** (`apps/web/src/demo/showcase.ts`, layout `showcaseLayout.ts`): real seed holders with a dozen generated classes hung by the compat maths;
+  it is the demo wall, a test fixture and `bun apps/web/scripts/showcase-wall.ts --api <daemon>` puts it on a running daemon for visual checks.
+
 ## Custom tools
 
 ```

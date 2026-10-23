@@ -5,6 +5,7 @@ import {
   buildReport,
   clearCategories,
   downloadAssets,
+  toolAssetUrls,
   wallMediaUrls,
   type BankIndexLike,
 } from './storage.ts';
@@ -30,6 +31,32 @@ const INDEX: BankIndexLike = {
     element('b1', 'bins', 3),
   ],
 };
+
+describe('toolAssetUrls', () => {
+  test('both LODs of every tool model, deduplicated, under /tools/assets and storable by the media rule', async () => {
+    const index = {
+      entries: [
+        { lod0: { path: `glb/${hex(1)}.glb` }, lod1: { path: `glb/${hex(2)}.glb` } },
+        { lod0: { path: `glb/${hex(3)}.glb` }, lod1: { path: `glb/${hex(3)}.glb` } },
+      ],
+    };
+    const urls = toolAssetUrls(index, ORIGIN);
+    expect(urls).toEqual([
+      `${ORIGIN}/tools/assets/glb/${hex(1)}.glb`,
+      `${ORIGIN}/tools/assets/glb/${hex(2)}.glb`,
+      `${ORIGIN}/tools/assets/glb/${hex(3)}.glb`,
+    ]);
+    const h = harness();
+    h.net.respond = () => bytesOf(64, { 'content-type': 'model/gltf-binary' });
+    const result = await downloadAssets(h.deps, urls, { origin: ORIGIN, pin: true });
+    expect(result).toMatchObject({ outcome: 'complete', done: 3, failed: 0 });
+    const report = await buildReport(h.deps, {
+      estimate: () => Promise.resolve({ usage: 0, quota: 1e9 }),
+      persisted: () => Promise.resolve(true),
+    });
+    expect(report.categories['tool-model']).toMatchObject({ count: 3, pinnedCount: 3 });
+  });
+});
 
 describe('bankAssetUrls', () => {
   test('whole bank, thumbnails and models, deduplicated', () => {

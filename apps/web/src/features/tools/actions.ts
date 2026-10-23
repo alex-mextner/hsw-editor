@@ -6,6 +6,7 @@
 import { beginToolDrag, endToolDrag, type ToolDragPayload } from '@/scene/toolDrop.ts';
 import { currentWall, addToolFromPayload } from '@/wall/actions.ts';
 import type { Locale } from '@/i18n/index.ts';
+import { BOX_PARAM_KEY_NAMES } from '@/toolmodels/holdingInterface.ts';
 import { buildEntries, entryName, type LibraryEntry } from './model.ts';
 import { libraryStore } from './store.ts';
 
@@ -13,7 +14,7 @@ import { libraryStore } from './store.ts';
 export const GENERIC_TOOL_CLASS = 'generic';
 
 /** Keys of a wall tool's `params` that override its box (`toolDims`); measured class dimensions must not use them. */
-const BOX_PARAM_KEYS: ReadonlySet<string> = new Set(['width', 'length', 'thickness']);
+const BOX_PARAM_KEYS = BOX_PARAM_KEY_NAMES;
 
 function dimensionParams(dims: Readonly<Record<string, number>>): Record<string, number> {
   return Object.fromEntries(Object.entries(dims).filter(([key]) => !BOX_PARAM_KEYS.has(key)));
@@ -25,7 +26,7 @@ export function payloadOf(entry: LibraryEntry, locale: Locale): ToolDragPayload 
     label: entryName(entry, locale),
     dimsMm: entry.dimsMm,
     params: dimensionParams(entry.holdingDims),
-    ...(entry.kind === 'tool' ? { customToolId: entry.id } : {}),
+    ...(entry.kind === 'tool' ? { customToolId: entry.id } : { generatorClass: entry.id }),
   };
 }
 

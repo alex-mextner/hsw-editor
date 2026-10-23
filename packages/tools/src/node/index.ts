@@ -6,3 +6,4 @@ export * from './thumb.ts';
 export * from './prototypes.ts';
 export * from './vision-port.ts';
 export * from './drafts.ts';
+export * from './assets.ts';

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { createValueStore } from '#state-backend';
 import { HardDriveDownload } from 'lucide-react';
 import { bankStore } from '@/bank/client.ts';
+import { refreshToolAssets, toolAssetsStore } from '@/toolmodels/assets.ts';
 import { Button } from '@/components/ui/button.tsx';
 import {
   Dialog,
@@ -19,6 +20,7 @@ import {
   buildReport,
   clearCategories,
   downloadAssets,
+  toolAssetUrls,
   type DownloadProgress,
   type DownloadResult,
   type StorageReport,
@@ -39,6 +41,8 @@ const CATEGORY_LABEL = {
   'bank-model': 'offline.cat.models',
   'bank-thumbnail': 'offline.cat.thumbnails',
   'bank-index': 'offline.cat.index',
+  'tool-model': 'offline.cat.toolModels',
+  'tool-index': 'offline.cat.toolIndex',
   'wall-photo': 'offline.cat.photos',
   'wall-model': 'offline.cat.wallModels',
 } as const satisfies Record<AssetCategory, string>;
@@ -101,17 +105,33 @@ export function OfflineStorageDialog() {
     await refresh().catch(() => undefined);
   };
 
-  const download = (categories: readonly string[]): Promise<void> =>
+  /** `what`: bank categories (empty = the whole bank, with the tool models), or only the generated tool models. */
+  const download = (
+    categories: readonly string[],
+    what: 'bank' | 'tools' = 'bank',
+  ): Promise<void> =>
     run(async () => {
-      if (bank.status !== 'ready') return;
+      if (what === 'bank' && bank.status !== 'ready') return;
       const controller = new AbortController();
       abort.current = controller;
       setResult(null);
-      const urls = bankAssetUrls(
-        bank.index,
-        { categories, thumbnails: true, models: true },
-        location.origin,
-      );
+      const tools = what === 'tools' || categories.length === 0;
+      if (tools) await refreshToolAssets();
+      const toolIndex = toolAssetsStore.get();
+      const toolUrls =
+        tools && toolIndex.status === 'ready'
+          ? toolAssetUrls(toolIndex.index, location.origin)
+          : [];
+      if (what === 'tools' && toolUrls.length === 0) throw new Error(t('offline.toolsUnavailable'));
+      const bankUrls =
+        what === 'bank' && bank.status === 'ready'
+          ? bankAssetUrls(
+              bank.index,
+              { categories, thumbnails: true, models: true },
+              location.origin,
+            )
+          : [];
+      const urls = [...bankUrls, ...toolUrls];
       const outcome = await downloadAssets(await pageCacheDeps(), urls, {
         origin: location.origin,
         pin: true,
@@ -178,6 +198,14 @@ export function OfflineStorageDialog() {
             {t('offline.downloadAll')}
           </Button>
           <div className="flex flex-wrap gap-1.5">
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={progress !== null}
+              onClick={() => void download([], 'tools')}
+            >
+              {t('offline.downloadTools')}
+            </Button>
             {topCategories.map((category) => (
               <Button
                 key={category.id}
@@ -213,6 +241,9 @@ export function OfflineStorageDialog() {
         <div className="flex flex-wrap gap-1.5">
           <Button size="sm" variant="ghost" onClick={() => void clear(['bank-model'])}>
             {t('offline.clearModels')}
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => void clear(['tool-model'])}>
+            {t('offline.clearToolModels')}
           </Button>
           <Button size="sm" variant="ghost" onClick={() => void clear(['bank-thumbnail'])}>
             {t('offline.clearThumbnails')}

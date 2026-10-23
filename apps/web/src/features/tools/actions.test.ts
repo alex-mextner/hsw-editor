@@ -39,6 +39,7 @@ describe('payloadOf', () => {
       label: 'Отвёртка',
       dimsMm: { x: 20, y: 200, z: 20 },
       params: { shaftDiameter: 6 },
+      generatorClass: 'screwdriver',
     });
   });
   test('measured dimensions named like the box overrides do not resize the box', () => {

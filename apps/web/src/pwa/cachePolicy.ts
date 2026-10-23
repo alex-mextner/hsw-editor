@@ -4,10 +4,11 @@
  * downloader and the settings panel.
  *
  * Two caches, two lifetimes:
- *   - `MEDIA_CACHE`  immutable, content-addressed files (bank GLBs and thumbnails, wall photos and models):
+ *   - `MEDIA_CACHE`  immutable, content-addressed files (bank GLBs and thumbnails, tool model GLBs, wall photos and models):
  *                    cache-first, byte-budgeted LRU eviction, pinned entries are never evicted;
- *   - `INDEX_CACHE`  small JSON the bank browser starts from (index, search index, element detail):
- *                    stale-while-revalidate, never evicted (a few hundred KB; without it the bank cannot open offline).
+ *   - `INDEX_CACHE`  small JSON the bank browser and the wall start from (bank index, search index, element detail, the tool
+ *                    model index): stale-while-revalidate, never evicted (a few hundred KB; without it the bank cannot
+ *                    open offline and the tools on the wall fall back to boxes).
  *
  * Never stored: anything but a plain `200`, opaque responses, `text/html` (a server that falls back to the
  * SPA shell for an unknown path would otherwise poison an immutable entry forever) and `Cache-Control: no-store`.
@@ -21,6 +22,8 @@ export const ASSET_CATEGORIES = [
   'bank-model',
   'bank-thumbnail',
   'bank-index',
+  'tool-model',
+  'tool-index',
   'wall-photo',
   'wall-model',
 ] as const;
@@ -46,12 +49,17 @@ const route = (
 const BANK_MODEL = route('bank-model', 'cache-first', MEDIA_CACHE, true);
 const BANK_THUMB = route('bank-thumbnail', 'cache-first', MEDIA_CACHE, true);
 const BANK_INDEX = route('bank-index', 'stale-while-revalidate', INDEX_CACHE, false);
+const TOOL_MODEL = route('tool-model', 'cache-first', MEDIA_CACHE, true);
+const TOOL_INDEX = route('tool-index', 'stale-while-revalidate', INDEX_CACHE, false);
 const WALL_PHOTO = route('wall-photo', 'cache-first', MEDIA_CACHE, true);
 const WALL_MODEL = route('wall-model', 'cache-first', MEDIA_CACHE, true);
 
 // Mirrors the bank server (docs/bank.md): the extension is bound to the kind and names are content hashes.
 const BANK_GLB_PATH = /^\/bank\/assets\/(?:glb|variant)\/[0-9a-f]{16}\.glb$/;
 const BANK_THUMB_PATH = /^\/bank\/assets\/thumb\/[0-9a-f]{16}\.webp$/;
+// Mirrors the tool asset store (docs/tools.md): content-hashed GLBs of the generated tool models and the index that lists them.
+const TOOL_GLB_PATH = /^\/tools\/assets\/glb\/[0-9a-f]{16}\.glb$/;
+const TOOL_INDEX_PATH = /^\/api\/tools\/assets\/index$/;
 const BANK_INDEX_PATH = /^\/api\/bank\/(?:index|search-index|elements\/[a-z0-9-]+)$/;
 const WALL_PHOTO_PATH =
   /^\/api\/walls\/[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\/photos\/[A-Za-z0-9][A-Za-z0-9_.-]{0,63}\/file$/;
@@ -76,13 +84,19 @@ export function routeFor(
   if (BANK_GLB_PATH.test(pathname)) return BANK_MODEL;
   if (BANK_THUMB_PATH.test(pathname)) return BANK_THUMB;
   if (BANK_INDEX_PATH.test(pathname)) return BANK_INDEX;
+  if (TOOL_GLB_PATH.test(pathname)) return TOOL_MODEL;
+  if (TOOL_INDEX_PATH.test(pathname)) return TOOL_INDEX;
   if (WALL_PHOTO_PATH.test(pathname)) return WALL_PHOTO;
   if (WALL_MODEL_PATH.test(pathname)) return WALL_MODEL;
   return null;
 }
 
 /** Navigations to these never fall back to the app shell: they are API or asset URLs, not pages. */
-export const NAVIGATE_FALLBACK_DENYLIST: readonly RegExp[] = [/^\/api\//, /^\/bank\//];
+export const NAVIGATE_FALLBACK_DENYLIST: readonly RegExp[] = [
+  /^\/api\//,
+  /^\/bank\//,
+  /^\/tools\//,
+];
 
 /** Why a response was not stored; `null` = it is storable. */
 export type Unstorable = 'status' | 'opaque' | 'html' | 'no-store';
