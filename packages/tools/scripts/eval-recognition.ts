@@ -1,7 +1,7 @@
 /**
  * Top-1 / top-3 of class suggestion on the labelled carpet crops: CLIP text only vs prototypes only vs fused.
  *
- *   bun packages/tools/scripts/eval-recognition.ts <prototype dir> <crops dir> [--w 0.5] [--k 3]
+ *   bun packages/tools/scripts/eval-recognition.ts <prototype dir> <crops dir> [--w 0.5] [--k 3] [--registered-only] [--misses]
  * Inputs come from `prototypes.ts` + `scripts/py/embed.py` (see there). Prints a markdown table.
  */
 import { readFileSync } from 'node:fs';
@@ -41,6 +41,11 @@ const cropMeta = JSON.parse(readFileSync(join(cropDir, 'crops-meta.json'), 'utf8
   crops: { index: number; label: string; accept: string[] }[];
 };
 const dim = meta.dim;
+// crops of things the library has no class for (a storage box, a charger) can never be a hit: `--registered-only` drops them
+const registered = new Set(meta.classes);
+const evaluated = args.includes('--registered-only')
+  ? cropMeta.crops.filter((c) => c.accept.some((id) => registered.has(id)))
+  : cropMeta.crops;
 const index = buildPrototypeIndex({
   dim,
   classIds: meta.classes,
@@ -71,6 +76,7 @@ console.log('| --- | --- | --- | --- |');
 for (const [name, ranker] of Object.entries(rankers)) {
   const hits = [0, 0, 0];
   cropMeta.crops.forEach((c, i) => {
+    if (!evaluated.includes(c)) return;
     const e = crops.subarray(i * dim, (i + 1) * dim);
     const order = ranker(e);
     [1, 3, 5].forEach((k, j) => {
@@ -79,13 +85,13 @@ for (const [name, ranker] of Object.entries(rankers)) {
     if (!c.accept.includes(order[0] ?? ''))
       (misses[name] ??= []).push(`#${c.index} ${c.label} -> ${order.slice(0, 3).join(', ')}`);
   });
-  const n = cropMeta.crops.length;
+  const n = evaluated.length;
   console.log(
     `| ${name} | ${((hits[0] ?? 0) / n).toFixed(2)} | ${((hits[1] ?? 0) / n).toFixed(2)} | ${((hits[2] ?? 0) / n).toFixed(2)} |`,
   );
 }
 console.log(
-  `\n${cropMeta.crops.length} crops, ${meta.classes.length} classes, ${manifest.length} prototype images`,
+  `\n${evaluated.length} crops, ${meta.classes.length} classes, ${manifest.length} prototype images`,
 );
 if (args.includes('--misses'))
   for (const [k, v] of Object.entries(misses)) console.log(`\n${k}\n  ${v.join('\n  ')}`);

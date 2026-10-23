@@ -103,8 +103,25 @@ every object; progress per photo over the standard job SSE.
 2. retrieval against **prototype images rendered from our own generators** (`scripts/prototypes.ts`: every class x preset x
    colour variant x 8 views on the CLIP grey background, embedded by `scripts/py/embed.py` through the same encoder).
 
-`scripts/eval-recognition.ts` reports top-1 / top-3 on the labelled carpet crops (`eval/carpet-labels.json`). Numbers are in
-the PR that introduced the fusion. Without the prototype files the sidecar's text scores are used. The optional AI hook is
+`scripts/eval-recognition.ts` reports top-1 / top-3 / top-5 on the 33 labelled carpet crops (`eval/carpet-labels.json`;
+`--registered-only` drops the 5 crops of things the library has no class for: 4 boxes and a charger).
+Measured 2026-10-23 with all 45 generator classes, 3632 prototype images (`bun run tools:prototypes`, `embed.py protos`,
+CLIP-B/32 via `threed_vision`), default `k = 3`:
+
+| method | 33 crops top-1 / top-3 / top-5 | 28 library crops top-1 / top-3 / top-5 |
+| --- | --- | --- |
+| CLIP text prompts, class-bias corrected | 0.42 / 0.70 / 0.76 | 0.50 / 0.82 / 0.89 |
+| prototype retrieval only (w = 1) | 0.33 / 0.58 / 0.67 | 0.39 / 0.68 / 0.79 |
+| fused, w = 0.3 | 0.52 / 0.73 / 0.82 | n/a |
+| fused, w = 0.5 (default) | 0.52 / 0.79 / 0.82 | 0.61 / 0.93 / 0.96 |
+| fused, w = 0.7 | 0.55 / 0.73 / 0.82 | 0.64 / 0.86 / 0.96 |
+
+The VisionSpike baseline (top-1 0.61 / top-3 0.79 on the 33 crops) used the coarse bank classes, so it is not the same task as
+choosing among 45 fine classes (pliers-combination vs water-pump-pliers vs side-cutters). Against the same 45-class text
+prompts, fusion adds +0.10 top-1 and +0.09 top-3 on all 33 crops (+0.11 / +0.11 on the 28), and reaches the baseline top-3 of
+0.79 on all 33 crops; top-1 on all 33 (0.52) stays below the baseline 0.61 because the boxes and the charger can never match.
+Remaining misses: pliers and screwdriver crops mistaken for scissors, snips or other pliers, a tape measure taken for a
+multimeter, a bit set taken for a battery pack. Without the prototype files the sidecar's text scores are used. The optional AI hook is
 the sidecar's `ai_assist` (off by default, hard cases only).
 
 ## UI: Tool Library and Add from photo
