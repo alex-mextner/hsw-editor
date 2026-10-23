@@ -11,10 +11,12 @@ import {
 import { Switch } from '@/components/ui/switch.tsx';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group.tsx';
 import { useI18n } from '@/i18n/index.ts';
+import { useStore } from '@/state/react.ts';
 import { CategoryTree } from './CategoryTree.tsx';
 import { buildCategoryTree, ORIGIN_FILTERS, SIZE_BUCKETS, type BankFilters } from './filters.ts';
 import { ORIGIN_LABELS, SIZE_LABELS } from './labels.ts';
 import { patchBankFilters } from './panelState.ts';
+import { dispatchToolFilter, toolFilterStore } from './toolFilterStore.ts';
 
 /** Select values are strings; this one stands for "no tool-class filter" and cannot be a kebab-case id. */
 const ANY_TOOL_CLASS = '*';
@@ -51,6 +53,7 @@ export function FilterPanel({
   expanded,
 }: FilterPanelProps) {
   const { t, locale } = useI18n();
+  const explicitTools = useStore(toolFilterStore).explicit;
   const tree = useMemo(() => buildCategoryTree(index.categories), [index.categories]);
   const toolClassItems = useMemo(
     () => [
@@ -78,10 +81,11 @@ export function FilterPanel({
       <Field label={t('bank.filters.toolClass')}>
         <Select
           items={toolClassItems}
-          value={filters.toolClass ?? ANY_TOOL_CLASS}
+          value={explicitTools[0] ?? ANY_TOOL_CLASS}
           onValueChange={(value) =>
-            patchBankFilters({
-              toolClass: value === null || value === ANY_TOOL_CLASS ? null : value,
+            dispatchToolFilter({
+              type: 'setExplicit',
+              classes: value === null || value === ANY_TOOL_CLASS ? [] : [value],
             })
           }
         >

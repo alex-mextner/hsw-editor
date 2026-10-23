@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { Wrench } from 'lucide-react';
 import { bankStore } from '@/bank/client.ts';
 import { BankPanel } from '@/features/bank/BankPanel.tsx';
@@ -6,10 +7,13 @@ import { useI18n } from '@/i18n/index.ts';
 import { useStore } from '@/state/react.ts';
 import { presetDims } from '@/wall/toolPresets.ts';
 import { addToolPreset } from '@/wall/actions.ts';
+import { startToolSelectionSync } from '@/features/bank/toolFilterStore.ts';
 
 /** Left panel: the element bank and the tool presets used to start a wall from scratch. */
 export function LeftPanel() {
   const { t } = useI18n();
+  // The selection feeds the bank filter whichever tab is open.
+  useEffect(() => startToolSelectionSync(), []);
   return (
     <Tabs defaultValue="bank" className="flex min-h-0 flex-1 flex-col gap-0">
       <TabsList className="m-2 mb-0 shrink-0">

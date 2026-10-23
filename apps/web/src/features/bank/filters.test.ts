@@ -81,11 +81,12 @@ describe('combined filters', () => {
   test('every active filter must match', () => {
     const ids = (patch: Partial<BankFilters>) =>
       applyFilters(items, filters(patch)).map((e) => e.id);
-    expect(ids({ toolClass: 'snips' })).toEqual(['b', 'c']);
-    expect(ids({ toolClass: 'snips', size: 's3to4' })).toEqual(['b']);
+    expect(ids({ toolClasses: ['snips'] })).toEqual(['b', 'c']);
+    expect(ids({ toolClasses: ['snips'], size: 's3to4' })).toEqual(['b']);
     expect(ids({ redistributableOnly: true, size: 's5plus' })).toEqual([]);
     expect(ids({ origin: 'generated' })).toEqual(['a', 'd']);
-    expect(ids({ origin: 'sources', toolClass: 'pliers' })).toEqual(['b']);
+    expect(ids({ origin: 'sources', toolClasses: ['pliers'] })).toEqual(['b']);
+    expect(ids({ toolClasses: ['pliers', 'snips'] })).toEqual(['a', 'b', 'c']);
     expect(ids({})).toEqual(['a', 'b', 'c', 'd']);
   });
 

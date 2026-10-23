@@ -61,7 +61,10 @@ export function reduceToolFilter(
       };
       if (sameIds(state.selection.itemIds, selection.itemIds)) {
         // Same items: only the classes may have been re-resolved (a model finished loading).
-        return { ...state, selection };
+        const sameClasses =
+          state.selection.classes.length === selection.classes.length &&
+          state.selection.classes.every((id, i) => id === selection.classes[i]);
+        return sameClasses ? state : { ...state, selection };
       }
       return { ...state, selection, dismissed: false };
     }

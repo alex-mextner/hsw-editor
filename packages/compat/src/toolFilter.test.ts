@@ -103,6 +103,11 @@ describe('tool filter state machine', () => {
     ]);
   });
 
+  test('re-sending the same selection returns the same state object (no store churn per frame)', () => {
+    const state = run(initialToolFilter(['pliers']), pick(['t1'], ['screwdriver']));
+    expect(run(state, pick(['t1'], ['screwdriver']))).toBe(state);
+  });
+
   test('X with no selection and selections of unclassified items are no-ops', () => {
     const idle = initialToolFilter(['pliers']);
     expect(run(idle, { type: 'dismissOverride' })).toEqual(idle);
