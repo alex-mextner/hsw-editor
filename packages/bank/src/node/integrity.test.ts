@@ -261,6 +261,21 @@ describe('migrateFlatBank', () => {
   });
 });
 
+describe('migrateFlatBank with a damaged flat bank', () => {
+  test('a flat bank with an unreadable index is moved aside and does not block publishing', async () => {
+    await mkdir(paths.bankDir, { recursive: true });
+    await Bun.write(join(paths.bankDir, 'index.json'), '{"version":');
+    expect(await migrateFlatBank(paths)).toBe(false);
+    // moved aside, not deleted: it no longer serves, and the evidence stays
+    expect(await Bun.file(join(paths.bankDir, 'index.json')).exists()).toBe(false);
+    expect((await readdir(paths.bankDir)).some((n) => n.startsWith('index.json.damaged-'))).toBe(
+      true,
+    );
+    const fresh = await publishFixture(['elem-a'], 1);
+    expect((await currentGeneration(paths))?.id).toBe(fresh.publish.id);
+  });
+});
+
 describe('replaceDirectory', () => {
   test('swaps a finished tree in and drops the old one', async () => {
     await mkdir(join(work, 'target'), { recursive: true });

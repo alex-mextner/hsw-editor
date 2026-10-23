@@ -39,7 +39,8 @@ export class BankVerificationError extends Error {
   }
 }
 
-export const generationsDir = (paths: BankPaths): string => join(paths.bankDir, 'generations');
+const GENERATIONS_DIR = 'generations';
+export const generationsDir = (paths: BankPaths): string => join(paths.bankDir, GENERATIONS_DIR);
 export const currentLink = (paths: BankPaths): string => join(paths.bankDir, 'current');
 
 async function hasIndex(root: string): Promise<boolean> {

@@ -144,7 +144,19 @@ const FLAT_ENTRIES = ['index.json', 'search-index.json', 'report.json', 'glb', '
 export async function migrateFlatBank(paths: BankPaths): Promise<boolean> {
   const hasFlat = await Bun.file(join(paths.bankDir, 'index.json')).exists();
   if (!hasFlat || (await currentGeneration(paths))) return false;
-  await adoptBank(paths, paths.bankDir);
+  try {
+    await adoptBank(paths, paths.bankDir);
+  } catch (error) {
+    // Only a bank that fails verification is left alone (and ingest publishes fresh); an I/O error must surface.
+    if (!(error instanceof BankVerificationError)) throw error;
+    // The damaged index is moved aside (the files stay for inspection) so it stops being a serving root.
+    const aside = `index.json.damaged-${Date.now()}`;
+    await rename(join(paths.bankDir, 'index.json'), join(paths.bankDir, aside));
+    console.warn(
+      `bank: flat bank in ${paths.bankDir} failed verification (${error.problems[0] ?? error.message}); index moved to ${aside}`,
+    );
+    return false;
+  }
   for (const entry of FLAT_ENTRIES)
     await rm(join(paths.bankDir, entry), { recursive: true, force: true });
   return true;

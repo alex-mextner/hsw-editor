@@ -71,8 +71,10 @@ Mounting in the server: `apps/server/src/bank-routes.ts` is a server module (`ba
 the loopback guard and before the wall API. It calls `createBankHandler({ paths })`, where `paths.bankDir` is `$HSW_BANK_DIR`
 or `<HSW_EDITOR_HOME>/bank`; the handler returns `null` for URLs that are not bank routes. It serves the current generation of
 the built bank, falls back to older generations and finally the committed seed, reloads when the `index.json` of any root
-changes (including a built bank appearing after the seed was loaded), keeps serving the bank in use when a new index cannot
-be read (an ingest mid-write), and never needs a restart after `bank:ingest`.
+changes (including a built bank appearing after the seed was loaded), and never needs a restart after `bank:ingest`. When the
+index of the first root that has one cannot be read or verified (an ingest mid-write, a failed read, damage) the bank already
+in use stays (the damaged root is listed under `rejected`, `ok: false`, retried every 5 s or as soon as the file changes);
+a fresh process with no bank in use falls through to the next root, an older generation first.
 
 A root whose `index.json` is unreadable or inconsistent is **not served** (logged once, listed under `rejected` in
 `/api/bank/health`) and the next best root takes over. A root whose index is fine but whose files for some elements are

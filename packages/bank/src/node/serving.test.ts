@@ -197,3 +197,30 @@ describe('asset lookup never hands out damaged bytes under an immutable header',
     expect(responses.every((r) => r?.status === 200)).toBe(true);
   });
 });
+
+describe('a damaged current generation under a running handler', () => {
+  test('the bank in use stays and health lists the damaged root; a fresh process falls back to the previous generation', async () => {
+    const good = await publishFixture(['elem-a'], 1);
+    const bad = await publishFixture(['elem-a', 'elem-b'], 2);
+    const handler = createBankHandler({ paths, revalidateMs: 0 });
+    const ids = async (h: Handler): Promise<string[]> =>
+      (
+        (await (await get(h, '/api/bank/index'))!.json()) as { elements: { id: string }[] }
+      ).elements.map((e) => e.id);
+    expect(await ids(handler)).toEqual(['elem-a', 'elem-b']);
+    await Bun.write(
+      join(paths.bankDir, 'generations', bad.publish.id, 'index.json'),
+      '{"version":',
+    );
+    expect(await ids(handler)).toEqual(['elem-a', 'elem-b']); // known-good bank in memory stays
+    const health = (await (await get(handler, '/api/bank/health'))!.json()) as {
+      ok: boolean;
+      rejected: { root: string }[];
+    };
+    expect(health.ok).toBe(false);
+    expect(health.rejected[0]?.root).toContain(bad.publish.id);
+    const fresh = createBankHandler({ paths, revalidateMs: 0 });
+    expect(await ids(fresh)).toEqual(['elem-a']);
+    expect(good.publish.id).toBeDefined();
+  });
+});

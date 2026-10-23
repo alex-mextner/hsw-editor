@@ -87,7 +87,7 @@ interface Snapshot {
   signature: string;
   checkedAt: number;
   rebuiltAt: number;
-  /** The first root with an index.json could not be read (an ingest mid-write, a torn copy). */
+  /** The first root with an index.json could not be read or verified (torn write, damage, a failed read). */
   decidingUnreadable: boolean;
 }
 
@@ -269,12 +269,20 @@ export function createBankHandler(
         previous !== null && !stale
           ? { ...previous, checkedAt: Date.now() }
           : await rebuild(list, signature, logOnce);
-      // The first root with an index decides. When its index cannot be read (an ingest mid-write) the bank
-      // already in use stays instead of a shrunken older root or the seed taking over, and the stale
-      // signature makes the next revalidation retry.
+      // The first root with an index decides. When its index cannot be read or verified (an ingest
+      // mid-write, a failed read, damage) the bank already in use stays instead of a shrunken older root
+      // or the seed taking over; a fresh process with no bank in use falls through to the next root.
       snap =
         next.decidingUnreadable && previous?.served
-          ? { ...previous, signature: `retry:${signature}`, checkedAt: Date.now() }
+          ? {
+              ...previous,
+              rejected: next.rejected,
+              // the real signature: a rewrite (torn write finished, restored copy) triggers a rebuild at
+              // once; while it stays unreadable it is retried every REJECTED_RETRY_MS, not on every request
+              signature,
+              rebuiltAt: Date.now(),
+              checkedAt: Date.now(),
+            }
           : next;
       return snap;
     })().finally(() => {

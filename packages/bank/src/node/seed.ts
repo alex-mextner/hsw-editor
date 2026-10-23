@@ -130,9 +130,8 @@ export async function exportSeed(paths: BankPaths): Promise<SeedResult> {
     }
     await writeIndexFiles(staging, index);
     await Bun.write(join(staging, 'ATTRIBUTION.md'), attributionMarkdown(keep));
-    bytes +=
-      Bun.file(join(staging, 'index.json')).size +
-      Bun.file(join(staging, 'search-index.json')).size;
+    for (const name of ['index.json', 'search-index.json', 'ATTRIBUTION.md'])
+      bytes += Bun.file(join(staging, name)).size;
     if (bytes > SEED_BUDGET_BYTES) {
       throw new Error(`seed is ${bytes} bytes, over the ${SEED_BUDGET_BYTES} byte budget`);
     }
