@@ -14,6 +14,7 @@ import {
   reduceFrame,
   type Conversation,
 } from './conversation.ts';
+import { buildPalettePrompt } from './paletteMode.ts';
 
 const usage = {
   input: 1,
@@ -249,5 +250,39 @@ describe('applySnapshot equals having watched the whole stream', () => {
         tools: reference.activeTools.size,
       });
     }
+  });
+});
+
+describe('palette questions in the transcript', () => {
+  const asked = (content: UserMessage['content']): UserMessage => ({ ...user, content });
+  const shownText = (conversation: Conversation): string => {
+    const entry = conversation.entries.at(-1);
+    if (entry?.type !== 'message' || entry.message.role !== 'user') return '';
+    const { content } = entry.message;
+    return typeof content === 'string'
+      ? content
+      : content.map((block) => (block.type === 'text' ? block.text : '')).join('');
+  };
+
+  test('shows the question marked as coming from the palette, without the instruction block', () => {
+    const wrapped = buildPalettePrompt('undo the last change', 'en');
+    const live = reduceFrame(emptyConversation(), {
+      type: 'message_end',
+      message: asked([{ type: 'text', text: wrapped }]),
+    });
+    expect(shownText(live)).toBe('\u2318K \u00b7 undo the last change');
+    const replayed = applySnapshot({
+      messages: [asked(wrapped)],
+      state: null,
+      inflight: [],
+      pendingDialogs: [],
+      pendingPrompts: [],
+    });
+    expect(shownText(replayed)).toBe('\u2318K \u00b7 undo the last change');
+  });
+
+  test('leaves ordinary user messages alone', () => {
+    const live = reduceFrame(emptyConversation(), { type: 'message_end', message: user });
+    expect(shownText(live)).toBe('add a holder');
   });
 });

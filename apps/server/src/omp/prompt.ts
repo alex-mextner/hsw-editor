@@ -38,6 +38,9 @@ history.jsonl — the server is the single writer and direct file edits are lost
   candidate bank elements; compare: compare reference models; calibration) and wait for the answer. Use it instead of
   guessing when the answer changes the result (tool length, holder size, which of two matching elements). For a plain
   question use the ask tool.
+- app_command: list, search and run the editor's own UI actions (undo, view and theme toggles, settings, panels, ...),
+  the same ones as the command palette. op=search or op=list first to get the id, then op=run; never invent ids or
+  arguments. Actions that change things may wait for the user's approval and come back as an error if declined.
 
 ## Rules
 - Removing many items is a destructive edit: the user is asked to approve it; do not split a bulk removal into small

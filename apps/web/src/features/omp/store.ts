@@ -3,6 +3,7 @@
  * immutable `OmpView` snapshot (batched to animation frames while the agent streams).
  */
 import { createValueStore } from '#state-backend';
+import type { AppCommandToolArgs, PaletteAiBridge } from '@hsw-editor/commands';
 import {
   isDialogRequest,
   isJsonObject,
@@ -10,6 +11,7 @@ import {
   type HswPromptAnswer,
   type HswPromptRequest,
   type ImageContent,
+  type JsonValue,
   type OmpDialogRequest,
   type OmpFrame,
   type OmpModel,
@@ -32,8 +34,13 @@ import {
   replaceMessages,
   type Conversation,
 } from './conversation.ts';
+import {
+  createOmpPaletteBridge,
+  type AppCommandHandler,
+  type PaletteTransport,
+} from './paletteBridge.ts';
 import type { ConnectionPhase } from './render-types.ts';
-import { runViewportCall } from './viewport-bridge.ts';
+import { runViewportCall, type ViewportOnlyCall } from './viewport-bridge.ts';
 
 /** The newest successful wall edit by the agent, kept so the panel can offer a one-click undo. */
 export interface AgentEdit {
@@ -96,17 +103,61 @@ class OmpController {
   #nonce = 0;
   #resyncing = false;
   #refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  readonly #frameListeners = new Set<(frame: OmpFrame) => void>();
+  readonly #linkListeners = new Set<() => void>();
+  readonly #appCommandAborts = new Map<string, AbortController>();
+  #appCommandHandler: AppCommandHandler | null = null;
+
+  /** What the command palette's AI bridge uses: the same connection and session as the panel. */
+  readonly palette: PaletteTransport = {
+    link: () => ({
+      phase: this.#view.phase,
+      server: this.#view.server?.phase ?? null,
+      loaded: this.#view.loaded,
+      // A stopped omp drops the frames that would end its turn: nothing is working there any more.
+      working: this.#view.conversation.working && this.#view.server?.phase !== 'stopped',
+    }),
+    onLink: (listener) => {
+      this.#linkListeners.add(listener);
+      return () => this.#linkListeners.delete(listener);
+    },
+    onFrame: (listener) => {
+      this.#frameListeners.add(listener);
+      return () => this.#frameListeners.delete(listener);
+    },
+    prompt: async (message) => {
+      const response = await this.#request({ type: 'prompt', message });
+      if (response === null) return { ok: false, error: 'not connected' };
+      if (!response.success) return { ok: false, error: response.error };
+      return {
+        ok: true,
+        agentInvoked: agentInvokedOf(response.data),
+      };
+    },
+    abort: () => void this.#request({ type: 'abort' }),
+    setAppCommandHandler: (handler) => {
+      this.#appCommandHandler = handler;
+      return () => {
+        if (this.#appCommandHandler === handler) this.#appCommandHandler = null;
+      };
+    },
+  };
 
   /** Open (or switch) the connection for `wallId`; `null` closes it. Idempotent. */
   connect(wallId: string | null): void {
     if (this.#view.wallId === wallId) return;
     this.#connection?.close();
     this.#connection = null;
+    this.#abortAppCommands();
     this.#view = { ...INITIAL, wallId };
     this.#flush();
+    this.#notifyLink();
     if (wallId === null) return;
     const connection = new OmpConnection(wallId, {
-      onPhase: (phase) => this.#update({ phase, ...(phase === 'live' ? {} : { loaded: false }) }),
+      onPhase: (phase) => {
+        if (phase !== 'live') this.#abortAppCommands();
+        this.#update({ phase, ...(phase === 'live' ? {} : { loaded: false }) });
+      },
       onMessage: (message) => this.#onMessage(message),
     });
     this.#connection = connection;
@@ -269,6 +320,15 @@ class OmpController {
   #update(patch: Partial<OmpView>): void {
     this.#view = { ...this.#view, ...patch };
     this.#schedule();
+    this.#notifyLink();
+  }
+
+  #notifyLink(): void {
+    for (const listener of [...this.#linkListeners]) listener();
+  }
+
+  #notifyFrame(frame: OmpFrame): void {
+    for (const listener of [...this.#frameListeners]) listener(frame);
   }
 
   #schedule(): void {
@@ -328,8 +388,14 @@ class OmpController {
       case 'prompt_done':
         this.#update({ prompts: this.#view.prompts.filter((prompt) => prompt.id !== message.id) });
         break;
-      case 'ui_call':
-        void this.#answerViewportCall(message.id, message.call);
+      case 'ui_call': {
+        const { call } = message;
+        if (call.method === 'app_command') void this.#answerAppCommand(message.id, call.params);
+        else void this.#answerViewportCall(message.id, call);
+        break;
+      }
+      case 'ui_cancel':
+        this.#appCommandAborts.get(message.id)?.abort();
         break;
       case 'error':
         this.#reduce({
@@ -342,10 +408,41 @@ class OmpController {
     }
   }
 
-  async #answerViewportCall(
-    id: string,
-    call: Parameters<typeof runViewportCall>[0],
-  ): Promise<void> {
+  /** Runs an `app_command` request of the agent through the palette's handler and answers the server. */
+  async #answerAppCommand(id: string, params: AppCommandToolArgs): Promise<void> {
+    const handler = this.#appCommandHandler;
+    if (handler === null) {
+      this.#connection?.send({
+        t: 'ui_result',
+        id,
+        ok: false,
+        error: 'the command palette is not available in this window',
+      });
+      return;
+    }
+    const controller = new AbortController();
+    this.#appCommandAborts.set(id, controller);
+    try {
+      const result = await handler(params, controller.signal);
+      this.#connection?.send({ t: 'ui_result', id, ok: true, result });
+    } catch (error) {
+      this.#connection?.send({
+        t: 'ui_result',
+        id,
+        ok: false,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      this.#appCommandAborts.delete(id);
+    }
+  }
+
+  /** The page can no longer answer: stop every command the agent is waiting on (approval prompts close). */
+  #abortAppCommands(): void {
+    for (const controller of this.#appCommandAborts.values()) controller.abort();
+  }
+
+  async #answerViewportCall(id: string, call: ViewportOnlyCall): Promise<void> {
     try {
       const result = await runViewportCall(call);
       this.#connection?.send({ t: 'ui_result', id, ok: true, result });
@@ -360,6 +457,7 @@ class OmpController {
   }
 
   #onFrame(frame: OmpFrame): void {
+    this.#notifyFrame(frame);
     switch (frame.type) {
       case 'extension_ui_request':
         this.#onUiRequest(frame);
@@ -510,6 +608,11 @@ class OmpController {
   }
 }
 
+/** omp answers a builtin slash command itself (`agentInvoked: false`); anything else runs the agent. */
+function agentInvokedOf(data: JsonValue | undefined): boolean {
+  return data === undefined || !isJsonObject(data) || data['agentInvoked'] !== false;
+}
+
 function agentEditOf(frame: Extract<OmpFrame, { type: 'tool_execution_end' }>): AgentEdit | null {
   if (frame.toolName !== 'wall_apply' || frame.isError === true || frame.result.isError === true)
     return null;
@@ -521,3 +624,6 @@ function agentEditOf(frame: Extract<OmpFrame, { type: 'tool_execution_end' }>): 
 }
 
 export const omp = new OmpController();
+
+/** The command palette's AI bridge, sharing the panel's connection and omp session. */
+export const ompPaletteBridge: PaletteAiBridge = createOmpPaletteBridge(omp.palette);

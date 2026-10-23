@@ -7,6 +7,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
+    "@hsw-editor/commands": "workspace:*",
     "@oh-my-pi/pi-wire": "18.12.6"
   }
 }

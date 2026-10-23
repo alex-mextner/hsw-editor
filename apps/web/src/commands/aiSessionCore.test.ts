@@ -11,7 +11,6 @@ import {
   executeAppCommand,
   type PaletteAiBridge,
 } from '@hsw-editor/commands';
-import { UNAVAILABLE_AI_BRIDGE } from './aiBridge.ts';
 import { AiSession } from './aiSessionCore.ts';
 
 /** In-memory stand-in for the omp bridge, used only here. */
@@ -120,7 +119,8 @@ describe('asking', () => {
   });
 
   test('an unavailable bridge is never asked', () => {
-    const { session } = makeSession({ bridge: UNAVAILABLE_AI_BRIDGE });
+    const unavailable = fakeBridge('unavailable');
+    const { session } = makeSession({ bridge: unavailable.bridge });
     session.ask('hello');
     expect(session.answer.get().status).toBe('idle');
   });

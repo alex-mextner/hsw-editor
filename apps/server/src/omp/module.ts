@@ -3,6 +3,7 @@
  * home directory and listening address) and serves `/api/omp/*`.
  */
 import type { ServerModule } from '../modules.ts';
+import { createAppCommandToolFactory } from './app-command-tool.ts';
 import { loadOmpConfig, type OmpConfig } from './config.ts';
 import { OmpHost } from './host.ts';
 import { createOmpRoutes, OMP_SOCKET_OPTIONS, type OmpRoutes } from './routes.ts';
@@ -46,7 +47,7 @@ export function createOmpModule(options: OmpModuleOptions = {}): OmpModule {
   const ensure = (home: string): Running => {
     if (running !== null) return running;
     const wallTools = createWallToolFactory({ apiBase: () => apiBase });
-    const factories = [wallTools, ...(options.extraTools ?? [])];
+    const factories = [wallTools, createAppCommandToolFactory(), ...(options.extraTools ?? [])];
     const host = new OmpHost({
       config: loadOmpConfig(process.env, { dataDir: home, ...options.config }),
       createTools: (env) => factories.flatMap((factory) => factory(env)),

@@ -58,7 +58,6 @@ interface ClientRecord {
 interface PendingViewportCall {
   readonly resolve: (result: ViewportResult) => void;
   readonly reject: (error: Error) => void;
-  readonly timer: NodeJS.Timeout;
   readonly clientId: string;
 }
 
@@ -106,6 +105,9 @@ const SNAPSHOT_REQUEST_TIMEOUT_MS = 30_000;
 /** Commands whose success is followed by a `prompt_result` with the same id. */
 const PROMPT_COMMANDS: readonly string[] = ['prompt', 'abort_and_prompt'];
 
+/** Commands that put work in front of the agent: the page that sent the latest one is the user's window. */
+const ASKING_COMMANDS: readonly string[] = [...PROMPT_COMMANDS, 'steer', 'follow_up'];
+
 /**
  * A prompt is followed by a `prompt_result` with the same id (also after a late error response), except
  * builtin slash commands (`agentInvoked: false`), which never get one.
@@ -141,6 +143,8 @@ export class OmpSession {
   readonly #hostCalls = new Map<string, AbortController>();
   /** Wire id sent to omp -> the page that issued the command and the id it used. */
   readonly #rpcOrigin = new Map<string, { readonly clientId: string; readonly id: string }>();
+  /** The page that sent the latest prompt: the one that asked, so the one `app_command` approvals go to. */
+  #promptClientId: string | null = null;
   #tools = new Map<string, HostTool>();
   #child: OmpChild | null = null;
   #phase: OmpPhase = 'idle';
@@ -268,12 +272,9 @@ export class OmpSession {
 
   detach(clientId: string): void {
     this.#clients.delete(clientId);
-    for (const [id, call] of this.#viewportCalls) {
-      if (call.clientId === clientId) {
-        clearTimeout(call.timer);
-        this.#viewportCalls.delete(id);
+    for (const call of [...this.#viewportCalls.values()]) {
+      if (call.clientId === clientId)
         call.reject(new Error('the editor window that was asked disconnected'));
-      }
     }
     for (const [id, origin] of this.#rpcOrigin) {
       if (origin.clientId === clientId) this.#rpcOrigin.delete(id);
@@ -284,9 +285,11 @@ export class OmpSession {
   handleClientMessage(clientId: string, message: OmpClientMessage): void {
     const record = this.#clients.get(clientId);
     if (!record) return;
-    record.lastActive = Date.now();
+    // A ping is the page's timer, not the user: it must not make a background tab the "most active" window.
+    if (message.t !== 'ping') record.lastActive = Date.now();
     switch (message.t) {
       case 'rpc':
+        if (ASKING_COMMANDS.includes(message.command.type)) this.#promptClientId = record.port.id;
         this.#forwardRpc(record, message.command);
         break;
       case 'ui_response':
@@ -545,7 +548,9 @@ export class OmpSession {
           .createTools({
             wallId: this.wallId,
             config: this.#deps.config,
-            viewport: { call: (call, signal) => this.#callViewport(call, signal) },
+            viewport: {
+              call: (call, signal, timeoutMs) => this.#callViewport(call, signal, timeoutMs),
+            },
             prompts: { ask: (toolName, draft, signal) => this.#askPrompt(toolName, draft, signal) },
           })
           .map((tool) => [tool.definition.name, tool]),
@@ -896,44 +901,72 @@ export class OmpSession {
     this.#prompts.get(id)?.resolve(answer);
   }
 
-  #callViewport(call: ViewportCall, signal: AbortSignal): Promise<ViewportResult> {
+  /**
+   * The page a call goes to. `app_command` ends in an approval prompt that only the window the user asked in
+   * can show, so it goes to the page that sent the latest prompt; everything else to the most active page.
+   */
+  #viewportTarget(call: ViewportCall): ClientRecord | undefined {
+    if (call.method === 'app_command' && this.#promptClientId !== null) {
+      const asker = this.#clients.get(this.#promptClientId);
+      if (asker) return asker;
+    }
     let target: ClientRecord | undefined;
     for (const record of this.#clients.values()) {
       if (target === undefined || record.lastActive > target.lastActive) target = record;
     }
+    return target;
+  }
+
+  #callViewport(
+    call: ViewportCall,
+    signal: AbortSignal,
+    timeoutMs?: number,
+  ): Promise<ViewportResult> {
+    const target = this.#viewportTarget(call);
     if (!target) {
       return Promise.reject(
         new Error('no editor window is open for this wall; ask the user to open it'),
       );
     }
+    if (signal.aborted) return Promise.reject(new Error('cancelled'));
     const id = this.#nextUiId('vp');
-    return new Promise<ViewportResult>((resolveCall, rejectCall) => {
-      const timer = setTimeout(() => {
-        this.#viewportCalls.delete(id);
-        rejectCall(
+    const { promise, resolve, reject } = Promise.withResolvers<ViewportResult>();
+    const release = (): void => {
+      clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      this.#viewportCalls.delete(id);
+    };
+    // The page may still be working on the call (waiting for an approval): tell it to stop.
+    const giveUp = (error: Error): void => {
+      release();
+      target.port.send({ t: 'ui_cancel', id });
+      reject(error);
+    };
+    const timer = setTimeout(
+      () =>
+        giveUp(
           new Error(
             `the editor window did not answer ${call.method} in time (is the tab in the background?)`,
           ),
-        );
-      }, this.#timings.viewportTimeoutMs);
-      signal.addEventListener(
-        'abort',
-        () => {
-          if (this.#viewportCalls.delete(id)) {
-            clearTimeout(timer);
-            rejectCall(new Error('cancelled'));
-          }
-        },
-        { once: true },
-      );
-      this.#viewportCalls.set(id, {
-        resolve: resolveCall,
-        reject: rejectCall,
-        timer,
-        clientId: target.port.id,
-      });
-      target.port.send({ t: 'ui_call', id, call });
+        ),
+      timeoutMs ?? this.#timings.viewportTimeoutMs,
+    );
+    const onAbort = (): void => giveUp(new Error('cancelled'));
+    signal.addEventListener('abort', onAbort, { once: true });
+    this.#viewportCalls.set(id, {
+      clientId: target.port.id,
+      resolve: (result) => {
+        release();
+        resolve(result);
+      },
+      // The page left or answered with an error: nothing is left to cancel there.
+      reject: (error) => {
+        release();
+        reject(error);
+      },
     });
+    target.port.send({ t: 'ui_call', id, call });
+    return promise;
   }
 
   #finishViewportCall(
@@ -942,8 +975,6 @@ export class OmpSession {
   ): void {
     const call = this.#viewportCalls.get(message.id);
     if (!call || call.clientId !== clientId) return;
-    this.#viewportCalls.delete(message.id);
-    clearTimeout(call.timer);
     if (message.ok) call.resolve(message.result);
     else call.reject(new Error(message.error));
   }
@@ -953,11 +984,7 @@ export class OmpSession {
     for (const pending of [...this.#prompts.values()]) pending.resolve({ cancelled: true });
     for (const controller of this.#hostCalls.values()) controller.abort();
     this.#hostCalls.clear();
-    for (const [id, call] of this.#viewportCalls) {
-      clearTimeout(call.timer);
-      call.reject(new Error(reason));
-      this.#viewportCalls.delete(id);
-    }
+    for (const call of [...this.#viewportCalls.values()]) call.reject(new Error(reason));
     this.#rpcOrigin.clear();
   }
 }

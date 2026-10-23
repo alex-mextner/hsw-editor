@@ -314,7 +314,8 @@ describe('omp bridge end to end', () => {
       if (call.method === 'get_selection') return { selected: ['i-1', 'i-2'] };
       if (call.method === 'capture')
         return { mimeType: 'image/png', dataBase64: PNG, width: 1, height: 1 };
-      return { selected: call.params.ids };
+      if (call.method === 'select') return { selected: call.params.ids };
+      return { selected: [] };
     };
     const got = JSON.parse(
       textOf(toolResult(await page.prompt('tool:wall_get:{}'), 'wall_get')),
@@ -334,6 +335,31 @@ describe('omp bridge end to end', () => {
     const failed = toolResult(await page.prompt('tool:wall_view:{}'), 'wall_view');
     expect(failed.isError).toBe(true);
     expect(textOf(failed)).toContain('not mounted');
+    page.close();
+  });
+
+  test('a palette question reaches omp wrapped, and its app_command runs on the page and answers the agent', async () => {
+    await createWall('palette');
+    const page = new Page('palette');
+    await page.ready();
+    page.viewport = (call) =>
+      call.method === 'app_command'
+        ? { ok: true, op: 'run', id: call.params.id ?? '', value: 'done' }
+        : { selected: [] };
+    const wrapped =
+      '<hsw-palette-mode>\nanswer briefly\n</hsw-palette-mode>\ntool:app_command:{"op":"run","id":"view.toggleGrid"}';
+    const frames = await page.prompt(wrapped);
+    expect(page.calls).toEqual([
+      { method: 'app_command', params: { op: 'run', id: 'view.toggleGrid' } },
+    ]);
+    const end = toolResult(frames, 'app_command');
+    expect(end.isError).toBeFalsy();
+    expect(JSON.parse(textOf(end))).toEqual({
+      ok: true,
+      op: 'run',
+      id: 'view.toggleGrid',
+      value: 'done',
+    });
     page.close();
   });
 

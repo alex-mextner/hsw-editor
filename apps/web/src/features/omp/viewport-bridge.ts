@@ -5,6 +5,9 @@
  */
 import type { ViewportCall, ViewportCapture, ViewportResult } from '@hsw-editor/omp-protocol';
 
+/** The calls the 3D viewport answers; `app_command` goes to the command palette instead. */
+export type ViewportOnlyCall = Exclude<ViewportCall, { readonly method: 'app_command' }>;
+
 export interface ViewportBridge {
   /** Ids of the currently selected wall items. */
   getSelection(): readonly string[];
@@ -27,7 +30,7 @@ export function registerViewportBridge(bridge: ViewportBridge): () => void {
   };
 }
 
-export async function runViewportCall(call: ViewportCall): Promise<ViewportResult> {
+export async function runViewportCall(call: ViewportOnlyCall): Promise<ViewportResult> {
   const bridge = current;
   if (bridge === null) throw new Error('the 3D viewport is not mounted in this window');
   switch (call.method) {
@@ -37,5 +40,8 @@ export async function runViewportCall(call: ViewportCall): Promise<ViewportResul
       return { selected: bridge.select(call.params.ids) };
     case 'capture':
       return bridge.capture(call.params);
+    default:
+      // Answer a method this page does not know (a newer server) at once instead of never.
+      throw new Error('this editor window does not support that call');
   }
 }

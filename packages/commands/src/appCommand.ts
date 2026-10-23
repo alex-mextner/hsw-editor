@@ -35,6 +35,9 @@ export const appCommandRequestSchema = z.object({
     .describe("op=run: arguments matching the command's args schema, if it has one."),
 });
 
+/** What the model passes to the `app_command` tool (also the wire form of a page call). */
+export type AppCommandToolArgs = z.infer<typeof appCommandRequestSchema>;
+
 export type AppCommandRequest =
   | { readonly op: 'list'; readonly group?: string }
   | { readonly op: 'search'; readonly query: string; readonly limit?: number }
@@ -44,27 +47,40 @@ export type AppCommandRequest =
       readonly args?: Readonly<Record<string, JsonValue>>;
     };
 
+type ArgsParse =
+  | { readonly ok: true; readonly args: AppCommandToolArgs }
+  | { readonly ok: false; readonly message: string };
+
+/** Validates what the model passed: the flat schema, plus the fields the chosen `op` needs. */
+export function parseAppCommandArgs(raw: unknown): ArgsParse {
+  const parsed = appCommandRequestSchema.safeParse(raw);
+  if (!parsed.success) return { ok: false, message: z.prettifyError(parsed.error) };
+  const { op, query, id } = parsed.data;
+  if (op === 'search' && (query === undefined || query === ''))
+    return { ok: false, message: 'op=search needs query' };
+  if (op === 'run' && (id === undefined || id === ''))
+    return { ok: false, message: 'op=run needs id' };
+  return { ok: true, args: parsed.data };
+}
+
 type RequestParse =
   | { readonly ok: true; readonly request: AppCommandRequest }
   | { readonly ok: false; readonly message: string };
 
 export function parseAppCommandRequest(raw: unknown): RequestParse {
-  const parsed = appCommandRequestSchema.safeParse(raw);
-  if (!parsed.success) return { ok: false, message: z.prettifyError(parsed.error) };
-  const { op, group, query, limit, id, args } = parsed.data;
+  const checked = parseAppCommandArgs(raw);
+  if (!checked.ok) return checked;
+  const { op, group, query, limit, id, args } = checked.args;
   switch (op) {
     case 'list':
       return { ok: true, request: { op, ...(group === undefined ? {} : { group }) } };
     case 'search':
-      if (query === undefined || query === '')
-        return { ok: false, message: 'op=search needs query' };
       return {
         ok: true,
-        request: { op, query, ...(limit === undefined ? {} : { limit }) },
+        request: { op, query: query ?? '', ...(limit === undefined ? {} : { limit }) },
       };
     case 'run':
-      if (id === undefined || id === '') return { ok: false, message: 'op=run needs id' };
-      return { ok: true, request: { op, id, ...(args === undefined ? {} : { args }) } };
+      return { ok: true, request: { op, id: id ?? '', ...(args === undefined ? {} : { args }) } };
   }
 }
 
@@ -91,14 +107,17 @@ export interface AppCommandInfo {
   readonly args: JsonValue | null;
 }
 
-export type AppCommandErrorCode =
-  | 'invalid_request'
-  | 'unknown'
-  | 'disabled'
-  | 'invalid_args'
-  | 'rejected'
-  | 'cancelled'
-  | 'failed';
+export const APP_COMMAND_ERROR_CODES = [
+  'invalid_request',
+  'unknown',
+  'disabled',
+  'invalid_args',
+  'rejected',
+  'cancelled',
+  'failed',
+] as const;
+
+export type AppCommandErrorCode = (typeof APP_COMMAND_ERROR_CODES)[number];
 
 export type AppCommandResult =
   | {
@@ -110,6 +129,42 @@ export type AppCommandResult =
     }
   | { readonly ok: true; readonly op: 'run'; readonly id: string; readonly value: JsonValue | null }
   | { readonly ok: false; readonly code: AppCommandErrorCode; readonly message: string };
+
+const localizedTextSchema = z.object({ en: z.string(), ru: z.string() });
+
+const appCommandInfoSchema = z.object({
+  id: z.string(),
+  title: localizedTextSchema,
+  description: localizedTextSchema.optional(),
+  group: z.string(),
+  mutates: z.boolean(),
+  keybinding: z.string().optional(),
+  args: z.json().nullable(),
+});
+
+/**
+ * The wire form of {@link AppCommandResult}: the server checks what the page answered before it
+ * hands the text to the model.
+ */
+export const appCommandResultSchema = z.union([
+  z.object({
+    ok: z.literal(true),
+    op: z.enum(['list', 'search']),
+    commands: z.array(appCommandInfoSchema),
+    truncated: z.boolean(),
+  }),
+  z.object({
+    ok: z.literal(true),
+    op: z.literal('run'),
+    id: z.string(),
+    value: z.json().nullable(),
+  }),
+  z.object({
+    ok: z.literal(false),
+    code: z.enum(APP_COMMAND_ERROR_CODES),
+    message: z.string(),
+  }),
+]);
 
 /** What the AI is about to do, shown to the user before (approve mode) or while (auto) it runs. */
 export interface PlannedAction {

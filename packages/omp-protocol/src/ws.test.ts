@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
-import { parseClientMessage } from './ws.ts';
+import { APP_COMMAND_TOOL_NAME, type AppCommandResult } from '@hsw-editor/commands';
+import { HSW_TOOL_NAMES, parseClientMessage, parseServerMessage, type ViewportCall } from './ws.ts';
 
 const rpc = (command: object) => parseClientMessage(JSON.stringify({ t: 'rpc', command }));
 
@@ -70,5 +71,43 @@ describe('parseClientMessage', () => {
     expect(answer({ cancelled: true }).ok).toBe(true);
     expect(answer({ approved: 'yes' }).ok).toBe(false);
     expect(answer({}).ok).toBe(false);
+  });
+});
+
+describe('app_command on the wire', () => {
+  test('a ui_call and its ui_result round trip as JSON', () => {
+    const call: ViewportCall = {
+      method: 'app_command',
+      params: { op: 'run', id: 'wall.rename', args: { name: 'Garage' } },
+    };
+    const server = parseServerMessage(JSON.stringify({ t: 'ui_call', id: 'vp-1', call }));
+    expect(server).toEqual({ t: 'ui_call', id: 'vp-1', call });
+
+    const result: AppCommandResult = { ok: true, op: 'run', id: 'wall.rename', value: null };
+    const client = parseClientMessage(
+      JSON.stringify({ t: 'ui_result', id: 'vp-1', ok: true, result }),
+    );
+    expect(client).toEqual({ ok: true, message: { t: 'ui_result', id: 'vp-1', ok: true, result } });
+  });
+
+  test('a page error answers the call without a result', () => {
+    const parsed = parseClientMessage(
+      JSON.stringify({ t: 'ui_result', id: 'vp-1', ok: false, error: 'palette not mounted' }),
+    );
+    expect(parsed).toEqual({
+      ok: true,
+      message: { t: 'ui_result', id: 'vp-1', ok: false, error: 'palette not mounted' },
+    });
+  });
+
+  test('ui_cancel reaches the page as a server message', () => {
+    expect(parseServerMessage(JSON.stringify({ t: 'ui_cancel', id: 'vp-1' }))).toEqual({
+      t: 'ui_cancel',
+      id: 'vp-1',
+    });
+  });
+
+  test('omp\u2019s own allow prompt for the tool is auto-approved like the wall tools', () => {
+    expect(HSW_TOOL_NAMES).toContain(APP_COMMAND_TOOL_NAME);
   });
 });
