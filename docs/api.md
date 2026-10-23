@@ -36,6 +36,8 @@ validated against them. Import `applyOp`, `OpSchema`, `parseWall`, `opJsonSchema
 | 409    | `request_closed`                                   | The input request was already answered or cancelled                        |
 | 413    | `payload_too_large`                                | Upload above the limit (photos 40 MB, models 100 MB; settings 256 KiB)     |
 | 415    | `unsupported_media_type`                           | Not a JPEG/PNG/WebP photo, not a binary glTF (`.glb`) model                |
+| 422    | `heic_conversion_failed`                           | A HEIC photo could not be converted to JPEG (needs `uv` and, once, network) |
+| 501    | `heic_converter_unavailable`                       | HEIC upload but `uv` is not installed                                       |
 | 422    | `op_failed`                                        | Op refused by the reducer: `details` = `{ opIndex?, code }` (see below)    |
 | 422    | `invalid_request`                                  | An input request points at an item/photo/model that is not on the wall     |
 | 500    | `internal`                                         | Bug; the wall on disk is still consistent                                  |
@@ -96,7 +98,7 @@ linear stack across all actors: it applies the stored inverse of the newest not-
 
 ## Assets
 
-- `POST /api/walls/:id/photos` — `multipart/form-data`: `file` (JPEG/PNG/WebP), optional `name`, `actor` (JSON string).
+- `POST /api/walls/:id/photos` — `multipart/form-data`: `file` (JPEG/PNG/WebP/AVIF/HEIC; EXIF orientation is applied and HEIC/AVIF converted, so stored pixels are upright), optional `name`, `actor` (JSON string).
   Stores `photos/<id>.<ext>`, applies an `addPhoto` op. `201 { photo, rev, wall }`.
 - `GET /api/walls/:id/photos/:photoId/file` — the image (`cache-control: private, max-age=31536000, immutable`).
 - `POST /api/walls/:id/models` — `multipart/form-data`: `file` (binary glTF, `.glb`), optional `label`, `forItemId`, `actor`.

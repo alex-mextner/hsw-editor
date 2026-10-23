@@ -1,5 +1,5 @@
 /** Core REST/SSE routes: walls, ops, undo/redo, assets, events and jobs. Contract: docs/api.md. */
-import { basename } from 'node:path';
+import { basename, join } from 'node:path';
 import {
   type ApiErrorBody,
   DEFAULT_BOARD,
@@ -31,6 +31,7 @@ import { HttpError } from './http-error.ts';
 import { SERVER_VERSION } from './version.ts';
 import { isGlb, sniffImage } from './image.ts';
 import { JobError } from './jobs.ts';
+import { NormalizeError, normalizePhoto, type NormalizeErrorCode } from './photo/normalize.ts';
 import type { ServerDeps } from './modules.ts';
 import { SettingsConflictError } from './settings.ts';
 import { settingsRoutes } from './settings-routes.ts';
@@ -214,6 +215,24 @@ function formString(fields: UploadForm, key: string): string | undefined {
   return typeof value === 'string' && value !== '' ? value : undefined;
 }
 
+const NORMALIZE_STATUS: Record<NormalizeErrorCode, [number, string]> = {
+  photo_undecodable: [415, 'unsupported_media_type'],
+  heic_converter_unavailable: [501, 'heic_converter_unavailable'],
+  heic_conversion_failed: [422, 'heic_conversion_failed'],
+};
+
+async function normalizeUpload(bytes: Uint8Array, home: string): Promise<Uint8Array> {
+  try {
+    return (await normalizePhoto(bytes, { workDir: join(home, 'tmp') })).bytes;
+  } catch (error) {
+    if (error instanceof NormalizeError) {
+      const [status, code] = NORMALIZE_STATUS[error.code];
+      throw new HttpError(status, code, error.message);
+    }
+    throw error;
+  }
+}
+
 function assetResponse(path: string, mime: string): Response {
   const file = Bun.file(path);
   return new Response(file, {
@@ -387,13 +406,16 @@ async function wallSubroute(
 
   if (sub === 'photos' && subId === undefined && method === 'POST') {
     const upload = await readUpload(request, MAX_PHOTO_BYTES);
-    const info = sniffImage(upload.bytes);
+    await store.get(id); // 404 before any conversion work
+    // Pixels are stored upright (EXIF rotation applied, HEIC converted): the overlay's coordinates are oriented pixels.
+    const photoBytes = await normalizeUpload(upload.bytes, config.home);
+    const info = sniffImage(photoBytes);
     if (info === null)
       throw new HttpError(415, 'unsupported_media_type', 'not a JPEG, PNG or WebP image');
     const file = await store.addAsset(id, {
       dir: 'photos',
       ext: info.ext,
-      bytes: upload.bytes,
+      bytes: photoBytes,
       prefix: 'p',
     });
     try {
@@ -407,7 +429,7 @@ async function wallSubroute(
           formString(upload.fields, 'name') ??
           (upload.file.name === '' ? undefined : upload.file.name),
         origin: 'upload',
-        sha256: new Bun.CryptoHasher('sha256').update(upload.bytes).digest('hex'),
+        sha256: new Bun.CryptoHasher('sha256').update(photoBytes).digest('hex'),
       });
       const outcome = await store.apply(id, {
         ops: [{ type: 'addPhoto', photo }],
