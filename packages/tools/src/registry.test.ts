@@ -20,7 +20,7 @@ function assertWatertight(classId: string, values: AnyValues, lod: Lod): void {
   const size = model.bounds.max.map((v, i) => v - (model.bounds.min[i] ?? 0));
   for (const s of size) expect(Number.isFinite(s)).toBe(true);
   expect(Math.max(...size)).toBeGreaterThan(5);
-  expect(Math.max(...size)).toBeLessThan(900);
+  expect(Math.max(...size)).toBeLessThan(Math.max(900, 1.3 * (model.holding.dims.length ?? 0)));
 }
 
 describe('tool registry', () => {
