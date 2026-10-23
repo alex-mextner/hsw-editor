@@ -62,14 +62,16 @@ export function findContacts(
       // The wall plane z = 0: tool columns in the first cells touch it.
       if ((j + dj) * cell <= options.restGapMm) {
         for (let t = t0; t < t1; t++) {
-          const mid = ((tool.spans[2 * t] ?? 0) + (tool.spans[2 * t + 1] ?? 0)) / 2 + y;
-          out.push({
-            p: [cx, mid, 0],
-            n: [0, 0, 1],
-            kind: 'wall',
-            source: 'wall',
-            gapMm: Math.max(0, (j + dj) * cell),
-          });
+          // Both ends of the span: a patch on the board resists tilting about a horizontal axis with its extent.
+          for (const edge of [tool.spans[2 * t] ?? 0, tool.spans[2 * t + 1] ?? 0]) {
+            out.push({
+              p: [cx, edge + y, 0],
+              n: [0, 0, 1],
+              kind: 'wall',
+              source: 'wall',
+              gapMm: Math.max(0, (j + dj) * cell),
+            });
+          }
         }
       }
       for (const { id, grid } of obstacles) {

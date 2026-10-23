@@ -17,6 +17,12 @@ export interface EquilibriumOptions {
   tolerance: number;
   /** Contacts farther apart than this (mm) carry no friction (the tool rattles between them instead of gripping). */
   looseGapMm: number;
+  /**
+   * A magnet (or any adhesive) holding the tool to the board: an inward pull in weights of the tool, applied at the
+   * centre of its wall contacts. It loads the wall contacts, so friction can carry the tool; without wall contact it
+   * does nothing. 0 / absent: no pull.
+   */
+  magnetPullG?: number;
   /** Wall lean: degrees the top of the board leans back (weight presses the tool towards the wall). */
   wallTiltDeg: number;
 }
@@ -166,7 +172,33 @@ export function balances(
   const gy = -Math.cos(tilt) + direction[1] * scale;
   const gz = -Math.sin(tilt) + direction[2] * scale;
   // Contacts must supply the opposite of the external force; torque about the CoM of gravity and a bump is zero.
-  const b = forceOnly ? [-gx, -gy, -gz] : [-gx, -gy, -gz, 0, 0, 0];
+  let b = forceOnly ? [-gx, -gy, -gz] : [-gx, -gy, -gz, 0, 0, 0];
+  const pull = options.magnetPullG ?? 0;
+  const wallContacts = contacts.filter((c) => c.kind === 'wall');
+  if (pull > 0 && wallContacts.length > 0) {
+    // External force (0, 0, -pull) at the wall patch: the contacts must also supply (0, 0, +pull) and its torque.
+    const n = wallContacts.length;
+    const at: Vec3 = [
+      wallContacts.reduce((s, c) => s + c.p[0], 0) / n,
+      wallContacts.reduce((s, c) => s + c.p[1], 0) / n,
+      0,
+    ];
+    const rx = at[0] - com[0];
+    const ry = at[1] - com[1];
+    // r x F with F = (0, 0, -pull); the contacts supply the opposite torque.
+    const tx = ry * -pull;
+    const ty = -(rx * -pull);
+    b = forceOnly
+      ? [b[0] ?? 0, b[1] ?? 0, (b[2] ?? 0) + pull]
+      : [
+          b[0] ?? 0,
+          b[1] ?? 0,
+          (b[2] ?? 0) + pull,
+          (b[3] ?? 0) - tx / options.torqueScaleMm,
+          (b[4] ?? 0) - ty / options.torqueScaleMm,
+          b[5] ?? 0,
+        ];
+  }
   if (contacts.length === 0) return { ok: false, residual: Math.hypot(gx, gy, gz) };
   const { residual } = nnls(generators(contacts, com, options, forceOnly), b);
   return { ok: residual <= options.tolerance, residual };

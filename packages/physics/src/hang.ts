@@ -346,7 +346,9 @@ export function judge(
   let swingDeg: number | null = null;
   let marginsG = { ...ZERO_MARGINS };
 
-  const holdingContacts = contacts.filter((c) => c.kind !== 'wall');
+  // The board only holds a tool that is pulled onto it (a magnet); otherwise touching it is not being held.
+  const holdsOnWall = (eq.magnetPullG ?? 0) > 0;
+  const holdingContacts = contacts.filter((c) => c.kind !== 'wall' || holdsOnWall);
   if (penetrationMm > options.penetrationLimitMm) {
     reasons.push({ code: 'penetrates', params: { depthMm: round1(penetrationMm) } });
     score = Math.min(score, 0.35);

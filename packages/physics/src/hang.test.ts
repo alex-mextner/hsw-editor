@@ -131,4 +131,52 @@ describe('hang stability', () => {
     expect(codes(report)).toContain('overloaded');
     expect(report.score).toBeLessThanOrEqual(0.3);
   });
+
+  test('a bin much wider than the tool lets it tip, a snug rack does not (bin and rack styles)', () => {
+    const rack = slotBlock('rack', { halfX: 11, z0: 4, z1: 16, height: 40, floorMm: 4 });
+    const bin = slotBlock('bin', { halfX: 40, z0: 4, z1: 16, height: 40, floorMm: 4 });
+    const inRack = analyseHangPose({
+      tool: barTool(),
+      placement: upright(0, 4, 10),
+      obstacles: [rack],
+    });
+    const inBin = analyseHangPose({
+      tool: barTool(),
+      placement: upright(0, 4, 10),
+      obstacles: [bin],
+    });
+    expect(inRack.status).toBe('stable');
+    expect(inBin.status).not.toBe('stable');
+    expect(codes(inBin)).toContain('tips');
+  });
+
+  test('a flat tool on the board falls without a magnet and is held with one (magnet style)', () => {
+    const plate: ToolBody = {
+      id: 'plate',
+      mesh: union(box([-20, 0, 0], [20, 40, 6])),
+      massG: 60,
+      comMm: [0, 20, 3],
+    };
+    const placement = upright(0, 50, 0);
+    const free = analyseHangPose({ tool: plate, placement, obstacles: [] });
+    expect(codes(free)).toContain('levitating');
+    const held = analyseHangPose({
+      tool: plate,
+      placement,
+      obstacles: [],
+      options: {
+        equilibrium: {
+          frictionMu: 0.35,
+          torqueScaleMm: 50,
+          tolerance: 0.03,
+          looseGapMm: 0.6,
+          wallTiltDeg: 0,
+          magnetPullG: 6,
+        },
+      },
+    });
+    expect(held.status).not.toBe('unstable');
+    expect(codes(held)).not.toContain('levitating');
+    expect(codes(held)).not.toContain('falls');
+  });
 });

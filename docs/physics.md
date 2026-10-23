@@ -162,7 +162,8 @@ problem (tg#24300).
 
 Static, rigid, quasi-planar: no dynamics, no flexing holders, friction is one coefficient, contact normals are the axis directions
 of the raster (a sloped surface is approximated within 0.5 mm), a peg is detected as a free-standing blob in one depth slice, a
-magnet or clip adds no pull-in force (`equilibrium` takes only gravity and the disturbance), and the lattice seat search needs the
+magnet is the option `EquilibriumOptions.magnetPullG` (an inward pull in weights of the tool at the centre of its wall contacts, so
+friction on the board can carry it; the bank does not publish magnet strength yet, so no holder sets it) and a clip adds no pull-in force, and the lattice seat search needs the
 slot to be reachable from above. All constants live in `HangOptions`, `EquilibriumOptions`, `ContactOptions` and `RemovalOptions`.
 
 ### Tests
