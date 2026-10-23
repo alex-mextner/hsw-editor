@@ -22,6 +22,7 @@ import { beginItemDrag } from './dragController.ts';
 import { FpsProbe } from './FpsProbe.tsx';
 import { GhostItem } from './GhostItem.tsx';
 import { ItemsLayer } from './ItemsLayer.tsx';
+import { photoStore } from '@/state/photo.ts';
 import { measureClick, MeasureOverlay } from './MeasureTool.tsx';
 import { ModelBoundary } from './ModelBoundary.tsx';
 import { scenePalette } from './palette.ts';
@@ -45,6 +46,7 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
   const editor = useStore(editorStore);
   const zonesEnabled = useStore(invalidZonesEnabledStore);
   const variants = useStore(variantVersion);
+  const photoMode = useStore(photoStore);
   const theme = useStore(themeStore);
   const bankState = useStore(bankStore);
   const session = useStore(sessionStore);
@@ -135,17 +137,17 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
           fitToken={editor.fitToken}
         />
         <BoardMesh board={wall.board} palette={palette} occupied={occupied} />
-        {editor.overlay.photoId ? (
+        {photoMode.photoId && !photoMode.calibrating ? (
           // A photo that fails to load must not blank the viewport: draw nothing, toast once.
           <ModelBoundary
-            url={api.photoUrl(wall.id, editor.overlay.photoId)}
+            url={api.photoUrl(wall.id, photoMode.photoId)}
             name={t('asset.photo')}
             placeholder={() => null}
           >
             <PhotoOverlay
               wall={wall}
-              photoId={editor.overlay.photoId}
-              opacity={editor.overlay.opacity}
+              photoId={photoMode.photoId}
+              opacity={photoMode.overlayOpacity}
             />
           </ModelBoundary>
         ) : null}

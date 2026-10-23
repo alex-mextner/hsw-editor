@@ -4,6 +4,7 @@ import {
   CreateWallResponseSchema,
   ErrorBodySchema,
   HistoryResponseSchema,
+  PhotoUploadResponseSchema,
   OpResponseSchema,
   WallListSchema,
   WallResponseSchema,
@@ -62,6 +63,22 @@ export const reachability: { onReachable: () => void; onUnreachable: () => void 
   onUnreachable: () => undefined,
 };
 
+/** The error for a non-2xx answer: the server's `{error}` body as `ApiError`, a dead gateway as `NetworkError`. */
+function failureFor(status: number, json: unknown): ApiError | NetworkError {
+  const parsed = ErrorBodySchema.safeParse(json);
+  if (!parsed.success && GATEWAY_DOWN.has(status)) {
+    reachability.onUnreachable();
+    return new NetworkError(new Error(`HTTP ${status}`));
+  }
+  reachability.onReachable();
+  return new ApiError(
+    status,
+    parsed.success ? parsed.data.error.code : 'http_error',
+    parsed.success ? parsed.data.error.message : `HTTP ${status}`,
+    json,
+  );
+}
+
 /** JSON request failing with `ApiError`/`NetworkError`; the caller parses the body. */
 export async function fetchJson(path: string, init?: RequestInit): Promise<unknown> {
   let response: Response;
@@ -72,22 +89,47 @@ export async function fetchJson(path: string, init?: RequestInit): Promise<unkno
     throw new NetworkError(error);
   }
   const json: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
-    const parsed = ErrorBodySchema.safeParse(json);
-    if (!parsed.success && GATEWAY_DOWN.has(response.status)) {
-      reachability.onUnreachable();
-      throw new NetworkError(new Error(`HTTP ${response.status}`));
-    }
-    reachability.onReachable();
-    throw new ApiError(
-      response.status,
-      parsed.success ? parsed.data.error.code : 'http_error',
-      parsed.success ? parsed.data.error.message : `HTTP ${response.status}`,
-      json,
-    );
-  }
+  if (!response.ok) throw failureFor(response.status, json);
   reachability.onReachable();
   return json;
+}
+
+/** Bytes sent so far; `fetch` cannot report upload progress, so uploads go through XMLHttpRequest. */
+export interface UploadProgress {
+  readonly loaded: number;
+  readonly total: number;
+}
+
+function uploadJson(
+  path: string,
+  body: FormData,
+  onProgress: ((progress: UploadProgress) => void) | undefined,
+): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', path);
+    xhr.responseType = 'text';
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress?.({ loaded: event.loaded, total: event.total });
+    };
+    xhr.onerror = () => {
+      reachability.onUnreachable();
+      reject(new NetworkError(new Error('upload failed')));
+    };
+    xhr.onload = () => {
+      let json: unknown = null;
+      try {
+        json = JSON.parse(xhr.responseText);
+      } catch {
+        json = null;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        reachability.onReachable();
+        resolve(json);
+      } else reject(failureFor(xhr.status, json));
+    };
+    xhr.send(body);
+  });
 }
 
 async function request<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
@@ -143,18 +185,22 @@ export const api = {
       await request(`${wallPath(id)}/history?since=${since}&limit=${limit}`, HistoryResponseSchema)
     ).entries;
   },
-  /** Uploads a photo; the server records it with an `addPhoto` op and returns the new photo id. */
-  async uploadPhoto(id: string, file: File): Promise<string> {
+  /**
+   * Uploads a photo; the server normalises it (EXIF rotation, HEIC/AVIF) and records it with an `addPhoto`
+   * op, then answers with the new photo and the wall that contains it.
+   */
+  async uploadPhoto(
+    id: string,
+    file: File,
+    onProgress?: (progress: UploadProgress) => void,
+  ): Promise<{ readonly photoId: string; readonly wall: Wall }> {
     const form = new FormData();
     form.set('file', file);
     form.set('name', file.name);
     form.set('actor', JSON.stringify(HUMAN));
-    const response = await request(
-      `${wallPath(id)}/photos`,
-      z.object({ photo: z.object({ id: z.string() }).loose() }).loose(),
-      { method: 'POST', body: form },
-    );
-    return response.photo.id;
+    const json = await uploadJson(`${wallPath(id)}/photos`, form, onProgress);
+    const parsed = PhotoUploadResponseSchema.parse(json);
+    return { photoId: parsed.photo.id, wall: parsed.wall };
   },
   photoUrl: (id: string, photoId: string): string =>
     `${wallPath(id)}/photos/${encodeURIComponent(photoId)}/file`,

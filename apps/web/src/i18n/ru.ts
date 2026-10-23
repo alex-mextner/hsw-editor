@@ -4,6 +4,7 @@ import { commandsRu } from './catalog/commands.ts';
 import { compareRu } from './catalog/compare.ts';
 import { ompRu } from './catalog/omp.ts';
 import { invalidZonesRu } from './catalog/invalidZones.ts';
+import { photoRu } from './catalog/photo.ts';
 import { shellRu } from './catalog/shell.ts';
 import { viewportRu } from './catalog/viewport.ts';
 import { widgetsRu } from './catalog/widgets.ts';
@@ -19,4 +20,5 @@ export const ru: Catalogue = {
   ...assetsRu,
   ...invalidZonesRu,
   ...commandsRu,
+  ...photoRu,
 };

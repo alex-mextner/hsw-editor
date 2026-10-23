@@ -1,6 +1,12 @@
 /** Response envelopes of the REST/SSE API (docs/api.md). Walls and ops are validated by packages/core. */
 import { z } from 'zod';
-import { HistoryEntrySchema, OpSchema, WallSchema, WallSummarySchema } from '@hsw-editor/core';
+import {
+  HistoryEntrySchema,
+  OpSchema,
+  PhotoSchema,
+  WallSchema,
+  WallSummarySchema,
+} from '@hsw-editor/core';
 import type { ChangeEntry } from '@hsw-editor/core';
 
 export { HistoryEntrySchema, WallSummarySchema };
@@ -23,6 +29,9 @@ export const WallResponseSchema = z.object({
 export type WallResponse = z.infer<typeof WallResponseSchema>;
 
 export const CreateWallResponseSchema = z.object({ wall: WallSchema });
+
+/** `POST /api/walls/:id/photos`: the stored photo and the wall that now contains it. */
+export const PhotoUploadResponseSchema = z.object({ photo: PhotoSchema, wall: WallSchema });
 
 export const OpResponseSchema = z.object({
   rev: z.number().int(),

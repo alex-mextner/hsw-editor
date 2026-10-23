@@ -1,4 +1,3 @@
-import { useRef } from 'react';
 import {
   Bot,
   Command,
@@ -32,7 +31,6 @@ import { Button } from '@/components/ui/button.tsx';
 import { openPalette, useShortcutLabel } from '@/commands/app.ts';
 import { LOCALES, localeStore, useI18n, type Locale } from '@/i18n/index.ts';
 import { layoutStore, togglePanel } from '@/state/layout.ts';
-import { patchEditor } from '@/state/editor.ts';
 import { useStore } from '@/state/react.ts';
 import { themeStore, toggleTheme } from '@/state/theme.ts';
 import { redoEdit, sessionStore, undoEdit } from '@/wall/session.ts';
@@ -40,14 +38,13 @@ import { InvalidZonesToggle } from '@/features/invalid-zones/InvalidZonesToggle.
 import { PresenceBadge } from './PresenceBadge.tsx';
 import { SyncStatus } from './SyncStatus.tsx';
 import { WallSwitcher } from './WallSwitcher.tsx';
-import { notify } from '@/features/notices/notices.ts';
+import { choosePhotoFile } from '@/features/photo/photoImport.ts';
 
 export function TopBar() {
   const { t } = useI18n();
   const layout = useStore(layoutStore);
   const theme = useStore(themeStore);
   const session = useStore(sessionStore);
-  const fileInput = useRef<HTMLInputElement>(null);
   const keys = {
     bank: useShortcutLabel('panel.bank'),
     undo: useShortcutLabel('edit.undo'),
@@ -58,20 +55,6 @@ export function TopBar() {
   };
   const wallId = session?.wallId ?? null;
   const ready = session?.status === 'ready' || session?.status === 'offline';
-
-  const importPhoto = async (file: File): Promise<void> => {
-    if (!wallId) return;
-    try {
-      const photoId = await api.uploadPhoto(wallId, file);
-      patchEditor({ overlay: { photoId, opacity: 0.5 } });
-      notify('info', t('photo.imported', { name: file.name }));
-    } catch (error) {
-      notify(
-        'error',
-        t('photo.importFailed', { reason: error instanceof Error ? error.message : String(error) }),
-      );
-    }
-  };
 
   return (
     <>
@@ -114,23 +97,7 @@ export function TopBar() {
       <SyncStatus />
 
       <div className="flex items-center gap-0.5 max-md:hidden">
-        <input
-          ref={fileInput}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          className="hidden"
-          aria-label={t('photo.import')}
-          onChange={(event) => {
-            const file = event.target.files?.[0];
-            event.target.value = '';
-            if (file) void importPhoto(file);
-          }}
-        />
-        <IconButton
-          label={t('photo.import')}
-          disabled={!ready}
-          onClick={() => fileInput.current?.click()}
-        >
+        <IconButton label={t('photo.import')} disabled={!ready} onClick={choosePhotoFile}>
           <ImagePlus />
         </IconButton>
         <IconButton
@@ -174,7 +141,7 @@ export function TopBar() {
       >
         <Bot />
       </IconButton>
-      <OverflowMenu onImport={() => fileInput.current?.click()} wallId={wallId} ready={ready} />
+      <OverflowMenu onImport={choosePhotoFile} wallId={wallId} ready={ready} />
       <IconButton
         label={t('panel.inspector')}
         shortcut={keys.inspector}

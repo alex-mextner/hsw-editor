@@ -263,6 +263,16 @@ export class WallSync {
     this.publish({ status: 'ready', errorMessage: null });
   }
 
+  /**
+   * The wall a photo/model upload answered with: the server applied one `add*` op, so it is undoable. The SSE
+   * echo of that op arrives at (or below) this rev and is ignored, hence the history flags are set here.
+   */
+  acceptUploaded(wall: Wall): void {
+    if (this.confirmed && wall.rev <= this.confirmed.rev) return;
+    this.confirmed = wall;
+    this.publish({ status: 'ready', errorMessage: null, canUndo: true, canRedo: false });
+  }
+
   /** One SSE `op` event; foreign edits show up live, own echoes are recognised by rev and ignored. */
   applyRemote(entry: ChangeEntry): Promise<void> {
     const confirmed = this.confirmed;

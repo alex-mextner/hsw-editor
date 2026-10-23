@@ -2,7 +2,7 @@
  * Zoom/pan of the calibration photo. A view maps image pixels to screen pixels of the viewer:
  * `screen = image * scale + (x, y)`. Every operation returns a new view.
  */
-import type { Point2 } from './calibrationMath.ts';
+export type Point2 = readonly [number, number];
 
 export interface ViewTransform {
   readonly scale: number;

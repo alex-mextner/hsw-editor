@@ -116,6 +116,13 @@ export function submitOps(ops: readonly Op[], label?: string): SubmitResult {
   return sync.submit(ops, label);
 }
 
+/** Shows the wall an upload answered with (the photo is in it) without waiting for the live event; false when another wall is open now. */
+export function applyUploadedWall(wall: Wall): boolean {
+  if (sync?.wallId !== wall.id) return false;
+  sync.acceptUploaded(wall);
+  return true;
+}
+
 export function undoEdit(): void {
   sync?.undo();
 }

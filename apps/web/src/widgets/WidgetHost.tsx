@@ -9,7 +9,7 @@ import { cn } from '@/lib/cn.ts';
 import { patchEditor } from '@/state/editor.ts';
 import { useStore } from '@/state/react.ts';
 import { sessionStore } from '@/wall/session.ts';
-import { CalibrationWidget } from './CalibrationWidget.tsx';
+import { CalibrationWizard } from './CalibrationWizard.tsx';
 import { CompareWidget } from './CompareWidget.tsx';
 import { RequestDimensionForm } from './RequestDimensionForm.tsx';
 import { RequestVariantForm } from './RequestVariantForm.tsx';
@@ -164,7 +164,7 @@ function RequestBody({
       );
     case 'calibration':
       return (
-        <CalibrationWidget
+        <CalibrationWizard
           photoId={request.payload.photoId}
           mode={request.payload.mode}
           onDone={(outcome) => onAnswer({ calibrated: true, method: outcome.method })}
