@@ -96,7 +96,7 @@ photo(s) --sidecar photo_to_objects--> objects (mask, crop, class top-k, closed-
   (tens of ms each). The result carries the profile IoU used as confidence. Several suggested classes are tried and the
   best `0.65 * IoU + 0.35 * recognition score` wins; below IoU 0.5 the generic loft is used.
 - **Colours**: the sidecar's colour segments along the axis map to parts by overlap (one dominant colour per part; metal
-  stays metal unless the photo shows black oxide). User colour edits are stored per part (`partColors`).
+  stays metal unless the photo shows black oxide). The sampled mapping is stored per part (`partColors`, re-sampled on every refit, so a class change drops the old class's colours); colours the user picks are stored apart (`userPartColors`) and win over it.
 - **Dimensions**: from the photo scale (grid, two points, mm/px) or typed by the user; the user's numbers win and trigger
   a refit. A scale reference is optional: without one the profile (in pixels, `profilePx`) is scaled by the class-typical length
   of the chosen or best suggested class and the object is flagged `dimensionsEstimated` (saved as `dimensionsMm.source:

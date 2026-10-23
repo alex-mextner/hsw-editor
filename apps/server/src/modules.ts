@@ -45,6 +45,11 @@ export interface ServerModule {
   ): Response | undefined | null | Promise<Response | undefined | null>;
   /** WebSocket frames for sockets this module upgraded. */
   readonly websocket?: WebSocketHandler<ModuleSocketData>;
+  /**
+   * Called once at daemon start, before the first request: the place to register jobs and learn the data
+   * home (jobs carry no config of their own).
+   */
+  init?(config: ServerConfig): void | Promise<void>;
   /** Release long-lived resources (child processes, sockets); called once when the daemon stops. */
   stop?(): Promise<void>;
 }

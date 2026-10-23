@@ -57,7 +57,10 @@ export interface FittedObject {
   classId: string | null;
   params: AnyValues;
   fit: CustomTool['fit'];
+  /** Effective colour per part: the sampled mapping with the explicit decision colours on top. */
   partColors: Record<string, string>;
+  /** Only what was sampled from the photo colours (no explicit decision colours). */
+  sampledPartColors: Record<string, string>;
   dimensionsMm: CustomTool['dimensionsMm'];
   profile: ObservedProfile;
   model: ToolModel;
@@ -174,10 +177,8 @@ export function fitObject(obs: ObjectObservation, decision: DraftDecision = {}):
       model = scaleMeshZ(model, zScale);
       modelLod1 = scaleMeshZ(modelLod1, zScale);
     }
-    const partColors = {
-      ...colorsFromSegments(model, colors, chosen.flipped),
-      ...decision.partColors,
-    };
+    const sampledPartColors = colorsFromSegments(model, colors, chosen.flipped);
+    const partColors = { ...sampledPartColors, ...decision.partColors };
     model = recolorModel(model, partColors);
     modelLod1 = recolorModel(modelLod1, partColors);
     return {
@@ -192,6 +193,7 @@ export function fitObject(obs: ObjectObservation, decision: DraftDecision = {}):
         zScale,
       },
       partColors,
+      sampledPartColors,
       dimensionsMm: { ...dimensionsOf(model), source: obs.dimensionSource },
       profile,
       model,
@@ -221,6 +223,7 @@ export function fitObject(obs: ObjectObservation, decision: DraftDecision = {}):
       zScale: 1,
     },
     partColors,
+    sampledPartColors: {},
     dimensionsMm: { ...dimensionsOf(model), source: obs.dimensionSource },
     profile,
     model,

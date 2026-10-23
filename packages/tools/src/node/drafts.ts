@@ -12,7 +12,7 @@
  * commit:   accepted objects -> `ToolStore` (tool.json + GLBs + thumbnail + source crops)
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { copyFile, link, mkdir, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdir, readFile, readdir, rm } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import {
   type CalibrationInput,
@@ -859,7 +859,8 @@ async function commitObject(
         params: fitted.params,
         profile: fitted.profile,
         colors: obj.observation.colors,
-        partColors: fitted.partColors,
+        partColors: fitted.sampledPartColors,
+        userPartColors: {},
         dimensionsMm: fitted.dimensionsMm,
         // what the user typed, exactly: later refits (a class change in the tool detail) keep aiming at it
         ...(obj.userDimensions ? { userDimensionsMm: obj.userDimensions } : {}),
@@ -871,15 +872,12 @@ async function commitObject(
         ],
       },
       fitted,
-      sources.files,
+      // photos go in with the rest: tool.json is written last, so a failed link or copy leaves no tool
+      [
+        ...sources.files,
+        ...photos.map((p) => ({ name: photoFileName(p), linkFrom: join(dir, p.file) })),
+      ],
     );
-    for (const photo of photos) {
-      const target = join(deps.tools.root, id, 'source', photoFileName(photo));
-      // hard link keeps one copy of a large photo shared by every tool cut from it; fall back to a copy
-      await link(join(dir, photo.file), target).catch(() =>
-        copyFile(join(dir, photo.file), target),
-      );
-    }
     return saved;
   });
 }
@@ -943,6 +941,7 @@ export async function commitDraft(
         });
         continue;
       }
+      const previousStatus = obj.status;
       const saved = await commitObject(
         deps,
         draft,
@@ -953,8 +952,16 @@ export async function commitDraft(
       );
       obj.status = 'added';
       obj.toolId = saved.id;
+      try {
+        await deps.drafts.save(draft);
+      } catch (error) {
+        // the draft does not know about the tool: take it back out, or the retry adds a second one
+        obj.status = previousStatus;
+        delete obj.toolId;
+        await deps.tools.exclusive(() => deps.tools.purge(saved.id)).catch(() => undefined);
+        throw error;
+      }
       result.tools.push(summarize(saved));
-      await deps.drafts.save(draft);
     }
     return result;
   });
@@ -967,6 +974,9 @@ export async function recoverInterruptedDrafts(drafts: DraftStore): Promise<numb
   let fixed = 0;
   for (const e of entries) {
     if (!e.isDirectory()) continue;
+    // read first: only a draft left `analyzing` is rewritten, every other one stays byte for byte as it was
+    const current = await drafts.get(e.name).catch(() => null);
+    if (current?.state !== 'analyzing') continue;
     await drafts
       .update(e.name, async (d) => {
         if (d.state !== 'analyzing') return;

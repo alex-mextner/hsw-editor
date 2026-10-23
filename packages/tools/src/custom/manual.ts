@@ -43,6 +43,7 @@ export function createManualTool(input: {
       profile: observeModel(model),
       colors: [],
       partColors: {},
+      userPartColors: {},
       dimensionsMm: { ...dimensionsOf(model), source: 'user' },
       fit: {
         method: 'manual',

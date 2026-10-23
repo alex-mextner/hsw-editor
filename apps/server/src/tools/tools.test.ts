@@ -90,6 +90,19 @@ afterAll(async () => {
 const getJson = async (path: string): Promise<Record<string, unknown>> =>
   (await (await fetch(base + path)).json()) as Record<string, unknown>;
 
+describe('job without a prior request', () => {
+  test('tools.analyze runs against the daemon home before any HTTP request reached the module', async () => {
+    const job = running.jobs.submit('tools.analyze', { draftId: 'no-such-draft' });
+    const ended = Promise.withResolvers<void>();
+    running.jobs.subscribe(job.id, 0, { onEvent: () => undefined, onEnd: () => ended.resolve() });
+    await ended.promise;
+    const state = running.jobs.get(job.id);
+    expect(state.state).toBe('failed');
+    expect(state.error ?? '').not.toContain('has not served a request');
+    expect(state.error ?? '').toContain('no-such-draft');
+  });
+});
+
 describe('built-in classes', () => {
   test('lists classes and serves a GLB with the holding interface', async () => {
     const list = (await getJson('/api/tools/classes')) as { classes: { id: string }[] };
@@ -288,6 +301,33 @@ describe('review-found regressions', () => {
     });
   const errorCode = async (res: Response): Promise<string> =>
     ((await res.json()) as { error: { code: string } }).error.code;
+
+  test('an unexpected failure while adding a tool is a JSON 500 and leaves the library untouched', async () => {
+    const form = new FormData();
+    form.append('photo', new Blob([PNG_1PX], { type: 'image/png' }), 'gone.png');
+    form.append('mode', 'multi');
+    const created = await fetch(`${base}/api/tools/drafts`, { method: 'POST', body: form });
+    const draftId = ((await created.json()) as { draft: { id: string } }).draft.id;
+    const job = running.jobs.submit('tools.analyze', { draftId });
+    const ended = Promise.withResolvers<void>();
+    running.jobs.subscribe(job.id, 0, { onEvent: () => undefined, onEnd: () => ended.resolve() });
+    await ended.promise;
+    const draft = (await getJson(`/api/tools/drafts/${draftId}`)) as {
+      draft: { objects: { key: string }[] };
+    };
+    const key = draft.draft.objects[0]?.key ?? '';
+    await patch(`/api/tools/drafts/${draftId}/objects/${encodeURIComponent(key)}`, {
+      status: 'accepted',
+    });
+    const before = ((await getJson('/api/tools')) as { tools: unknown[] }).tools.length;
+    // the photo vanishes from disk: copying it into the tool fails with a plain ENOENT
+    rmSync(join(root, 'home', 'tools', '.drafts', draftId, 'photos'), { recursive: true });
+    const res = await post(`/api/tools/drafts/${draftId}/commit`, {});
+    expect(res.status).toBe(500);
+    expect(res.headers.get('content-type')).toContain('application/json');
+    expect(await errorCode(res)).toBe('internal');
+    expect(((await getJson('/api/tools')) as { tools: unknown[] }).tools.length).toBe(before);
+  });
 
   test('concurrent PATCHes both land; DELETE racing PATCHes never resurrects the tool', async () => {
     const created = await post('/api/tools', { classId: 'screwdriver', name: { en: 'Race' } });

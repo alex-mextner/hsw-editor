@@ -39,6 +39,7 @@ import {
 } from '@hsw-editor/tools/node';
 import { z } from 'zod';
 import type { DrawRuntime } from '../draw/runtime.ts';
+import { errorResponse } from '../api.ts';
 import type { JobRunner } from '../jobs.ts';
 import {
   DEFAULT_DRAW_VIEWS,
@@ -270,7 +271,8 @@ function errorToResponse(error: unknown): Response {
   if (error instanceof VisionUnavailableError || error instanceof VisionRequestError) {
     return fail(502, 'vision_unavailable', error.message);
   }
-  throw error;
+  // job errors and anything unexpected (a bug, a disk failure) get the core API's JSON mapping, never a bare throw
+  return errorResponse(error);
 }
 
 /** What the draft routes need besides the stores: the job runner (draw jobs are minutes long) and the draw runtime. */

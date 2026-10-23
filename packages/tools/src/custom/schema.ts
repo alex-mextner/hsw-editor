@@ -62,8 +62,10 @@ export const CustomToolSchema = z.strictObject({
   profile: ObservedProfileSchema.nullable(),
   /** Colour segments sampled from the photo along the observed axis. */
   colors: z.array(ColorSegmentSchema).max(24),
-  /** Explicit colour per part name (user edits and the sampled mapping); wins over `colors`. */
+  /** Colour per part name sampled from the photo by the last fit (re-sampled whenever the tool is refitted). */
   partColors: z.record(z.string(), hex),
+  /** Part colours the user chose; win over the sampled `partColors` and survive refits. */
+  userPartColors: z.record(z.string(), hex).optional(),
   /** Sidecar shape kind of the photo object (`lathe_profile`, `box`, ...): sets the thickness of a generic loft. */
   profileKind: z.string().optional(),
   dimensionsMm: z.strictObject({

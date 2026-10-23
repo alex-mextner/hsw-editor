@@ -87,16 +87,13 @@ async function openDeps(home: string, vision: VisionPort): Promise<DraftDeps> {
 
 export function createToolsModule(options: ToolsModuleOptions = {}): ServerModule {
   const visionClient = options.visionClient ?? sharedVisionClient;
-  const vision =
-    options.vision ??
-    new HttpVisionPort(new ManagedVisionTransport(visionClient));
+  const vision = options.vision ?? new HttpVisionPort(new ManagedVisionTransport(visionClient));
   const drawRuntime = (home: string): DrawRuntime => options.drawRuntime ?? sharedDrawRuntime(home);
   const check = options.drawnViewChecker ?? sidecarChecker(visionClient);
+  /** Registry this module instance already put its jobs in: a restart in one process must not register twice. */
+  let registeredIn: JobRegistry | null = null;
   const opened = new Map<string, Promise<DraftDeps>>();
   const assetStores = new Map<string, Promise<ToolAssetStore>>();
-  /** Data directory of the daemon this module is mounted in (jobs carry no config; set by the first request). */
-  let lastHome: string | null = null;
-
   const depsFor = (home: string): Promise<DraftDeps> => {
     let deps = opened.get(home);
     if (!deps) {
@@ -106,28 +103,6 @@ export function createToolsModule(options: ToolsModuleOptions = {}): ServerModul
     }
     return deps;
   };
-
-  registerJob(
-    {
-      kind: TOOLS_ANALYZE_JOB,
-      inputSchema: z.strictObject({ draftId: z.string() }),
-      concurrency: 1,
-      async run(input, ctx) {
-        if (lastHome === null) throw new Error('the tools module has not served a request yet');
-        const draft = await analyzeDraft(await depsFor(lastHome), input.draftId, {
-          signal: ctx.signal,
-          onProgress: (done, total, message) => ctx.progress({ done, total, message }),
-        });
-        return {
-          draftId: draft.id,
-          state: draft.state,
-          objects: draft.objects.length,
-          needsScale: draft.objects.filter((o) => o.needsScale).length,
-        };
-      },
-    },
-    options.jobRegistry ?? defaultJobRegistry,
-  );
 
   // One store per data directory, created once even when the first requests arrive together (it owns the write queue).
   const assetsFor = (home: string): Promise<ToolAssetStore> => {
@@ -142,26 +117,53 @@ export function createToolsModule(options: ToolsModuleOptions = {}): ServerModul
     return store;
   };
 
-  registerJob(
-    {
-      kind: TOOLS_DRAW_VIEW_JOB,
-      inputSchema: DrawViewInputSchema,
-      concurrency: 1,
-      async run(input, ctx) {
-        const home = lastHome;
-        if (home === null) throw new Error('the tools module has not served a request yet');
-        const deps: DrawViewDeps = { drafts: await depsFor(home), runtime: drawRuntime(home), check };
-        const result = await runDrawView(deps, input, ctx);
-        return toJson(result);
-      },
-    },
-    options.jobRegistry ?? defaultJobRegistry,
-  );
-
   return {
     name: 'tools',
+    init() {
+      const registry = options.jobRegistry ?? defaultJobRegistry;
+      // jobs read the data home of the daemon that runs them from `ctx.home`
+      if (registeredIn === registry) return;
+      registerJob(
+        {
+          kind: TOOLS_ANALYZE_JOB,
+          inputSchema: z.strictObject({ draftId: z.string() }),
+          concurrency: 1,
+          async run(input, ctx) {
+            const draft = await analyzeDraft(await depsFor(ctx.home), input.draftId, {
+              signal: ctx.signal,
+              onProgress: (done, total, message) => ctx.progress({ done, total, message }),
+            });
+            return {
+              draftId: draft.id,
+              state: draft.state,
+              objects: draft.objects.length,
+              needsScale: draft.objects.filter((o) => o.needsScale).length,
+            };
+          },
+        },
+        registry,
+      );
+      registerJob(
+        {
+          kind: TOOLS_DRAW_VIEW_JOB,
+          inputSchema: DrawViewInputSchema,
+          concurrency: 1,
+          async run(input, ctx) {
+            const home = ctx.home;
+            const deps: DrawViewDeps = {
+              drafts: await depsFor(home),
+              runtime: drawRuntime(home),
+              check,
+            };
+            const result = await runDrawView(deps, input, ctx);
+            return toJson(result);
+          },
+        },
+        registry,
+      );
+      registeredIn = registry;
+    },
     handle(request, deps) {
-      lastHome = deps.config.home;
       const { pathname } = new URL(request.url);
       const home = deps.config.home;
       if (pathname.startsWith('/tools/assets/') || pathname.startsWith('/api/tools/assets/')) {
