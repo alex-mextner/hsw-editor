@@ -75,19 +75,42 @@ zod schemas of `packages/core` rendered with `z.toJSONSchema`.
 `vision_run` and `draw_view` are added the same way once their services land: write a `ToolFactory` and pass it as
 `extraTools` to `createOmpModule` (`apps/server/src/omp/module.ts`).
 
-### Hook for the command palette (`app_command`)
+### `app_command` and the command palette
 
-The command registry (`packages/commands`) defines the `app_command` host tool contract (`appCommandRequestSchema`,
-`executeAppCommand`) and the `PaletteAiBridge` interface. The bridge side is not wired yet; the intended shape:
+`app_command` (`apps/server/src/omp/app-command-tool.ts`, registered by `createOmpModule` next to the wall tools) lets the
+agent list, search and run the editor's registered commands, the same actions as the command palette and the keyboard
+shortcuts. Its input is `appCommandRequestSchema` from `packages/commands` (one flat object: `op` plus `group`, `query`,
+`limit`, `id`, `args`). The commands live in the page, so the tool only:
 
-- server: an `app_command` `ToolFactory` whose `execute` forwards its arguments to the page through
-  `env.viewport.call` (the `ui_call` / `ui_result` channel, add an `app_command` method to `ViewportCall`) and add the
-  tool name to `HSW_TOOL_NAMES` in `packages/omp-protocol/src/ws.ts` so omp's own "Allow tool" prompt is auto-approved;
-- page: register `executeAppCommand` with `PaletteAiBridge.setAppCommandHandler` from `registerViewportBridge`
-  (`apps/web/src/features/omp/viewport-bridge.ts`), and implement `PaletteAiBridge.ask` on the panel store/connection
-  (`apps/web/src/features/omp/store.ts`, `connection.ts`).
+1. validates the request (zod, plus the per-op required fields) and refuses a bad one without bothering the page;
+2. forwards it as a `ui_call` with `{ method: 'app_command', params }` over the existing viewport-call channel;
+3. validates the page's `ui_result` against `appCommandResultSchema` and hands it to the model as JSON. A refused or failed
+   command (`rejected`, `unknown`, `cancelled`, ...) is an error result carrying its `code`.
 
-Tracked on ticket #53.
+Timeouts and cancellation: a changing command waits for the user's approval, so the tool asks for a 5 minute timeout
+(`APP_COMMAND_TIMEOUT_MS`, passed to `ViewportPort.call`) instead of the 20 s of `wall_view`. The call goes to the page that
+sent the latest prompt (the one the user asked in, so the one that can show the approval card), not to the most active tab. When omp cancels the tool (the run is aborted), or the timeout fires, the
+server sends `{ t: 'ui_cancel', id }` to the page, which aborts the `AbortSignal` of that call (the approval card closes).
+A page that disconnects mid-call fails the call; the page aborts its own pending calls when its socket drops.
+The name is in `HSW_TOOL_NAMES`, so omp's own "Allow tool: app_command" prompt is auto-approved; what the user must
+approve is the editor-side approval of the planned action (palette answer pane), not omp's prompt.
+
+The page side is `apps/web/src/features/omp`: the store (`store.ts`) routes `ui_call`s with method `app_command` to the
+handler the palette registered (`PaletteAiBridge.setAppCommandHandler`, i.e. `executeAppCommand` behind the approval
+gate) and replies with `ui_result`; without a handler it answers with an error. `paletteBridge.ts` implements
+`PaletteAiBridge` on top of the store's single WebSocket (`omp.palette`, a `PaletteTransport`): `ask` sends a `prompt`
+wrapped by `buildPalettePrompt` (`paletteMode.ts`: answer briefly in the user's language, act through `app_command`, never
+invent command ids, say what you will do first) and maps the streamed assistant text to `AiEvent`s; `cancel` sends `abort`.
+Palette questions share the panel's conversation (same omp session, same model and cost); the panel shows them as
+`⌘K · <question>` without the instruction block (`conversation.ts`). If the agent is already working on something from the
+panel the palette says it is busy instead of interrupting it. Known limits of sharing one session: the palette's Stop aborts the
+whole omp turn, text the user steers in from the panel during a palette answer streams into the palette, and the palette-mode
+instruction block stays in the conversation history (it says it applies to that message only). Wall-edit approvals (`HswPromptRequest`) still appear in the
+panel only.
+
+The palette needs the panel's connection: it is open whenever a wall is open (the dock stays mounted while collapsed). The
+bridge status is `unavailable` when no wall is open or the omp child failed, `connecting` while the connection or omp is
+coming up.
 
 ## Protocol notes (omp 18.8.1)
 

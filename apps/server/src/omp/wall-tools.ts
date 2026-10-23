@@ -19,6 +19,7 @@ import {
 import type { JsonObject, JsonValue, OmpToolResult } from '@hsw-editor/omp-protocol';
 import { z } from 'zod';
 import type { OmpConfig } from './config.ts';
+import { failure, formatIssues, jsonResult, jsonSchemaOf } from './tool-helpers.ts';
 import type { HostTool, ToolEnv, ToolFactory } from './tool-types.ts';
 
 export const AGENT_ACTOR = { kind: 'agent', name: 'omp' } as const;
@@ -127,35 +128,6 @@ export function addedIds(op: Op, into: AddedIds = { items: [], photos: [], model
       break;
   }
   return into;
-}
-
-function jsonResult(
-  value: JsonValue | object,
-  extra: { details?: JsonValue; isError?: boolean } = {},
-): OmpToolResult {
-  return {
-    content: [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value) }],
-    ...(extra.details !== undefined ? { details: extra.details } : {}),
-    ...(extra.isError ? { isError: true } : {}),
-  };
-}
-
-function failure(message: string, details?: JsonValue): OmpToolResult {
-  return jsonResult(message, { isError: true, ...(details !== undefined ? { details } : {}) });
-}
-
-function formatIssues(error: z.ZodError): string {
-  return error.issues
-    .slice(0, 8)
-    .map((issue) => `${issue.path.length > 0 ? issue.path.join('.') : '(args)'}: ${issue.message}`)
-    .join('; ');
-}
-
-function jsonSchemaOf(schema: z.ZodType): JsonObject {
-  // z.toJSONSchema output is plain JSON; the cast only bridges zod's loose return type to JsonObject.
-  const generated = z.toJSONSchema(schema, { io: 'input', unrepresentable: 'any' }) as JsonObject;
-  const { $schema: _dropped, ...rest } = generated;
-  return rest;
 }
 
 // ---- Argument schemas ---------------------------------------------------------------------------------

@@ -4,6 +4,7 @@ import {
   type AppCommandDeps,
   type ApprovalMode,
   APP_COMMAND_TOOL,
+  appCommandResultSchema,
   executeAppCommand,
   type PlannedAction,
 } from './appCommand.ts';
@@ -319,5 +320,31 @@ describe('review regressions', () => {
     const info = result.ok && result.op === 'search' ? result.commands[0] : undefined;
     expect(info?.id).toBe('wall.label');
     expect(JSON.stringify(info?.args)).toContain('"required":["text"]');
+  });
+});
+
+describe('app_command wire schema', () => {
+  test('every result executeAppCommand produces passes the result schema unchanged', async () => {
+    const results = [
+      await executeAppCommand(h.deps, { op: 'list' }),
+      await executeAppCommand(h.deps, { op: 'search', query: 'rename' }),
+      await executeAppCommand(h.deps, { op: 'run', id: 'edit.undo' }),
+      await executeAppCommand(h.deps, { op: 'run', id: 'nope' }),
+      await executeAppCommand(h.deps, { op: 'explode' }),
+    ];
+    for (const result of results) {
+      const parsed = appCommandResultSchema.safeParse(JSON.parse(JSON.stringify(result)));
+      expect(parsed.success).toBe(true);
+      expect(parsed.data).toEqual<unknown>(result);
+    }
+  });
+
+  test('replies that are not an app_command result are refused', () => {
+    expect(appCommandResultSchema.safeParse({ selected: ['a'] }).success).toBe(false);
+    expect(
+      appCommandResultSchema.safeParse({ ok: false, code: 'melted', message: 'x' }).success,
+    ).toBe(false);
+    expect(appCommandResultSchema.safeParse({ ok: true, op: 'run' }).success).toBe(false);
+    expect(appCommandResultSchema.safeParse('ok').success).toBe(false);
   });
 });

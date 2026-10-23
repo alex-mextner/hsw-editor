@@ -21,7 +21,9 @@ import {
   type OmpOtherMessage,
   type OmpQueuedMessages,
   type OmpSnapshot,
+  type OmpWireMessage,
 } from '@hsw-editor/omp-protocol';
+import { unwrapPalettePrompt } from './paletteMode.ts';
 import type { ActiveTool } from './render-types.ts';
 
 export interface RetryInfo {
@@ -91,10 +93,37 @@ function textContent(message: OmpOtherMessage): string {
     .join('\n');
 }
 
+/** Marks a question that came from the command palette; the instruction block is not shown. */
+const PALETTE_MARK = '⌘K · ';
+
+/** `text` as shown in the transcript: a palette-mode prompt becomes the question alone, marked; else null. */
+function paletteQuestion(text: string): string | null {
+  const question = unwrapPalettePrompt(text);
+  return question === null ? null : `${PALETTE_MARK}${question}`;
+}
+
+function showPaletteQuestion(message: OmpWireMessage): OmpWireMessage {
+  if (message.role !== 'user') return message;
+  const { content } = message;
+  if (typeof content === 'string') {
+    const shown = paletteQuestion(content);
+    return shown === null ? message : { ...message, content: shown };
+  }
+  let changed = false;
+  const blocks = content.map((block) => {
+    const shown = block.type === 'text' ? paletteQuestion(block.text) : null;
+    if (shown === null) return block;
+    changed = true;
+    return { ...block, text: shown };
+  });
+  return changed ? { ...message, content: blocks } : message;
+}
+
 /** Entry for a completed message, or null when the transcript has nothing to show for it. */
 function entryFor(message: OmpMessage, id: string, parentId: string | null): SessionEntry | null {
   const base = { id, parentId, timestamp: isoTime(message.timestamp) };
-  if (isWireMessage(message)) return { ...base, type: 'message', message };
+  if (isWireMessage(message))
+    return { ...base, type: 'message', message: showPaletteQuestion(message) };
   switch (message.role) {
     case 'custom':
       return message.display === false || message.content === undefined

@@ -56,6 +56,10 @@ needs an entry here first.
   its typed length (default 1000 mm, mm/cm/in), four wall corners (perspective rectified), or the detected honeycomb grid, with
   a live scale readout, click-error bound, fit error and scale spread. One `setCalibration` op per calibration. Strings in ru/en.
 - Offline storage dialog (top bar, [docs/offline.md](docs/offline.md), #89): usage and quota, per-category sizes, make the whole bank or one category available offline (pinned), clear models/thumbnails, keep storage, install the app.
+- Ask AI from the command palette is live (Refs #53, `docs/omp.md`): the omp host tool `app_command` lists, searches and runs
+  the editor's registered commands on the page (`ViewportCall` method `app_command`, 5 min timeout, `ui_cancel` message on
+  abort), and the palette's `PaletteAiBridge` now runs on the agent panel's connection (palette-mode prompt, streamed answer,
+  `⌘K ·` marker in the panel transcript). Changing actions still need the palette's approval unless `auto` is on.
 
 ### Changed
 

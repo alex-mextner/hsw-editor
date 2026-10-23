@@ -38,6 +38,8 @@ let streaming = false;
 let big = false;
 let messageSeq = 0;
 const hostTools: string[] = [];
+/** Id of the host tool call omp is waiting on (an `abort` cancels it). */
+let activeHostCall: string | null = null;
 const waiting = new Map<string, (frame: Json) => void>();
 
 function write(frame: Json): void {
@@ -195,7 +197,9 @@ async function callTool(name: string, toolArgs: Json): Promise<string> {
   const hostId = `host-${toolCallId}`;
   const pending = waitFor(hostId);
   write({ type: 'host_tool_call', id: hostId, toolCallId, toolName: name, arguments: toolArgs });
+  activeHostCall = hostId;
   const reply = await pending;
+  activeHostCall = null;
   const result = reply['result'] as Json;
   const isError = reply['isError'] === true;
   write({ type: 'tool_execution_end', toolCallId, toolName: name, result, isError });
@@ -214,11 +218,16 @@ async function callTool(name: string, toolArgs: Json): Promise<string> {
   return String(content.find((block) => block['type'] === 'text')?.['text'] ?? '');
 }
 
-async function runPrompt(text: string): Promise<void> {
+/** The page wraps palette questions in this tag pair (apps/web/src/features/omp/paletteMode.ts). */
+const PALETTE_PREFIX = /^<hsw-palette-mode>[\s\S]*?<\/hsw-palette-mode>\n/;
+
+async function runPrompt(rawText: string): Promise<void> {
   streaming = true;
   write({ type: 'agent_start' });
   write({ type: 'turn_start' });
-  const user = userMessage(text);
+  const paletteMode = PALETTE_PREFIX.test(rawText);
+  const text = rawText.replace(PALETTE_PREFIX, '');
+  const user = userMessage(rawText);
   messages.push(user);
   write({ type: 'message_start', message: user, messageId: nextMessageId() });
   write({ type: 'message_end', message: user, messageId: `msg-${messageSeq}` });
@@ -269,6 +278,10 @@ async function runPrompt(text: string): Promise<void> {
       : (JSON.parse(payload) as Json);
     const outcome = await callTool(name, toolArgs);
     messages.push(await streamText(`tool said: ${outcome.slice(0, 200)}`, 0));
+  } else if (paletteMode) {
+    // A canned, slowly streamed answer: lets a browser run watch the text arrive in the palette.
+    answer = `Fake omp here. You asked: ${text}. I can run editor commands through app_command.`;
+    messages.push(await streamText(answer, 40));
   } else {
     messages.push(await streamText(answer, 0));
   }
@@ -336,9 +349,22 @@ function handle(frame: Json): void {
       respond(id, type);
       void runPrompt(String(frame['message']));
       return;
-    case 'abort':
+    case 'abort': {
       respond(id, type);
+      // Like omp: a running host tool is cancelled and its call ends with an error result.
+      const running = activeHostCall;
+      if (running !== null) {
+        write({ type: 'host_tool_cancel', id: `cancel-${running}`, targetId: running });
+        waiting.get(running)?.({
+          type: 'host_tool_result',
+          id: running,
+          isError: true,
+          result: { content: [{ type: 'text', text: 'Cancelled' }] },
+        });
+        waiting.delete(running);
+      }
       return;
+    }
     case 'new_session':
       messages = [];
       save();

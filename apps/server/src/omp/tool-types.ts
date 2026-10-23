@@ -31,7 +31,8 @@ export interface HostTool {
 
 /** What a tool may ask of the attached page. */
 export interface ViewportPort {
-  call(call: ViewportCall, signal: AbortSignal): Promise<ViewportResult>;
+  /** `timeoutMs` overrides the session's viewport timeout (a call that waits for the user needs longer). */
+  call(call: ViewportCall, signal: AbortSignal, timeoutMs?: number): Promise<ViewportResult>;
 }
 
 /** What a tool may ask of the user: the fields of a prompt the session completes with ids. */

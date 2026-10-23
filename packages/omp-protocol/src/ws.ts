@@ -6,6 +6,7 @@
  * agent edits, and request/response calls into the page (`ui_call` -> `ui_result`) so the agent can
  * look at the 3D viewport.
  */
+import type { AppCommandResult, AppCommandToolArgs } from '@hsw-editor/commands';
 import {
   BLOCKED_RPC_COMMANDS,
   THINKING_LEVELS,
@@ -89,7 +90,12 @@ export type ViewportCall =
       readonly params: { readonly view: 'current' | 'front' | 'iso'; readonly maxSidePx: number };
     }
   | { readonly method: 'select'; readonly params: { readonly ids: readonly string[] } }
-  | { readonly method: 'get_selection' };
+  | { readonly method: 'get_selection' }
+  /**
+   * The `app_command` host tool: the page runs a command-registry request (list, search, run). A run of a
+   * changing command may wait for the user's approval, so this call has a far longer timeout than the others.
+   */
+  | { readonly method: 'app_command'; readonly params: AppCommandToolArgs };
 
 export interface ViewportCapture {
   readonly mimeType: 'image/png' | 'image/jpeg';
@@ -98,7 +104,10 @@ export interface ViewportCapture {
   readonly height: number;
 }
 
-export type ViewportResult = ViewportCapture | { readonly selected: readonly string[] };
+export type ViewportResult =
+  | ViewportCapture
+  | { readonly selected: readonly string[] }
+  | AppCommandResult;
 
 export interface OmpSnapshot {
   readonly messages: readonly OmpMessage[];
@@ -121,6 +130,8 @@ export type OmpServerMessage =
   | { readonly t: 'prompt'; readonly request: HswPromptRequest }
   | { readonly t: 'prompt_done'; readonly id: string }
   | { readonly t: 'ui_call'; readonly id: string; readonly call: ViewportCall }
+  /** The server gave up on (or the agent cancelled) the `ui_call` with this id: stop working on it. */
+  | { readonly t: 'ui_cancel'; readonly id: string }
   | { readonly t: 'error'; readonly message: string };
 
 // ---- Page -> server -----------------------------------------------------------------------------
@@ -406,5 +417,6 @@ export const HSW_TOOL_NAMES = [
   'wall_select',
   'wall_view',
   'wall_request_input',
+  'app_command',
 ] as const;
 export type HswToolName = (typeof HSW_TOOL_NAMES)[number];

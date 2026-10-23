@@ -148,8 +148,11 @@ The tool input is one flat object (`op` plus optional `group`, `query`, `limit`,
 (`approve` mode, default) or run straight away (`auto` mode); a rejection comes back to the AI as an error. Commands with
 `aiHidden`, and commands whose when-clause is false, are invisible to the AI.
 
-The palette talks to omp only through the `PaletteAiBridge` interface (`ask`, `status`, `setAppCommandHandler`), so the omp panel
-bridge ([#16](https://github.com/alex-mextner/hsw-editor/issues/16)) can implement it when it lands.
+The palette talks to omp only through the `PaletteAiBridge` interface (`ask`, `status`, `setAppCommandHandler`). The app's
+implementation is `ompPaletteBridge` (`apps/web/src/features/omp/paletteBridge.ts`): it sends the question as a `prompt` to the
+omp panel's session (one shared WebSocket, no second connection) with a short palette-mode instruction block, maps the streamed
+assistant text to `AiEvent` `delta` / `done` / `error`, and `cancel()` sends omp's `abort`. The server side of `app_command`
+(validation, forwarding as a `ui_call`, timeouts, cancellation) is described in [omp.md](omp.md#app_command-and-the-command-palette).
 
 ### In the web app
 
@@ -163,6 +166,6 @@ Settings (`appSettings.ts`) are two-way bridged to the stores that already own t
 
 Persistence uses `@hsw-editor/user-settings`: namespaces `settings` (non-default setting values), `keymap` (the user keymap) and `palette` (usage for recents and frequency). It reads from the `localStorage` mirror at once, pushes to `/api/settings` when the server is reachable, pulls on start and on `online`, and follows `/api/settings/events` (`settings` event, `client.notifyServerRev`). Without the server everything works locally.
 
-The palette UI is `apps/web/src/features/commandPalette/`; its sources beyond commands and settings (walls, wall items, bank elements and tools, history entries to "undo back to here", help pages, go-to) are `commands/providers.ts`. A source that fails (the wall list or history while offline) is named in a notice under the results, the others still answer. The AI bridge is `aiBridgeStore` (`commands/aiBridge.ts`); until the omp panel bridge sets one it is an honest "unavailable" bridge and the palette says so. `AiSession` (`aiSessionCore.ts`) holds the answer, the planned actions and the approval prompt; the approve or auto mode is the `ai.approval` setting, also switchable from the answer pane.
+The palette UI is `apps/web/src/features/commandPalette/`; its sources beyond commands and settings (walls, wall items, bank elements and tools, history entries to "undo back to here", help pages, go-to) are `commands/providers.ts`. A source that fails (the wall list or history while offline) is named in a notice under the results, the others still answer. The AI bridge is `aiBridgeStore` (`commands/aiBridge.ts`), holding the omp-backed bridge; its status is honest: `unavailable` while no wall is open or omp failed (the palette says so), `connecting` while the connection or omp starts. `AiSession` (`aiSessionCore.ts`) holds the answer, the planned actions and the approval prompt; the approve or auto mode is the `ai.approval` setting, also switchable from the answer pane.
 
 A changing action in `approve` mode needs the approval card, which exists only while the palette shows the answer (`AiSession.attachApprovalUi`). If the AI calls `app_command` while the palette is closed, the action is refused at once with a message asking the user to open the palette and ask there, instead of waiting for a prompt nobody can see. Read-only actions and `auto` mode run without it.
