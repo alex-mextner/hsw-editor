@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
+import { utimes } from 'node:fs/promises';
 import { DrawError, type DrawRequest } from '@hsw-editor/draw';
 import { ManualBackend, manualJobId } from './backends/manual.ts';
 import { createDrawRoutes } from './routes.ts';
@@ -143,7 +144,7 @@ test('manual upload rejects ids that are not job ids and unknown jobs', async ()
   expect(await routes(new Request('http://x/api/other'))).toBeNull();
 });
 
-test('the newest upload is collected, so a bad first upload can be replaced', async () => {
+test('the newest upload (by modification time, whatever its name) is collected, so a bad first upload can be replaced', async () => {
   const runtime = createDrawRuntime({ env: { HSW_EDITOR_DATA_DIR: scratch.dir } });
   const ref = `${scratch.dir}/subject.png`;
   await writeObjectPng(ref);
@@ -159,8 +160,29 @@ test('the newest upload is collected, so a bad first upload can be replaced', as
   const backend = new ManualBackend();
   const first = await pending(backend, req);
   const inbox = `${first.extra.jobDir}/inbox`;
-  await Bun.write(`${inbox}/upload-1000-a.png`, await pngBytes(64)); // the first upload (later found to be unusable)
-  await Bun.write(`${inbox}/upload-2000-b.png`, await pngBytes(96)); // its replacement
+  await Bun.write(`${inbox}/upload-9999-z.png`, await pngBytes(64)); // the first upload (later found to be unusable)
+  await Bun.write(`${inbox}/a-better-drawing.png`, await pngBytes(96)); // dropped in by hand later: sorts first by name
+  await utimes(`${inbox}/upload-9999-z.png`, new Date(1_000_000), new Date(1_000_000));
+  await utimes(`${inbox}/a-better-drawing.png`, new Date(2_000_000), new Date(2_000_000));
   const result = await backend.draw(req);
   expect(result.ok && result.images[0]?.width).toBe(96);
+});
+
+test('earlier drawn views chained as refs are not part of the manual job identity', async () => {
+  const base: DrawRequest = {
+    version: 1,
+    prompt: 'orthographic top view of the box',
+    refs: [{ path: '/work/subject.png', role: 'subject' }],
+    n: 1,
+    size: '1024x1024',
+    outDir: '/work',
+    tag: 'wall1/box/top',
+  };
+  const chained: DrawRequest = {
+    ...base,
+    refs: [...base.refs, { path: '/work/omp-1761230000000-side.png', role: 'view' }],
+  };
+  // an upload made for the request without the drawn side is still collected when the side was drawn meanwhile (or elsewhere)
+  expect(manualJobId(chained)).toBe(manualJobId(base));
+  expect(manualJobId({ ...base, refs: [{ path: '/work/other.png', role: 'subject' }] })).not.toBe(manualJobId(base));
 });

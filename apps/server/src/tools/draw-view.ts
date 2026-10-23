@@ -13,6 +13,7 @@
  * measurement, and the sidecar scores them next to (never inside) the held-out photo check (`generatedViews`).
  */
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { copyFile, mkdir, readFile, rename } from 'node:fs/promises';
 import { extname, join } from 'node:path';
 import {
@@ -411,10 +412,12 @@ export async function runDrawView(
       attach: async (candidate) => {
         const file = join(relDir, `${candidate.view}${extname(candidate.path)}`);
         await copyFile(candidate.path, join(draftDir, file));
-        const check = await checkDrawn(deps, fit, candidate, ctx.signal);
-        const view = publicView(candidate, file, check, now());
+        // recorded the moment it is kept (then again with its check): a later view that fails, or a cancel during the
+        // check, must not hide a drawing that cost a request
+        const pending = publicView(candidate, file, null, now());
+        await recordViews(dir, [pending]);
+        const view = { ...pending, check: await checkDrawn(deps, fit, candidate, ctx.signal) };
         kept.push(view);
-        // recorded the moment it is kept: a later view that fails or throws must not hide a drawing that cost a request
         await recordViews(dir, [view]);
       },
     },
@@ -459,7 +462,7 @@ export async function runDrawView(
  * of the same view: a bad retry must not erase a good drawing.
  */
 async function recordViews(dir: string, views: readonly DrawnView[]): Promise<void> {
-  if (views.length === 0) return;
+  if (views.length === 0 || !existsSync(dir)) return; // the draft was deleted meanwhile: do not recreate its directory
   const file = join(dir, 'views.json');
   const parsed = ViewsFileSchema.safeParse(await readJsonFile(file));
   const stored: Record<string, JsonValue> = parsed.success

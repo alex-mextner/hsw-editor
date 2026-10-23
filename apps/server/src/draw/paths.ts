@@ -1,8 +1,8 @@
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 export interface DrawPaths {
-  /** `~/.local/share/hsw-editor` (or HSW_EDITOR_DATA_DIR). */
+  /** `~/.local/share/hsw-editor`; `HSW_EDITOR_DATA_DIR` wins, else the daemon's `HSW_EDITOR_HOME` (so the CLI and the daemon agree). */
   readonly dataDir: string;
   /** Persisted settings, per-backend guard state, manual jobs, owner locks. */
   readonly drawDir: string;
@@ -16,8 +16,10 @@ export interface DrawPaths {
 }
 
 export function resolveDrawPaths(env: NodeJS.ProcessEnv = process.env): DrawPaths {
+  const home = env['HSW_EDITOR_HOME'];
   const dataDir =
     env['HSW_EDITOR_DATA_DIR'] ??
+    (home === undefined ? undefined : resolve(home)) ??
     join(env['XDG_DATA_HOME'] ?? join(env['HOME'] ?? homedir(), '.local/share'), 'hsw-editor');
   const drawDir = join(dataDir, 'draw');
   return {
