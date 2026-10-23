@@ -262,6 +262,31 @@ Result (`<out>/objects.json`, also the return value):
 - `confidence`/`needsView(s)`: the single policy above. `status`: `ok` (confidence >= `min_confidence`), `needs_confirmation`, `no_scale`, `fit_failed` (recorded in
   `diagnostics.failures`; when every fit fails the call raises instead of returning an empty list).
 
+## Editing a result: merge, split, reprofile, add
+
+The review grid of the tool import corrects the segmentation without re-running SAM2 on the whole photo (15 s GPU, 80 s CPU).
+Each op works on a finished `photo_to_objects` directory (`objects.json` + files), analyses only the objects it creates or re-fits
+with the functions the run used (recognise, fit, crops, colours, embedding), takes the scale and the class vocabulary the run stored
+in `objects.json` (`request`), rewrites `objects.json` atomically and returns the full updated record(s). One op at a time per
+directory. A source object is never deleted: it stays with `status: "merged" | "split"` and `mergedInto` / `splitInto`; new ids are
+`max(id) + 1`; `summary` counts live objects only; `edits` in `objects.json` logs the ops. A result written before the ops existed
+has no `request` and is refused (`bad_request`: run `photo-to-objects` again); so is a result whose photo changed. The CLI and the daemon's sidecar
+serialise on `<out>/.edit.lock` (`flock`). The stored request keeps the class vocabulary but not the bank index, so new objects of an edit have no
+`bankTopk` (the bank holds holders, not tool thumbnails, so there is nothing to retrieve yet).
+
+| Route | In | Out |
+| --- | --- | --- |
+| `POST /objects/merge` | `{out_dir, ids: [2..20]}` | `{object, sources[], summary}`: the union of the masks, `source: "merged"` |
+| `POST /objects/split` | `{out_dir, id, line_px: [[x,y],[x,y]]}` or `{out_dir, id, n: 2..8}` | `{objects[], source, summary}`: by the two sides of a line, or `n` parts that follow the object's necks (k-means seeds + watershed on the distance transform; the parts tile the mask exactly; each part >= 150 px or `bad_request`) |
+| `POST /objects/reprofile` | `{out_dir, ids?, fixed_dims?: {"<id>": {length?, width?, thickness?} \| null}, calibrate?}` | `{objects[], calibration, status, summary}`: re-fit in place; class and embedding are kept. `fixed_dims` accumulate per object (`null` clears). A new `calibrate` (manual: `mm_per_px` or two points) re-fits every live object and turns a `no_scale` result into `ok`; without any scale: `calibration_needed` |
+| `POST /objects/add` | `{out_dir, point_px: [x,y]}` or `{out_dir, box_xywh: [x,y,w,h]}` | `{object, summary}`: one SAM2 prompt (no OWLv2 fill, no background rejection), `source: "click"`; a mask under 150 px is `bad_request` |
+
+CLI: `hsw-editor vision objects merge|split|reprofile|add OUT_DIR ...` prints the reply JSON. Server: `POST /api/tools/drafts/:id/merge|split|add`
+(docs/api.md) call these through the daemon's managed sidecar client.
+
+Measured on the carpet photo (RTX 4060 shared, warm service): merge 3.6 s, split 5.7 s, add by click 2.9 s, reprofile one object 1.2 s,
+against 109 s for the segmentation alone in the same run.
+
 ## Jobs (server)
 
 `apps/server/src/vision/jobs.ts` registers, on Core's job runner: `vision.photo_to_wall`, and the stage jobs `vision.calibrate`, `vision.segment`, `vision.fit`.

@@ -183,8 +183,23 @@ class FakeClient implements VisionClient {
     return this.fitResult;
   }
 
+  async post(): Promise<unknown> {
+    throw new Error('not used');
+  }
+
+  async postStream(): Promise<unknown> {
+    throw new Error('not used');
+  }
+
   async status(): Promise<VisionStatus> {
-    return { running: false, managed: false, endpoint: null, health: null, models: null };
+    return {
+      running: false,
+      managed: false,
+      endpoint: null,
+      startable: false,
+      health: null,
+      models: null,
+    };
   }
 
   async stop(): Promise<void> {}

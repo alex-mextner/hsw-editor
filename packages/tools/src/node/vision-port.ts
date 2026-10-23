@@ -93,6 +93,13 @@ const StreamEventSchema = z.looseObject({
     .optional(),
 });
 
+/** A progress event of the sidecar stream (`stage`, `progress`, `object`, ...): informational only. */
+export interface VisionEvent {
+  event?: string | undefined;
+  type?: string | undefined;
+  [key: string]: unknown;
+}
+
 export interface PhotoObjectsRequest {
   imagePath: string;
   outDir: string;
@@ -103,12 +110,23 @@ export interface PhotoObjectsRequest {
   mode: 'single' | 'multi';
   maxObjects?: number;
   signal?: AbortSignal;
-  onEvent?: (event: { event: string; [key: string]: unknown }) => void;
+  onEvent?: (event: VisionEvent) => void;
+}
+
+/** Whether an analysis can run now: the sidecar answers, or a request would start it. Never starts it itself. */
+export interface VisionAvailability {
+  available: boolean;
+  /** Where the sidecar listens when it is running. */
+  url?: string;
+  /** Why not (and the step that fixes it) when `available` is false. */
+  message?: string;
 }
 
 export interface VisionPort {
+  /** Never starts the sidecar. */
+  status(): Promise<VisionAvailability>;
   photoToObjects(request: PhotoObjectsRequest): Promise<SidecarResult>;
-  /** Object edit ops on an existing result directory (sidecar `/objects/merge` and `/objects/split`). */
+  /** Object edit ops on an existing result directory (sidecar `/objects/merge`, `/objects/split`, `/objects/add`). */
   mergeObjects(
     outDir: string,
     ids: readonly number[],
@@ -120,14 +138,23 @@ export interface VisionPort {
     how: { linePx: [[number, number], [number, number]] } | { n: number },
     signal?: AbortSignal,
   ): Promise<SidecarObject[]>;
+  /** One more object segmented from a click (`pointPx`) or a box (`boxXywh`), photo pixels. */
+  addObject(
+    outDir: string,
+    prompt: { pointPx: [number, number] } | { boxXywh: [number, number, number, number] },
+    signal?: AbortSignal,
+  ): Promise<SidecarObject>;
 }
 
+const DEFAULT_START_FIX =
+  'start the vision sidecar (see: hsw-editor doctor) and check HSW_VISION_URL (default http://127.0.0.1:8795)';
+
 export class VisionUnavailableError extends Error {
-  readonly fix =
-    'start the vision sidecar (see: hsw-editor doctor) and check HSW_VISION_URL (default http://127.0.0.1:8795)';
-  constructor(message: string) {
+  readonly fix: string;
+  constructor(message: string, fix = DEFAULT_START_FIX) {
     super(message);
     this.name = 'VisionUnavailableError';
+    this.fix = fix;
   }
 }
 
@@ -149,7 +176,25 @@ function calibrateBody(c: CalibrationInput | null): Record<string, unknown> {
   return {};
 }
 
-export class HttpVisionPort implements VisionPort {
+/**
+ * How the port reaches the sidecar. A transport throws `VisionUnavailableError` when no sidecar can be reached
+ * (or started) and `VisionRequestError` for an error the sidecar (or the protocol) reports.
+ */
+export interface VisionTransport {
+  status(): Promise<VisionAvailability>;
+  /** POST JSON, return the reply body of a 2xx answer. */
+  postJson(path: string, body: unknown, signal?: AbortSignal): Promise<unknown>;
+  /** POST JSON to an NDJSON endpoint: forward `stage|progress|...` events, return the final `result`. */
+  postStream(
+    path: string,
+    body: unknown,
+    onEvent: PhotoObjectsRequest['onEvent'],
+    signal?: AbortSignal,
+  ): Promise<unknown>;
+}
+
+/** Transport for a sidecar somebody else runs at a fixed loopback URL (tests, `HSW_VISION_URL`-style setups). */
+export class FetchVisionTransport implements VisionTransport {
   private readonly base: string;
 
   constructor(baseUrl: string) {
@@ -173,12 +218,51 @@ export class HttpVisionPort implements VisionPort {
     }
   }
 
+  async status(): Promise<VisionAvailability> {
+    try {
+      const res = await fetch(`${this.base}/health`, {
+        signal: AbortSignal.timeout(PING_TIMEOUT_MS),
+      });
+      if (res.ok) return { available: true, url: this.base };
+      return {
+        available: false,
+        url: this.base,
+        message: `the vision service answered ${res.status}`,
+      };
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
+      return {
+        available: false,
+        url: this.base,
+        message: `the vision service is not reachable: ${reason}`,
+      };
+    }
+  }
+
+  async postJson(path: string, body: unknown, signal?: AbortSignal): Promise<unknown> {
+    const res = await this.post(path, body, signal);
+    const json: unknown = await res.json().catch(() => null);
+    if (!res.ok) {
+      const failure = z
+        .looseObject({
+          error: z.looseObject({ code: z.string().optional(), message: z.string().optional() }),
+        })
+        .safeParse(json);
+      const err = failure.success ? failure.data.error : {};
+      throw new VisionRequestError(
+        err.code ?? `http_${res.status}`,
+        err.message ?? `vision sidecar answered ${res.status}`,
+      );
+    }
+    return json;
+  }
+
   /** NDJSON stream: `stage|progress|object|...` events then one `result` or `error`. */
-  private async stream(
+  async postStream(
     path: string,
     body: unknown,
-    signal: AbortSignal | undefined,
     onEvent: PhotoObjectsRequest['onEvent'],
+    signal?: AbortSignal,
   ): Promise<unknown> {
     const res = await this.post(path, body, signal);
     if (!res.ok && !(res.headers.get('content-type') ?? '').includes('ndjson')) {
@@ -230,6 +314,16 @@ export class HttpVisionPort implements VisionPort {
     }
     return result;
   }
+}
+
+const PING_TIMEOUT_MS = 1500;
+
+export class HttpVisionPort implements VisionPort {
+  constructor(private readonly transport: VisionTransport) {}
+
+  status(): Promise<VisionAvailability> {
+    return this.transport.status();
+  }
 
   async photoToObjects(req: PhotoObjectsRequest): Promise<SidecarResult> {
     const body = {
@@ -242,7 +336,7 @@ export class HttpVisionPort implements VisionPort {
       topk: 5,
       colours: true,
     };
-    const raw = await this.stream('/photo-to-objects', body, req.signal, req.onEvent);
+    const raw = await this.transport.postStream('/photo-to-objects', body, req.onEvent, req.signal);
     return SidecarResultSchema.parse(raw);
   }
 
@@ -252,21 +346,7 @@ export class HttpVisionPort implements VisionPort {
     schema: z.ZodType<T>,
     signal?: AbortSignal,
   ): Promise<T> {
-    const res = await this.post(path, body, signal);
-    const json: unknown = await res.json().catch(() => null);
-    if (!res.ok) {
-      const failure = z
-        .looseObject({
-          error: z.looseObject({ code: z.string().optional(), message: z.string().optional() }),
-        })
-        .safeParse(json);
-      const err = failure.success ? failure.data.error : {};
-      throw new VisionRequestError(
-        err.code ?? `http_${res.status}`,
-        err.message ?? `vision sidecar answered ${res.status}`,
-      );
-    }
-    const parsed = schema.safeParse(json);
+    const parsed = schema.safeParse(await this.transport.postJson(path, body, signal));
     if (!parsed.success) {
       throw new VisionRequestError(
         'bad_response',
@@ -307,5 +387,23 @@ export class HttpVisionPort implements VisionPort {
       signal,
     );
     return r.objects;
+  }
+
+  async addObject(
+    outDir: string,
+    prompt: { pointPx: [number, number] } | { boxXywh: [number, number, number, number] },
+    signal?: AbortSignal,
+  ): Promise<SidecarObject> {
+    const body =
+      'pointPx' in prompt
+        ? { out_dir: outDir, point_px: prompt.pointPx }
+        : { out_dir: outDir, box_xywh: prompt.boxXywh };
+    const r = await this.edit(
+      '/objects/add',
+      body,
+      z.object({ object: SidecarObjectSchema }),
+      signal,
+    );
+    return r.object;
   }
 }

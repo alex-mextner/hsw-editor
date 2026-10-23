@@ -8,9 +8,11 @@ import type {
   PhotoObjectsRequest,
   SidecarObject,
   SidecarResult,
+  VisionAvailability,
   VisionPort,
 } from '@hsw-editor/tools/node';
 import type { JobRegistry } from '../jobs.ts';
+import { HttpVisionClient } from '../vision/client.ts';
 import { startServer, type RunningServer } from '../server.ts';
 import { createToolsModule } from './module.ts';
 
@@ -46,6 +48,12 @@ class FakeVision implements VisionPort {
   }
   async splitObject(): Promise<SidecarObject[]> {
     throw new Error('not used');
+  }
+  async addObject(): Promise<SidecarObject> {
+    throw new Error('not used');
+  }
+  async status(): Promise<VisionAvailability> {
+    return { available: true };
   }
 }
 
@@ -447,26 +455,58 @@ describe('class thumbnails', () => {
   });
 });
 
-describe('vision status', () => {
-  const saved = process.env['HSW_VISION_URL'];
-  afterAll(() => {
-    if (saved === undefined) delete process.env['HSW_VISION_URL'];
-    else process.env['HSW_VISION_URL'] = saved;
+describe('vision status (the managed client, no fake sidecar)', () => {
+  let probeRoot = '';
+  const servers: RunningServer[] = [];
+  beforeAll(() => {
+    probeRoot = mkdtempSync(join(tmpdir(), 'hsw-vision-status-'));
+  });
+  afterAll(async () => {
+    for (const server of servers) await server.stop();
+    rmSync(probeRoot, { recursive: true, force: true });
   });
 
-  test('reports a down sidecar with a message and an up one as available', async () => {
+  /** A daemon whose tools module talks to its own client: own environment, own (absent) state file. */
+  async function daemonWith(env: Record<string, string>, venv: string): Promise<string> {
+    const client = new HttpVisionClient({
+      repoRoot: probeRoot,
+      env,
+      venv,
+      stateFile: join(probeRoot, `state-${servers.length}.json`),
+    });
+    const server = await startServer(
+      {
+        port: 0,
+        host: '127.0.0.1',
+        home: join(probeRoot, `home-${servers.length}`),
+        webDist: join(root, 'dist'),
+        allowedOrigins: [],
+        heartbeatMs: 1000,
+      },
+      {
+        modules: [createToolsModule({ visionClient: client, jobRegistry: new Map() })],
+        jobRegistry: new Map(),
+      },
+    );
+    servers.push(server);
+    return server.url;
+  }
+  const statusOf = async (url: string): Promise<Record<string, unknown>> =>
+    (await (await fetch(`${url}/api/tools/vision`)).json()) as Record<string, unknown>;
+
+  test('an external sidecar that is down is unavailable with a message, one that answers is available', async () => {
     const probe = Bun.serve({ port: 0, fetch: () => new Response('x') });
     const closedPort = probe.port;
     await probe.stop(true);
-    process.env['HSW_VISION_URL'] = `http://127.0.0.1:${closedPort}`;
-    const down = (await getJson('/api/tools/vision')) as {
-      available: boolean;
-      url: string;
-      message: string;
-    };
+    const down = (await statusOf(
+      await daemonWith(
+        { HSW_VISION_URL: `http://127.0.0.1:${closedPort}` },
+        join(probeRoot, 'no-venv'),
+      ),
+    )) as { available: boolean; url?: string; message: string };
     expect(down.available).toBe(false);
     expect(down.url).toBe(`http://127.0.0.1:${closedPort}`);
-    expect(down.message.length).toBeGreaterThan(0);
+    expect(down.message).toContain(`127.0.0.1:${closedPort}`);
 
     const up = Bun.serve({
       port: 0,
@@ -476,13 +516,25 @@ describe('vision status', () => {
           : new Response('no', { status: 404 }),
     });
     try {
-      process.env['HSW_VISION_URL'] = `http://127.0.0.1:${up.port}`;
-      expect(await getJson('/api/tools/vision')).toEqual({
-        available: true,
-        url: `http://127.0.0.1:${up.port}`,
-      });
+      const url = `http://127.0.0.1:${up.port}`;
+      expect(
+        await statusOf(await daemonWith({ HSW_VISION_URL: url }, join(probeRoot, 'no-venv'))),
+      ).toEqual({ available: true, url });
     } finally {
       await up.stop(true);
     }
+  });
+
+  test('a stopped sidecar is available when it can be started and unavailable when it is not installed', async () => {
+    const venv = join(probeRoot, 'venv');
+    mkdirSync(join(venv, 'bin'), { recursive: true });
+    writeFileSync(join(venv, 'bin', 'python'), '');
+    expect(await statusOf(await daemonWith({}, venv))).toEqual({ available: true });
+    const missing = (await statusOf(await daemonWith({}, join(probeRoot, 'absent')))) as {
+      available: boolean;
+      message: string;
+    };
+    expect(missing.available).toBe(false);
+    expect(missing.message).toContain('hsw-editor vision setup');
   });
 });

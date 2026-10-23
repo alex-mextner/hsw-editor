@@ -37,6 +37,11 @@ export interface VisionStatus {
   /** True when this server spawned the sidecar (and will stop it when idle). */
   managed: boolean;
   endpoint: string | null;
+  /**
+   * Whether the next request can start the sidecar: its environment exists and no external `HSW_VISION_URL` is
+   * expected to answer instead. A stopped but startable sidecar is "available" to the callers that start it lazily.
+   */
+  startable: boolean;
   health: JsonValue | null;
   /** `GET /models/status` of the sidecar; only fetched when it is already running. */
   models: JsonValue | null;
@@ -57,6 +62,15 @@ export interface VisionClient {
     onEvent: (event: StreamEvent) => void,
     signal?: AbortSignal,
   ): Promise<PhotoToObjectsResult>;
+  /** POST a JSON route that is not a stage (`/objects/*`), starting the sidecar when needed. */
+  post(path: string, request: ServiceRequest, signal?: AbortSignal): Promise<unknown>;
+  /** POST an NDJSON route: forward the progress events, return the final `result` line unvalidated. */
+  postStream(
+    path: string,
+    request: ServiceRequest,
+    onEvent: (event: StreamEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<unknown>;
   status(): Promise<VisionStatus>;
   stop(): Promise<void>;
 }
@@ -218,6 +232,19 @@ export class HttpVisionClient implements VisionClient {
     return this.stream('/photo-to-objects', request, PhotoToObjectsResultSchema, onEvent, signal);
   }
 
+  async post(path: string, request: ServiceRequest, signal?: AbortSignal): Promise<unknown> {
+    return this.postJson(path, request, signal);
+  }
+
+  async postStream(
+    path: string,
+    request: ServiceRequest,
+    onEvent: (event: StreamEvent) => void,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    return this.stream(path, request, z.unknown(), onEvent, signal);
+  }
+
   /** POST `request`, forward the NDJSON progress events and return the validated final `result` line. */
   private async stream<T>(
     path: string,
@@ -260,13 +287,23 @@ export class HttpVisionClient implements VisionClient {
 
   async status(): Promise<VisionStatus> {
     const endpoint = await this.lookup();
+    const external = (this.env['HSW_VISION_URL'] ?? '') !== '';
+    const installed = existsSync(join(this.venv, 'bin', 'python'));
     if (endpoint === undefined) {
-      return { running: false, managed: false, endpoint: null, health: null, models: null };
+      return {
+        running: false,
+        managed: false,
+        endpoint: null,
+        startable: !external && installed,
+        health: null,
+        models: null,
+      };
     }
     const health = await this.tryGet(endpoint, '/health');
     const models = health === null ? null : await this.tryGet(endpoint, '/models/status');
     return {
       running: health !== null,
+      startable: health !== null || (!external && installed),
       managed: this.child !== undefined,
       endpoint: endpoint.kind === 'tcp' ? endpoint.base : `unix:${endpoint.socket}`,
       health,

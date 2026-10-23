@@ -27,6 +27,7 @@ import {
   ToolStoreError,
   VisionRequestError,
   VisionUnavailableError,
+  addDraftObject,
   commitDraft,
   groupDraftObjects,
   holdingOf,
@@ -85,6 +86,13 @@ const SplitBody = z.union([
   z.strictObject({
     key: z.string(),
     linePx: z.tuple([z.tuple([z.number(), z.number()]), z.tuple([z.number(), z.number()])]),
+  }),
+]);
+const AddBody = z.union([
+  z.strictObject({ photo: z.number().int().min(0), pointPx: z.tuple([z.number(), z.number()]) }),
+  z.strictObject({
+    photo: z.number().int().min(0),
+    boxXywh: z.tuple([z.number(), z.number(), z.number().positive(), z.number().positive()]),
   }),
 ]);
 const CommitBody = z.strictObject({
@@ -202,23 +210,6 @@ function describeClass(cls: AnyToolClass): Record<string, unknown> {
   };
 }
 
-const VISION_PING_TIMEOUT_MS = 1500;
-
-/** Whether the vision sidecar answers `/health` (never starts it, no auth). */
-async function visionStatus(): Promise<{ available: boolean; url: string; message?: string }> {
-  const url = process.env['HSW_VISION_URL'] ?? 'http://127.0.0.1:8795';
-  try {
-    const res = await fetch(`${url.replace(/\/+$/, '')}/health`, {
-      signal: AbortSignal.timeout(VISION_PING_TIMEOUT_MS),
-    });
-    if (res.ok) return { available: true, url };
-    return { available: false, url, message: `the vision service answered ${res.status}` };
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    return { available: false, url, message: `the vision service is not reachable: ${reason}` };
-  }
-}
-
 const DRAFT_STATUS = {
   not_found: 404,
   invalid: 400,
@@ -294,10 +285,6 @@ async function route(
 
   if (a === 'classes') return classRoute(request, url, home, b, c);
   if (a === 'drafts') return draftRoute(request, deps, parts.slice(1));
-  if (a === 'vision' && b === undefined) {
-    if (method !== 'GET') return fail(405, 'method_not_allowed', 'GET only');
-    return json(await visionStatus());
-  }
 
   if (a === undefined) {
     if (method === 'GET') return json({ tools: await deps.tools.list() });
@@ -469,6 +456,11 @@ async function draftRoute(
     const body = await readBody(request, SplitBody);
     const how = 'n' in body ? { n: body.n } : { linePx: body.linePx };
     return json({ draft: await splitDraftObject(deps, id, body.key, how) });
+  }
+  if (sub === 'add') {
+    const body = await readBody(request, AddBody);
+    const { photo, ...prompt } = body;
+    return json({ draft: await addDraftObject(deps, id, photo, prompt) });
   }
   if (sub === 'calibration') {
     const body = await readBody(request, CalibrationInputSchema);

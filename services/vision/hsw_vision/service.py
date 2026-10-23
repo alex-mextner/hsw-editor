@@ -31,6 +31,7 @@ from hsw_vision.stages import calibrate as stage_calibrate
 from hsw_vision.stages import embed as stage_embed
 from hsw_vision.stages import fit as stage_fit
 from hsw_vision.stages import multiview as stage_multiview
+from hsw_vision.stages import prompt as stage_prompt
 from hsw_vision.stages import recognise as stage_recognise
 from hsw_vision.stages import segment as stage_segment
 from hsw_vision.stages import shape as stage_shape
@@ -58,6 +59,7 @@ class Stages:
     axis_and_profile: Callable[..., Any] = stage_shape.axis_and_profile
     embed_objects: Callable[..., np.ndarray] = stage_embed.embed_objects
     embed_images: Callable[..., np.ndarray] = stage_embed.embed_images
+    prompt_mask: Callable[..., dict[str, Any]] = stage_prompt.prompt_mask
 
 
 def _load_rgb(path: Path) -> np.ndarray:
@@ -281,10 +283,12 @@ class VisionService:
         bank_index: dict[str, Any] | None,
         topk: int = 5,
         categories: str | None = None,
+        classes: list[dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """Classes of the given instances: CLIP text prompts over `categories` (a library-readable file / comma list),
-        else the bank index's tool classes, else the built-in vocabulary."""
-        classes = stage_recognise.resolve_classes(bank_index, categories)
+        """Classes of the given instances: CLIP text prompts over `classes` (a ready vocabulary, which an edit takes from
+        the stored run), else `categories` (a library-readable file / comma list), else the bank index's tool classes,
+        else the built-in vocabulary."""
+        classes = classes or stage_recognise.resolve_classes(bank_index, categories)
         key = {
             "seg": segmentation_identity(segmentation),
             "instances": sorted(instance_ids),
