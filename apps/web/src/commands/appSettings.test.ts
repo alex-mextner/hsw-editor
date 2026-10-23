@@ -5,7 +5,7 @@ import { APP_SETTINGS, isDeviceLocalSetting } from './appSettings.ts';
 describe('app settings', () => {
   const store = new SettingsStore(APP_SETTINGS);
 
-  test('cover theme, language, snap, nudge, units, view, panels, AI approval and chord timeout', () => {
+  test('cover theme, language, snap, nudge, units, view, panels, AI approval, photo segmentation and chord timeout', () => {
     const ids = APP_SETTINGS.map((setting) => setting.id);
     expect(ids).toEqual([
       'appearance.theme',
@@ -19,6 +19,7 @@ describe('app settings', () => {
       'layout.history',
       'layout.agent',
       'ai.approval',
+      'vision.segmentQuality',
       'keyboard.chordTimeout',
     ]);
   });
@@ -41,6 +42,17 @@ describe('app settings', () => {
     expect(keywordsOf('appearance.theme')).toContain('тема');
     expect(keywordsOf('appearance.language')).toContain('язык');
     expect(keywordsOf('editor.snap')).toContain('сетка');
+  });
+
+  test('the photo segmentation quality is a fast / accurate choice that defaults to fast and syncs across devices', () => {
+    const definition = store.definition('vision.segmentQuality');
+    expect(definition).toMatchObject({ type: 'choice', default: 'fast', group: 'advanced' });
+    expect(definition?.type === 'choice' && definition.options.map((option) => option.value)).toEqual([
+      'fast',
+      'accurate',
+    ]);
+    expect(definition?.keywords).toContain('сегментация');
+    expect(isDeviceLocalSetting('vision.segmentQuality')).toBe(false);
   });
 });
 

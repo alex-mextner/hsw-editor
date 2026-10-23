@@ -9,7 +9,7 @@ import {
   type SpawnFn,
   type SpawnedProcess,
 } from './client.ts';
-import type { StreamEvent } from './types.ts';
+import type { SegmentQuality, StreamEvent } from './types.ts';
 import { VisionError } from './types.ts';
 
 let root = '';
@@ -722,5 +722,95 @@ describe('endpoint resolution and lifecycle', () => {
       code: 'vision_start_failed',
       details: 'ModuleNotFoundError: torch',
     });
+  });
+});
+
+describe('segmentation quality default (the vision.segmentQuality setting)', () => {
+  interface Seen {
+    path: string;
+    body: unknown;
+  }
+
+  function recordingSidecar(seen: Seen[]) {
+    const server = Bun.serve({
+      hostname: '127.0.0.1',
+      port: 0,
+      async fetch(request) {
+        const url = new URL(request.url);
+        if (url.pathname === '/health')
+          return Response.json({ ok: true, name: 'hsw-vision', version: 'test' });
+        if (request.method === 'POST') seen.push({ path: url.pathname, body: await request.json() });
+        if (url.pathname === '/segment') {
+          return Response.json({
+            image: { w: 1, h: 1, sha256: 'b'.repeat(64) },
+            imageDir: '/tmp',
+            dir: 'seg-1',
+            instances: [],
+          });
+        }
+        return Response.json({ ok: true });
+      },
+    });
+    servers.push(server);
+    return server;
+  }
+
+  function clientWith(
+    server: ReturnType<typeof recordingSidecar>,
+    segmentQuality?: () => Promise<SegmentQuality | undefined>,
+  ): HttpVisionClient {
+    return new HttpVisionClient({
+      repoRoot: root,
+      env: { HSW_VISION_URL: `http://127.0.0.1:${server.port}` },
+      stateFile: join(root, 'state.json'),
+      ...(segmentQuality === undefined ? {} : { segmentQuality }),
+    });
+  }
+
+  test('fills segment.quality when the request names none, with or without other segment params', async () => {
+    const seen: Seen[] = [];
+    const client = clientWith(recordingSidecar(seen), async () => 'accurate');
+    await client.segment({ image_path: '/x', segment: { method: 'sam2' } });
+    await client.segment({ image_path: '/x' });
+    await client.post('/recognise', { image_path: '/x' });
+    expect(seen.map((s) => s.body)).toEqual([
+      { image_path: '/x', segment: { method: 'sam2', quality: 'accurate' } },
+      { image_path: '/x', segment: { quality: 'accurate' } },
+      { image_path: '/x', segment: { quality: 'accurate' } },
+    ]);
+  });
+
+  test('a quality the caller chose wins, and so does having no setting', async () => {
+    const seen: Seen[] = [];
+    const server = recordingSidecar(seen);
+    await clientWith(server, async () => 'accurate').segment({
+      image_path: '/x',
+      segment: { quality: 'fast' },
+    });
+    await clientWith(server, async () => undefined).segment({ image_path: '/x' });
+    await clientWith(server).segment({ image_path: '/x' });
+    expect(seen.map((s) => s.body)).toEqual([
+      { image_path: '/x', segment: { quality: 'fast' } },
+      { image_path: '/x' },
+      { image_path: '/x' },
+    ]);
+  });
+
+  test('every stage route that takes segment params gets the quality', async () => {
+    const seen: Seen[] = [];
+    const client = clientWith(recordingSidecar(seen), async () => 'accurate');
+    const routes = ['/segment', '/calibrate', '/recognise', '/fit', '/photo-to-wall', '/photo-to-objects'];
+    for (const route of routes) await client.post(route, { image_path: '/x' });
+    expect(seen.map((s) => s.path)).toEqual(routes);
+    for (const { body } of seen) {
+      expect(body).toEqual({ image_path: '/x', segment: { quality: 'accurate' } });
+    }
+  });
+
+  test('routes that take no segment params are left alone', async () => {
+    const seen: Seen[] = [];
+    const client = clientWith(recordingSidecar(seen), async () => 'accurate');
+    await client.post('/objects/merge', { ids: [1, 2] });
+    expect(seen.map((s) => s.body)).toEqual([{ ids: [1, 2] }]);
   });
 });

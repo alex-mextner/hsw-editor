@@ -8,6 +8,7 @@ from typing import Any
 from hsw_vision.config import SETUP_HINT, VisionConfig
 from hsw_vision.errors import MissingDependency
 from hsw_vision.manager import Engine, EngineSpec, ModelManager
+from hsw_vision.schemas import DEFAULT_QUALITY
 
 CLIP = "clip"
 DINO = "dino"
@@ -46,8 +47,8 @@ class FitRunner:
 
 
 
-def segmenter_name(method: str, fill: str, reject_bg: bool, points_per_side: int) -> str:
-    return f"segmenter:{method}:{fill}:{'bg' if reject_bg else 'nobg'}:{points_per_side}"
+def segmenter_name(*, method: str, quality: str, fill: str, reject_bg: bool, points_per_side: int) -> str:
+    return f"segmenter:{method}:{quality}:{fill}:{'bg' if reject_bg else 'nobg'}:{points_per_side}"
 
 
 def default_specs(manager: ModelManager) -> dict[str, EngineSpec]:
@@ -89,12 +90,15 @@ def segmenter_spec(
     manager: ModelManager,
     *,
     method: str,
+    quality: str,
     fill: str,
     reject_bg: bool,
     points_per_side: int,
 ) -> EngineSpec:
     """A segmenter variant; the SAM2/u2net weights are its own, CLIP and OWLv2 are the shared residents."""
-    name = segmenter_name(method, fill, reject_bg, points_per_side)
+    name = segmenter_name(
+        method=method, quality=quality, fill=fill, reject_bg=reject_bg, points_per_side=points_per_side
+    )
     requires = tuple(n for n, wanted in ((CLIP, reject_bg), (OWL, fill == "owlv2")) if wanted)
 
     def factory(device: str) -> Engine:
@@ -102,6 +106,7 @@ def segmenter_spec(
 
         kwargs: dict[str, Any] = {
             "method": method,
+            "quality": quality,
             "fill": fill,
             "reject_bg": reject_bg,
             "device": device,
@@ -142,13 +147,18 @@ def ensure_segmenter(
     manager: ModelManager,
     *,
     method: str = "sam2",
+    quality: str = DEFAULT_QUALITY,
     fill: str = "owlv2",
     reject_bg: bool = True,
     points_per_side: int = 32,
 ) -> str:
     """Register (once) and return the engine name of a segmenter variant."""
-    name = segmenter_name(method, fill, reject_bg, points_per_side)
+    name = segmenter_name(
+        method=method, quality=quality, fill=fill, reject_bg=reject_bg, points_per_side=points_per_side
+    )
     manager.register(
-        segmenter_spec(manager, method=method, fill=fill, reject_bg=reject_bg, points_per_side=points_per_side)
+        segmenter_spec(
+            manager, method=method, quality=quality, fill=fill, reject_bg=reject_bg, points_per_side=points_per_side
+        )
     )
     return name

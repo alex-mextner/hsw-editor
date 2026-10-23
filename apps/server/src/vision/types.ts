@@ -22,8 +22,15 @@ export const CalibrateParamsSchema = z.strictObject({
 });
 export type CalibrateParams = z.infer<typeof CalibrateParamsSchema>;
 
+export const SegmentQualitySchema = z.enum(['fast', 'accurate']);
+export type SegmentQuality = z.infer<typeof SegmentQualitySchema>;
+/** What the sidecar uses when a request names no quality (`DEFAULT_QUALITY` in `services/vision/hsw_vision/schemas.py`). */
+export const DEFAULT_SEGMENT_QUALITY: SegmentQuality = 'fast';
+
 export const SegmentParamsSchema = z.strictObject({
   method: z.enum(['sam2', 'sam2-dense', 'u2net']).optional(),
+  /** `fast` (the sidecar default) or `accurate` (the stock SAM2 generator; docs/vision.md has the timings). Absent: the user's `vision.segmentQuality` setting, else the sidecar's default. */
+  quality: SegmentQualitySchema.optional(),
   fill: z.enum(['owlv2', 'none']).optional(),
   rejectBg: z.boolean().optional(),
   pointsPerSide: z.number().int().min(8).max(128).optional(),
@@ -51,6 +58,7 @@ export function segmentToService(params: SegmentParams | undefined): Record<stri
   if (params === undefined) return {};
   const out: Record<string, JsonValue> = {};
   if (params.method !== undefined) out['method'] = params.method;
+  if (params.quality !== undefined) out['quality'] = params.quality;
   if (params.fill !== undefined) out['fill'] = params.fill;
   if (params.rejectBg !== undefined) out['reject_bg'] = params.rejectBg;
   if (params.pointsPerSide !== undefined) out['points_per_side'] = params.pointsPerSide;

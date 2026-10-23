@@ -185,6 +185,11 @@ export const commandsEn = {
   'settings.keyboard.chordTimeout': 'Chord timeout (ms)',
   'settings.keyboard.chordTimeout.description':
     'How long a chord such as Ctrl+K Ctrl+S waits for its next key',
+  'settings.vision.segmentQuality': 'Photo segmentation',
+  'settings.vision.segmentQuality.description':
+    'Fast cuts the objects out of a photo quickly; Accurate uses the stock SAM2 generator and takes longer',
+  'settings.vision.segmentQuality.fast': 'Fast',
+  'settings.vision.segmentQuality.accurate': 'Accurate',
 
   // Commands that exist only in the palette/keyboard layer
   'cmd.palette.open': 'Open the command palette',
@@ -405,6 +410,11 @@ export const commandsRu: FeatureRu<typeof commandsEn> = {
   'settings.keyboard.chordTimeout': 'Таймаут цепочки (мс)',
   'settings.keyboard.chordTimeout.description':
     'Сколько цепочка вроде Ctrl+K Ctrl+S ждёт следующую клавишу',
+  'settings.vision.segmentQuality': 'Сегментация фото',
+  'settings.vision.segmentQuality.description':
+    'Быстрая вырезает предметы с фото быстро; Точная использует стандартный генератор SAM2 и работает дольше',
+  'settings.vision.segmentQuality.fast': 'Быстрая',
+  'settings.vision.segmentQuality.accurate': 'Точная',
 
   'cmd.palette.open': 'Открыть палитру команд',
   'cmd.palette.openDescription': 'Поиск по командам, настройкам, стенам, элементам и банку',
