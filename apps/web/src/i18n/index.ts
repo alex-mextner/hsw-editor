@@ -23,7 +23,7 @@ const PLURAL_RULES: Readonly<Record<Locale, Intl.PluralRules>> = {
   en: new Intl.PluralRules('en'),
 };
 
-function translate(locale: Locale, key: MessageKey, params?: MessageParams): string {
+export function translate(locale: Locale, key: MessageKey, params?: MessageParams): string {
   return interpolate(catalogues[locale][key], params);
 }
 
@@ -42,6 +42,10 @@ function translatePlural(
 
 /** Translate outside React (toasts, command labels built at call time). */
 export const t: Translate = (key, params) => translate(localeStore.get(), key, params);
+
+/** Plural-aware `t` for the same callers. */
+export const tn: TranslatePlural = (key, count, params) =>
+  translatePlural(localeStore.get(), key, count, params);
 
 export function useI18n(): {
   readonly locale: Locale;

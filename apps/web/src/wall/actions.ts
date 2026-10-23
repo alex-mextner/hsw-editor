@@ -4,16 +4,34 @@
  */
 import type { BankElement } from '@hsw-editor/bank';
 import {
+  BLOCKING_REASONS,
+  evaluateHolders,
+  mountTargetFor,
+  planHang,
+  planMoveHolder,
+  planRemoveHolder,
+  planRotateHolder,
+  type Reason,
+} from '@hsw-editor/compat';
+import {
+  applyOp,
   HEX_SYMMETRY_DEG,
   nearestCell,
   normalizeDeg,
+  OpError,
   type LeafOp,
   type Wall,
   type WallItem,
 } from '@hsw-editor/core';
 import { bankStore } from '@/bank/client.ts';
+import { notify } from '@/features/notices/notices.ts';
+import { t, tn } from '@/i18n/index.ts';
+import { localeStore } from '@/i18n/locale.ts';
 import { editorStore, patchEditor, setSelection, type Vec2 } from '@/state/editor.ts';
 import { wallPointAt } from '@/scene/viewportBridge.ts';
+import { attachContext } from './attach.ts';
+import { reasonText, toolClassName } from './attachReasons.ts';
+import { toolClassOfItem } from './toolInterface.ts';
 import { clipboardStore } from './clipboard.ts';
 import {
   addItemOp,
@@ -101,13 +119,43 @@ function viewportMiddle(): { x: number; y: number } {
   return wallPointAt(rect.left + rect.width / 2, rect.top + rect.height / 2) ?? fallback;
 }
 
+/** Runs a holder plan; a locked tool on the holder refuses it and the user is told why. */
+function planOrNotify<T>(plan: () => T): T | null {
+  try {
+    return plan();
+  } catch (error) {
+    if (!(error instanceof OpError)) throw error;
+    notify('error', error.code === 'item_locked' ? t('attach.blockedByLocked') : error.message);
+    return null;
+  }
+}
+
+/**
+ * Removes the unlocked selection. A removed holder lets go of its tools first (they stay on the wall,
+ * no longer on a holder); a holder with a locked tool is kept.
+ */
 export function deleteSelection(): void {
+  const wall = currentWall();
   const items = selectedItems().filter((item) => !item.locked);
-  if (items.length === 0) return;
-  submitOps(
-    items.map((item): LeafOp => ({ type: 'removeItem', id: item.id })),
-    'remove-items',
-  );
+  if (!wall || items.length === 0) return;
+  const ops: LeafOp[] = [];
+  const detached = new Set<string>();
+  for (const item of items.filter((candidate) => candidate.kind === 'holder')) {
+    const plan = planOrNotify(() => planRemoveHolder(wall, item.id));
+    if (!plan) continue;
+    ops.push(...plan.op.ops);
+    for (const toolId of plan.detached) detached.add(toolId);
+  }
+  for (const item of items) {
+    if (item.kind !== 'holder') {
+      ops.push({ type: 'removeItem', id: item.id });
+      detached.delete(item.id);
+    }
+  }
+  if (ops.length === 0) return;
+  if (submitOps(ops, 'remove-items').ok && detached.size > 0) {
+    notify('info', tn('attach.detached', detached.size));
+  }
   setSelection([]);
 }
 
@@ -123,13 +171,27 @@ export function duplicateSelection(): void {
 
 /** Rotates each selected item about its own anchor by `steps` lattice symmetry steps (60 degrees each). */
 export function rotateSelection(steps: number): void {
-  const ops = selectedItems()
-    .filter((item) => !item.locked)
-    .map((item): LeafOp => ({
-      type: 'rotateItem',
-      id: item.id,
-      rotZ: normalizeDeg(item.pose.rotZ + steps * HEX_SYMMETRY_DEG),
-    }));
+  const wall = currentWall();
+  if (!wall) return;
+  const ops: LeafOp[] = [];
+  // Unlocked holders only: a tool on a locked holder is not carried, so it turns by itself.
+  const selectedIds = new Set(
+    selectedItems()
+      .filter((item) => item.kind === 'holder' && !item.locked)
+      .map((item) => item.id),
+  );
+  for (const item of selectedItems().filter((candidate) => !candidate.locked)) {
+    const rotZ = normalizeDeg(item.pose.rotZ + steps * HEX_SYMMETRY_DEG);
+    if (item.kind !== 'holder') {
+      // A tool hanging on a selected holder orbits with it instead of turning by itself.
+      if (!(item.parentId !== undefined && selectedIds.has(item.parentId))) {
+        ops.push({ type: 'rotateItem', id: item.id, rotZ });
+      }
+      continue;
+    }
+    const plan = planOrNotify(() => planRotateHolder(wall, item.id, rotZ));
+    if (plan) ops.push(...plan.ops);
+  }
   if (ops.length > 0) submitOps(ops, 'rotate-items');
 }
 
@@ -148,14 +210,31 @@ export function toggleLockSelection(): void {
 export function nudgeSelection(dCol: number, dRow2: number): void {
   const wall = currentWall();
   if (!wall) return;
-  const items = selectedItems().filter((item) => item.cell !== undefined && !item.locked);
+  const selectedHolders = new Set(
+    selectedItems()
+      .filter((item) => item.kind === 'holder' && !item.locked)
+      .map((item) => item.id),
+  );
+  // A tool hanging on a selected holder is carried by the holder's move, not nudged by itself.
+  const items = selectedItems().filter(
+    (item) =>
+      item.cell !== undefined &&
+      !item.locked &&
+      !(item.parentId !== undefined && selectedHolders.has(item.parentId)),
+  );
   const ops: LeafOp[] = [];
   for (const item of items) {
     if (!item.cell) continue;
     const cell = offsetCell(item.cell, { dCol, dRow2 });
     if (cell.col < 0 || cell.row < 0 || cell.col >= wall.board.cols || cell.row >= wall.board.rows)
       return;
-    ops.push({ type: 'moveItem', id: item.id, to: { cell } });
+    // A holder's tools move with it.
+    if (item.kind !== 'holder') {
+      ops.push({ type: 'moveItem', id: item.id, to: { cell } });
+      continue;
+    }
+    const plan = planOrNotify(() => planMoveHolder(wall, item.id, { cell }));
+    if (plan) ops.push(...plan.ops);
   }
   if (ops.length > 0) submitOps(ops, 'nudge-items');
 }
@@ -175,31 +254,63 @@ export function addToolPreset(toolClass: ToolClass, label: string): string | nul
   return item.id;
 }
 
+/** Outcome of `addHolderForTool`: `refused` and `locked` already told the user why (a toast); only `no-room` is left to the caller. */
+export type AddHolderResult = 'ok' | 'no-room' | 'refused' | 'locked' | 'failed';
+
 /**
- * Puts a new holder from the bank on the free cell nearest to `tool` and moves the tool into it
- * (`parentId`). The tool is removed and re-added in the same batch because ops cannot set a parent.
- * Returns false when there is no room or the tool is locked.
+ * Puts a new holder from the bank on the free cell nearest to `tool` and hangs the tool on it (attachItem,
+ * orientation and position from the mount) as one undo step.
  */
-export function addHolderForTool(tool: WallItem, element: BankElement): boolean {
+export function addHolderForTool(tool: WallItem, element: BankElement): AddHolderResult {
   const wall = currentWall();
-  if (!wall || tool.locked) return false;
+  if (!wall) return 'failed';
+  if (tool.locked) {
+    notify('error', t('attach.toolLocked'));
+    return 'locked';
+  }
   const near = nearestCell(wall.board, tool.pose.x, tool.pose.y);
   const cell = findFreeCell(wall, currentBank(), element, near);
-  if (!cell) return false;
+  if (!cell) return 'no-room';
   const holder = newItem(element, cell, wall.board);
-  const held: WallItem = {
-    ...tool,
-    parentId: holder.id,
-    pose: { ...tool.pose, x: holder.pose.x, y: holder.pose.y, z: element.dimsMm.z / 2 },
-  };
+  let withHolder: Wall;
+  try {
+    withHolder = applyOp(wall, { type: 'addItem', item: holder }).wall;
+  } catch (error) {
+    if (error instanceof OpError) return 'failed';
+    throw error;
+  }
+  const ctx = attachContext(withHolder, currentBank());
+  const target = mountTargetFor(ctx, tool, holder.id);
+  if (!target) {
+    const reasons = evaluateHolders(ctx, tool).find((entry) => entry.holderId === holder.id)?.compat
+      .reasons;
+    notify('error', refusalMessage(wall, tool, element, reasons ?? []));
+    return 'refused';
+  }
   const ok = submitOps(
-    [
-      { type: 'addItem', item: holder },
-      { type: 'removeItem', id: tool.id },
-      { type: 'addItem', item: held },
-    ],
+    [{ type: 'addItem', item: holder }, planHang(tool, target)],
     'add-holder-for-tool',
   ).ok;
-  if (ok) setSelection([held.id]);
-  return ok;
+  if (!ok) return 'failed';
+  setSelection([tool.id]);
+  return 'ok';
+}
+
+function refusalMessage(
+  wall: Wall,
+  tool: WallItem,
+  element: BankElement,
+  reasons: readonly Reason[],
+): string {
+  const locale = localeStore.get();
+  const state = bankStore.get();
+  const className = (id: string): string => toolClassName(state, locale, id);
+  const title = t('attach.hint.refused', {
+    tool: className(toolClassOfItem(tool, wall) ?? ''),
+    holder: element.name[locale],
+  });
+  const why = reasons
+    .filter((reason) => BLOCKING_REASONS.has(reason.code))
+    .map((reason) => reasonText(t, reason, className));
+  return [title, ...why].join(' ');
 }

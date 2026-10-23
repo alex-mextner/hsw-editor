@@ -3,6 +3,7 @@ import type { Wall, WallItem } from '@hsw-editor/core';
 import { lastKnownElement } from '@/bank/client.ts';
 import { bboxCentre, resolveModel } from '@/bank/models.ts';
 import type { BankLookup } from '@/wall/edits.ts';
+import { toolBoxCentre } from '@/wall/attach.ts';
 import { toolDims } from '@/wall/toolPresets.ts';
 
 export interface ItemBounds {
@@ -23,7 +24,10 @@ export function placeholderBounds(item: WallItem, wall: Wall): ItemBounds {
   const known = item.bankId === undefined ? undefined : lastKnownElement(item.bankId);
   if (known) return { dims: known.dimsMm, centre: bboxCentre(known.bboxMm) };
   const dims = item.kind === 'tool' ? (toolDims(item, wall) ?? FALLBACK_BOX) : FALLBACK_BOX;
-  return { dims, centre: { x: 0, y: 0, z: dims.z / 2 } };
+  return {
+    dims,
+    centre: item.kind === 'tool' ? toolBoxCentre(dims) : { x: 0, y: 0, z: dims.z / 2 },
+  };
 }
 
 /** Bounding box used for selection frames and rotate handles: bank model dims, or a tool's box. */
@@ -32,7 +36,7 @@ export function itemBounds(item: WallItem, wall: Wall, bank: BankLookup): ItemBo
   if (source) return { dims: source.dimsMm, centre: source.centreMm };
   if (item.kind === 'tool') {
     const dims = toolDims(item, wall);
-    if (dims) return { dims, centre: { x: 0, y: 0, z: dims.z / 2 } };
+    if (dims) return { dims, centre: toolBoxCentre(dims) };
   }
   // A bank element that is gone still has a box (and so a selection frame): the item stays editable.
   return item.bankId === undefined || item.kind === 'photo-ref'

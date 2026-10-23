@@ -1,4 +1,5 @@
 import { assetsRu } from './catalog/assets.ts';
+import { attachRu } from './catalog/attach.ts';
 import { bankRu } from './catalog/bank.ts';
 import { commandsRu } from './catalog/commands.ts';
 import { compareRu } from './catalog/compare.ts';
@@ -14,6 +15,7 @@ export const ru: Catalogue = {
   ...shellRu,
   ...ompRu,
   ...viewportRu,
+  ...attachRu,
   ...bankRu,
   ...widgetsRu,
   ...compareRu,

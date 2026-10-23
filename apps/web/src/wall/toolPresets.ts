@@ -61,20 +61,29 @@ export function toolPresetOps(
   label: string,
   position: { readonly x: number; readonly y: number },
 ): ToolPresetOps {
-  const dims = presetDims(toolClass.id);
+  return toolDraftOps(toolClass.id, label, position, presetDims(toolClass.id));
+}
+
+/** Like `toolPresetOps` for a tool whose class id and box are already known (a Tools panel drag). */
+export function toolDraftOps(
+  toolClassId: string,
+  label: string,
+  position: { readonly x: number; readonly y: number },
+  dims: Dims3,
+): ToolPresetOps {
   const model: ModelRef = {
     id: newId('m'),
     label,
     status: 'chosen',
     source: { type: 'library', by: 'preset' },
     dimensionsMm: dims,
-    toolClass: toolClass.id,
+    toolClass: toolClassId,
   };
   const item: WallItem = {
     id: newId('i'),
     kind: 'tool',
     modelRefId: model.id,
-    toolClass: toolClass.id,
+    toolClass: toolClassId,
     label,
     pose: { x: position.x, y: position.y, z: 40, rotX: 0, rotY: 0, rotZ: 0 },
     params: {},

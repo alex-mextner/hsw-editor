@@ -216,6 +216,10 @@ function ItemActions({ items }: { readonly items: readonly WallItem[] }) {
 
 function Placement({ item, wall }: { readonly item: WallItem; readonly wall: Wall }) {
   const { t } = useI18n();
+  const holder =
+    item.parentId === undefined
+      ? undefined
+      : wall.items.find((other) => other.id === item.parentId);
   const { x, y, z, rotZ } = item.pose;
   const cell = item.cell;
   return (
@@ -241,11 +245,13 @@ function Placement({ item, wall }: { readonly item: WallItem; readonly wall: Wal
         <dt className="text-muted-foreground">{t('inspector.rotation')}</dt>
         <dd className="font-mono">{Math.round(rotZ)}°</dd>
       </dl>
-      {item.parentId ? (
+      {holder ? (
         <p className="text-xs text-muted-foreground">
-          {t('inspector.heldBy', {
-            name: wall.items.find((other) => other.id === item.parentId)?.label ?? item.parentId,
-          })}
+          {t('inspector.heldBy', { name: holder.label ?? holder.id })}
+        </p>
+      ) : item.kind === 'tool' ? (
+        <p className="text-xs text-amber-600 dark:text-amber-400" data-testid="unmounted-flag">
+          {t('attach.unmounted')}
         </p>
       ) : null}
     </section>

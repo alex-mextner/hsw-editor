@@ -5,6 +5,7 @@ import {
   auditHangs,
   evaluateHolders,
   hungTools,
+  mountTargetFor,
   planAddHung,
   planDetach,
   planHang,
@@ -536,5 +537,50 @@ describe('review regressions', () => {
       items: [...wall.items].sort((a, b) => (a.id === 'drv4' ? -1 : b.id === 'drv4' ? 1 : 0)),
     };
     expect(auditHangs(contextFor(reordered)).map((a) => a.toolId)).toEqual(['drv4']);
+  });
+
+  test('tools colliding on one slot flag the later claimant, wall order aside', () => {
+    let wall = room();
+    wall = apply1(wall, { type: 'attachItem', id: 'drv1', parentId: 'rail', slot: 0 });
+    wall = apply1(wall, { type: 'attachItem', id: 'drv2', parentId: 'rail', slot: 0 });
+    const audit = auditHangs(contextFor(wall));
+    expect(audit.map((a) => a.toolId)).toEqual(['drv2']);
+    expect(audit[0]?.compat.reasons).toEqual([{ code: 'slot_taken', params: { slot: 0 } }]);
+    const reversed: Wall = {
+      ...wall,
+      items: [...wall.items].sort((a, b) => (a.id === 'drv2' ? -1 : b.id === 'drv2' ? 1 : 0)),
+    };
+    expect(auditHangs(contextFor(reversed)).map((a) => a.toolId)).toEqual(['drv1']);
+  });
+
+  test('an out-of-range slot is flagged before an unslotted tool takes the last place', () => {
+    let wall = room();
+    for (const id of ['drv1', 'drv2']) wall = dropOn(wall, id, 'rail');
+    wall = apply1(wall, { type: 'attachItem', id: 'drv3', parentId: 'rail' });
+    wall = apply1(wall, { type: 'attachItem', id: 'drv4', parentId: 'rail', slot: 7 });
+    expect(auditHangs(contextFor(wall)).map((a) => a.toolId)).toEqual(['drv4']);
+  });
+});
+
+describe('audit slot claims', () => {
+  test('a tool the mount does not take never makes a fitting tool lose its slot', () => {
+    let wall = room();
+    wall = apply1(wall, { type: 'attachItem', id: 'tape', parentId: 'rail', slot: 0 });
+    wall = apply1(wall, { type: 'attachItem', id: 'drv1', parentId: 'rail', slot: 0 });
+    expect(auditHangs(contextFor(wall)).map((a) => a.toolId)).toEqual(['tape']);
+  });
+});
+
+describe('mountTargetFor', () => {
+  test('targets the first free slot of a chosen holder, refuses a holder that does not suit', () => {
+    const wall = dropOn(room(), 'drv1', 'rail');
+    const ctx = contextFor(wall);
+    const taken = find(wall, 'drv1').slot ?? -1;
+    const target = mountTargetFor(ctx, find(wall, 'drv2'), 'rail');
+    expect(target).toMatchObject({ holderId: 'rail' });
+    expect(target?.slot).not.toBe(taken);
+    expect(mountTargetFor(ctx, find(wall, 'drv2'), 'rail', taken)).toBeNull();
+    expect(mountTargetFor(ctx, find(wall, 'drv2'), 'cradle')).toBeNull();
+    expect(mountTargetFor(ctx, find(wall, 'drv2'), 'nope')).toBeNull();
   });
 });

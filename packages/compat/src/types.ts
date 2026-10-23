@@ -62,6 +62,7 @@ export type ReasonCode =
   | 'dim_unknown'
   | 'slots_full'
   | 'slot_out_of_range'
+  | 'slot_taken'
   | 'overload';
 
 /** A localisable explanation: the UI maps `code` to a ru/en sentence and fills it from `params`. */
@@ -78,6 +79,7 @@ export const BLOCKING_REASONS: ReadonlySet<ReasonCode> = new Set<ReasonCode>([
   'dim_too_small',
   'slots_full',
   'slot_out_of_range',
+  'slot_taken',
   'overload',
 ]);
 

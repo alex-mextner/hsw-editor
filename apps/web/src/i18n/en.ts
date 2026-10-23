@@ -1,4 +1,5 @@
 import { assetsEn } from './catalog/assets.ts';
+import { attachEn } from './catalog/attach.ts';
 import { bankEn } from './catalog/bank.ts';
 import { commandsEn } from './catalog/commands.ts';
 import { compareEn } from './catalog/compare.ts';
@@ -17,6 +18,7 @@ export const en = {
   ...shellEn,
   ...ompEn,
   ...viewportEn,
+  ...attachEn,
   ...bankEn,
   ...widgetsEn,
   ...compareEn,

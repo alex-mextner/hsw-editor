@@ -43,7 +43,7 @@ export function groupItems(
     const key =
       source?.key ??
       (missingId === null
-        ? `box:${bounds.dims.x}x${bounds.dims.y}x${bounds.dims.z}`
+        ? `box:${bounds.centre.y}:${bounds.dims.x}x${bounds.dims.y}x${bounds.dims.z}`
         : `missing:${missingId}`);
     const group = byKey.get(key);
     if (group) group.items.push(item);

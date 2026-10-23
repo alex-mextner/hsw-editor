@@ -1,0 +1,68 @@
+import type { FeatureRu } from '../keys.ts';
+
+/** Hanging tools: the hint under the pointer while dragging a tool and the reasons a mount refuses it. */
+export const attachEn = {
+  'attach.hint.hang': 'Release to hang on {holder}',
+  'attach.hint.refused': 'Cannot hang {tool} on {holder}',
+  'attach.reason.not_a_mount': 'This element has no mounts for tools.',
+  'attach.reason.class_mismatch': 'It takes {accepts}, not {tool}.',
+  'attach.reason.dim_too_large':
+    'The tool’s {dim} is {valueMm} mm; the mount takes up to {maxMm} mm.',
+  'attach.reason.dim_too_small':
+    'The tool’s {dim} is {valueMm} mm; the mount needs at least {minMm} mm.',
+  'attach.reason.slots_full': 'All {capacity} places are taken.',
+  'attach.reason.slot_out_of_range': 'Place {slot} does not exist; the mount has {slots}.',
+  'attach.reason.slot_taken': 'Place {slot} is already taken.',
+  'attach.reason.overload': 'The tool weighs {massG} g; a place holds {maxLoadG} g.',
+  'attach.reason.dim_unknown': 'The tool’s {dim} is not measured.',
+  'attach.dim.width': 'width',
+  'attach.dim.diameter': 'diameter',
+  'attach.dim.bladeThickness': 'blade thickness',
+  'attach.dim.jawThickness': 'jaw thickness',
+  'attach.dim.boreDiameter': 'bore diameter',
+  'attach.dim.neckWidth': 'neck width',
+  'attach.dim.handleWidth': 'handle width',
+  'attach.dim.beamWidth': 'beam width',
+  'attach.dim.shaftDiameter': 'shaft diameter',
+  'attach.dim.coreDiameter': 'core diameter',
+  'attach.dim.headWidth': 'head width',
+  'attach.blockedByLocked': 'A holder with a locked tool cannot be changed: unlock the tool first.',
+  'attach.toolLocked': 'The tool is locked: unlock it first.',
+  'attach.unmounted': 'Not hanging on a holder',
+  'attach.detached.one': 'Holder removed: {count} tool is no longer on a holder.',
+  'attach.detached.other': 'Holder removed: {count} tools are no longer on a holder.',
+} as const;
+
+export const attachRu: FeatureRu<typeof attachEn> = {
+  'attach.hint.hang': 'Отпустите — повиснет на {holder}',
+  'attach.hint.refused': '{tool} не повесить на {holder}',
+  'attach.reason.not_a_mount': 'У этого элемента нет креплений для инструмента.',
+  'attach.reason.class_mismatch': 'Подходит: {accepts}. {tool} — нет.',
+  'attach.reason.dim_too_large': 'У инструмента {dim} {valueMm} мм, крепление берёт до {maxMm} мм.',
+  'attach.reason.dim_too_small': 'У инструмента {dim} {valueMm} мм, крепление берёт от {minMm} мм.',
+  'attach.reason.slots_full': 'Все места ({capacity}) заняты.',
+  'attach.reason.slot_out_of_range': 'Места {slot} нет: в креплении их {slots}.',
+  'attach.reason.slot_taken': 'Место {slot} уже занято.',
+  'attach.reason.overload': 'Инструмент весит {massG} г, место держит {maxLoadG} г.',
+  'attach.reason.dim_unknown': 'У инструмента не измерено: {dim}.',
+  'attach.dim.width': 'ширина',
+  'attach.dim.diameter': 'диаметр',
+  'attach.dim.bladeThickness': 'толщина лезвия',
+  'attach.dim.jawThickness': 'толщина губок',
+  'attach.dim.boreDiameter': 'диаметр отверстия',
+  'attach.dim.neckWidth': 'ширина шейки',
+  'attach.dim.handleWidth': 'ширина рукоятки',
+  'attach.dim.beamWidth': 'ширина балки',
+  'attach.dim.shaftDiameter': 'диаметр стержня',
+  'attach.dim.coreDiameter': 'диаметр сердечника',
+  'attach.dim.headWidth': 'ширина головки',
+  'attach.blockedByLocked':
+    'Держатель с заблокированным инструментом не изменить: сначала разблокируйте инструмент.',
+  'attach.toolLocked': 'Инструмент заблокирован: сначала разблокируйте его.',
+  'attach.unmounted': 'Не висит на держателе',
+  'attach.detached.one': 'Держатель удалён: {count} инструмент остался без крепления.',
+  'attach.detached.few': 'Держатель удалён: {count} инструмента остались без крепления.',
+  'attach.detached.many': 'Держатель удалён: {count} инструментов остались без крепления.',
+  // `few` and `other` read the same on purpose (Russian "инструмента остались"); `other` is the fallback form.
+  'attach.detached.other': 'Держатель удалён: {count} инструмента остались без крепления.',
+};

@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Stats } from '@react-three/drei';
 import type { Wall } from '@hsw-editor/core';
+import { AttachHint } from '@/features/viewport/AttachHint.tsx';
 import { ViewportContextMenu } from '@/features/viewport/ViewportContextMenu.tsx';
 import { api } from '@/api/http.ts';
 import { bankStore } from '@/bank/client.ts';
@@ -23,6 +24,8 @@ import { FpsProbe } from './FpsProbe.tsx';
 import { GhostItem } from './GhostItem.tsx';
 import { ItemsLayer } from './ItemsLayer.tsx';
 import { photoStore } from '@/state/photo.ts';
+import { MountHighlights } from './MountHighlights.tsx';
+import { dragOverTool, dropTool, leaveToolViewport } from './toolDrop.ts';
 import { measureClick, MeasureOverlay } from './MeasureTool.tsx';
 import { ModelBoundary } from './ModelBoundary.tsx';
 import { scenePalette } from './palette.ts';
@@ -111,10 +114,20 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
   return (
     <ViewportContextMenu
       className="absolute inset-0"
-      onDragOver={(event) => dragOverViewport(event.nativeEvent)}
-      onDragLeave={leaveViewport}
-      onDrop={(event) => dropOnViewport(event.nativeEvent)}
+      onDragOver={(event) => {
+        dragOverViewport(event.nativeEvent);
+        dragOverTool(event.nativeEvent);
+      }}
+      onDragLeave={() => {
+        leaveViewport();
+        leaveToolViewport();
+      }}
+      onDrop={(event) => {
+        dropOnViewport(event.nativeEvent);
+        dropTool(event.nativeEvent);
+      }}
     >
+      <AttachHint />
       <Canvas
         frameloop={bench ? 'always' : 'demand'}
         dpr={[1, 2]}
@@ -160,6 +173,7 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
         />
         <InvalidZones result={zones} theme={theme} describeRegion={describeRegion} />
         <SelectionFrames wall={wall} bank={bank} palette={palette} invalidIds={invalidIds} />
+        <MountHighlights wall={wall} bank={bank} palette={palette} />
         <PlacementMarker point={editor.placeAt} color={palette.ghostOk} />
         <DimensionLayer wall={wall} bank={bank} palette={palette} />
         {editor.ghost && ghostElement ? (
