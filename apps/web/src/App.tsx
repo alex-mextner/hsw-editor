@@ -7,6 +7,7 @@ import { CommandPalette } from '@/features/commandPalette/CommandPalette.tsx';
 import { CheatSheet } from '@/features/keybindings/CheatSheet.tsx';
 import { KeybindingEditor } from '@/features/keybindings/KeybindingEditor.tsx';
 import { PendingChordHint } from '@/features/keybindings/PendingChordHint.tsx';
+import { OfflineStorageDialog } from '@/features/offline/OfflineStorageDialog.tsx';
 import { ConflictDialog } from '@/features/notices/ConflictDialog.tsx';
 import { Toaster } from '@/features/notices/Toaster.tsx';
 import { UpdateToast } from '@/features/notices/UpdateToast.tsx';
@@ -42,6 +43,7 @@ export function App() {
       <Toaster />
       <UpdateToast />
       <ConflictDialog />
+      <OfflineStorageDialog />
     </TooltipProvider>
   );
 }

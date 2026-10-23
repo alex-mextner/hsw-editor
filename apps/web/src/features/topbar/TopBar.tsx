@@ -3,6 +3,7 @@ import {
   Command,
   Download,
   Ellipsis,
+  HardDriveDownload,
   Hexagon,
   ImagePlus,
   Languages,
@@ -35,6 +36,7 @@ import { useStore } from '@/state/react.ts';
 import { themeStore, toggleTheme } from '@/state/theme.ts';
 import { redoEdit, sessionStore, undoEdit } from '@/wall/session.ts';
 import { InvalidZonesToggle } from '@/features/invalid-zones/InvalidZonesToggle.tsx';
+import { offlineStorageDialogStore } from '@/features/offline/OfflineStorageDialog.tsx';
 import { PresenceBadge } from './PresenceBadge.tsx';
 import { SyncStatus } from './SyncStatus.tsx';
 import { WallSwitcher } from './WallSwitcher.tsx';
@@ -106,6 +108,9 @@ export function TopBar() {
           onClick={() => wallId && globalThis.open(api.exportUrl(wallId), '_blank', 'noopener')}
         >
           <Download />
+        </IconButton>
+        <IconButton label={t('offline.open')} onClick={() => offlineStorageDialogStore.set(true)}>
+          <HardDriveDownload />
         </IconButton>
         <LanguageMenu />
         <IconButton

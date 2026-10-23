@@ -48,6 +48,7 @@ needs an entry here first.
   AVIF) with upload and server-conversion progress, and a calibration wizard on `packages/overlay`: two clicks on a tape plus
   its typed length (default 1000 mm, mm/cm/in), four wall corners (perspective rectified), or the detected honeycomb grid, with
   a live scale readout, click-error bound, fit error and scale spread. One `setCalibration` op per calibration. Strings in ru/en.
+- Offline storage dialog (top bar, [docs/offline.md](docs/offline.md), #89): usage and quota, per-category sizes, make the whole bank or one category available offline (pinned), clear models/thumbnails, keep storage, install the app.
 
 ### Changed
 
