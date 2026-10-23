@@ -9,9 +9,13 @@ import { startServer, type RunningServer } from './server.ts';
 let root: string;
 let running: RunningServer;
 let index: BankIndex;
+let savedBankDir: string | undefined;
 
 beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), 'hsw-bank-routes-'));
+  // an ambient override would point the daemon away from the temp data home
+  savedBankDir = process.env['HSW_BANK_DIR'];
+  delete process.env['HSW_BANK_DIR'];
   running = await startServer({
     port: 0,
     host: '127.0.0.1',
@@ -25,6 +29,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await running.stop();
+  if (savedBankDir !== undefined) process.env['HSW_BANK_DIR'] = savedBankDir;
   rmSync(root, { recursive: true, force: true });
 });
 

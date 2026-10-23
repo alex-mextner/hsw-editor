@@ -27,6 +27,9 @@ needs an entry here first.
 ### Changed
 
 - `HSW_EDITOR_DATA_DIR` is now `HSW_EDITOR_HOME`.
+- The built bank (`bank:ingest`) lives in `<data home>/bank`, the directory the daemon serves: `HSW_EDITOR_HOME`, else
+  `$XDG_DATA_HOME/hsw-editor`. `bankPaths` no longer reads `HSW_EDITOR_DATA_DIR`; move a bank built under another directory
+  or re-run `bun run bank:ingest`.
 
 ## [0.1.0] - 2026-10-22
 

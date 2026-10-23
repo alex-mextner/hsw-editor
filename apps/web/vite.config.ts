@@ -50,7 +50,7 @@ export default defineConfig(({ mode }) => {
       host: '127.0.0.1',
       port: 5194,
       strictPort: true,
-      proxy: { '/api': 'http://127.0.0.1:8794' },
+      proxy: { '/api': 'http://127.0.0.1:8794', '/bank': 'http://127.0.0.1:8794' },
     },
     build: { sourcemap: true, target: 'es2022' },
   };
