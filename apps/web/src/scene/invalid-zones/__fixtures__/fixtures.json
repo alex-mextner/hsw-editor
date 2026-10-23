@@ -1,0 +1,293 @@
+{
+  "cup-round-innerdiameter30-cupheight40": {
+    "bboxMm": {
+      "min": {
+        "x": -28,
+        "y": -60,
+        "z": 0
+      },
+      "max": {
+        "x": 28,
+        "y": 20,
+        "z": 39.3
+      }
+    },
+    "dimsMm": {
+      "x": 56,
+      "y": 80,
+      "z": 39.3
+    },
+    "footprint": {
+      "cells": [
+        {
+          "dCol": -1,
+          "dRow2": -1
+        },
+        {
+          "dCol": -1,
+          "dRow2": 1
+        },
+        {
+          "dCol": 0,
+          "dRow2": -4
+        },
+        {
+          "dCol": 0,
+          "dRow2": -2
+        },
+        {
+          "dCol": 0,
+          "dRow2": 0
+        },
+        {
+          "dCol": 1,
+          "dRow2": -1
+        },
+        {
+          "dCol": 1,
+          "dRow2": 1
+        }
+      ],
+      "cols": 3,
+      "rows": 4
+    },
+    "mounting": {
+      "kind": "m3-screw",
+      "cells": [
+        {
+          "dCol": -1,
+          "dRow2": 1
+        },
+        {
+          "dCol": 1,
+          "dRow2": -1
+        }
+      ]
+    },
+    "license": {
+      "spdx": "MIT",
+      "observed": "project-original",
+      "attribution": "HSW project parametric generator (alex-mextner/hsw-editor), MIT",
+      "redistributable": true
+    },
+    "source": "packages/bank/seed (generated from OpenSCAD, MIT)"
+  },
+  "scissors-slot-slots1-bladethickness4": {
+    "bboxMm": {
+      "min": {
+        "x": -28,
+        "y": -20,
+        "z": 0
+      },
+      "max": {
+        "x": 28,
+        "y": 46,
+        "z": 47
+      }
+    },
+    "dimsMm": {
+      "x": 56,
+      "y": 66,
+      "z": 47
+    },
+    "footprint": {
+      "cells": [
+        {
+          "dCol": -1,
+          "dRow2": -1
+        },
+        {
+          "dCol": -1,
+          "dRow2": 1
+        },
+        {
+          "dCol": -1,
+          "dRow2": 3
+        },
+        {
+          "dCol": 0,
+          "dRow2": 0
+        },
+        {
+          "dCol": 0,
+          "dRow2": 2
+        },
+        {
+          "dCol": 1,
+          "dRow2": -1
+        },
+        {
+          "dCol": 1,
+          "dRow2": 1
+        },
+        {
+          "dCol": 1,
+          "dRow2": 3
+        }
+      ],
+      "cols": 3,
+      "rows": 3
+    },
+    "mounting": {
+      "kind": "m3-screw",
+      "cells": [
+        {
+          "dCol": -1,
+          "dRow2": 1
+        },
+        {
+          "dCol": 1,
+          "dRow2": -1
+        }
+      ]
+    },
+    "license": {
+      "spdx": "MIT",
+      "observed": "project-original",
+      "attribution": "HSW project parametric generator (alex-mextner/hsw-editor), MIT",
+      "redistributable": true
+    },
+    "source": "packages/bank/seed (generated from OpenSCAD, MIT)"
+  },
+  "bit-block-bitsperrow14-rows1": {
+    "bboxMm": {
+      "min": {
+        "x": -92,
+        "y": -20,
+        "z": 0
+      },
+      "max": {
+        "x": 92,
+        "y": 46,
+        "z": 24
+      }
+    },
+    "dimsMm": {
+      "x": 184,
+      "y": 66,
+      "z": 24
+    },
+    "footprint": {
+      "cells": [
+        {
+          "dCol": -4,
+          "dRow2": 0
+        },
+        {
+          "dCol": -4,
+          "dRow2": 2
+        },
+        {
+          "dCol": -3,
+          "dRow2": -1
+        },
+        {
+          "dCol": -3,
+          "dRow2": 1
+        },
+        {
+          "dCol": -3,
+          "dRow2": 3
+        },
+        {
+          "dCol": -2,
+          "dRow2": 0
+        },
+        {
+          "dCol": -2,
+          "dRow2": 2
+        },
+        {
+          "dCol": -1,
+          "dRow2": -1
+        },
+        {
+          "dCol": -1,
+          "dRow2": 1
+        },
+        {
+          "dCol": -1,
+          "dRow2": 3
+        },
+        {
+          "dCol": 0,
+          "dRow2": 0
+        },
+        {
+          "dCol": 0,
+          "dRow2": 2
+        },
+        {
+          "dCol": 1,
+          "dRow2": -1
+        },
+        {
+          "dCol": 1,
+          "dRow2": 1
+        },
+        {
+          "dCol": 1,
+          "dRow2": 3
+        },
+        {
+          "dCol": 2,
+          "dRow2": 0
+        },
+        {
+          "dCol": 2,
+          "dRow2": 2
+        },
+        {
+          "dCol": 3,
+          "dRow2": -1
+        },
+        {
+          "dCol": 3,
+          "dRow2": 1
+        },
+        {
+          "dCol": 3,
+          "dRow2": 3
+        },
+        {
+          "dCol": 4,
+          "dRow2": 0
+        },
+        {
+          "dCol": 4,
+          "dRow2": 2
+        }
+      ],
+      "cols": 9,
+      "rows": 3
+    },
+    "mounting": {
+      "kind": "m3-screw",
+      "cells": [
+        {
+          "dCol": -3,
+          "dRow2": -1
+        },
+        {
+          "dCol": -1,
+          "dRow2": 1
+        },
+        {
+          "dCol": 1,
+          "dRow2": -1
+        },
+        {
+          "dCol": 3,
+          "dRow2": 1
+        }
+      ]
+    },
+    "license": {
+      "spdx": "MIT",
+      "observed": "project-original",
+      "attribution": "HSW project parametric generator (alex-mextner/hsw-editor), MIT",
+      "redistributable": true
+    },
+    "source": "packages/bank/seed (generated from OpenSCAD, MIT)"
+  }
+}

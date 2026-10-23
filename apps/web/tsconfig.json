@@ -9,7 +9,7 @@
       "#state-backend": ["./src/state/baseline.ts"]
     }
   },
-  "include": ["src", "vite.config.ts"],
+  "include": ["src", "scripts", "vite.config.ts"],
   "references": [{ "path": "./tsconfig.omp-vendor.json" }],
   "exclude": [
     "src/features/omp/vendor/omp-render",

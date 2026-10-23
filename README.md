@@ -103,6 +103,7 @@ release: [docs/cli.md](docs/cli.md). HTTP API: [docs/api.md](docs/api.md). Relea
 - [#52](https://github.com/alex-mextner/hsw-editor/issues/52) (ab) Per-user settings API with offline localStorage mirror
 - [#53](https://github.com/alex-mextner/hsw-editor/issues/53) (ac) Cmd+Shift+P command palette: search everything, inline settings, ask the AI
 - [#54](https://github.com/alex-mextner/hsw-editor/issues/54) (ad) Keybinding editor, shortcut cheat-sheet, migration of ad-hoc shortcuts
+- [#48](https://github.com/alex-mextner/hsw-editor/issues/48) (y) Invalid zones: red diagonal stripes on exactly the overlapping / protruding parts of models
 
 ## Bank
 
