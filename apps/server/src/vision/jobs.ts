@@ -3,6 +3,9 @@
  * `vision.segment`, `vision.fit`. The heavy work happens in the sidecar; here we map a wall photo to a file, stream
  * progress, store model files as wall assets and turn the sidecar's proposal into ops.
  *
+ * `vision.photo_to_wall` is for photos of a REAL wall only. A photo of tools (carpet, floor, table, any angle) never
+ * reaches it: it goes through `tools.analyze` (`/api/tools/drafts`) and only adds tools to the collection.
+ *
  * Nothing the pipeline detects is applied to the wall unless the caller sets `autoApplyConfidence` (then only the
  * items the service flagged `autoApply` are applied, as one undoable batch). The photo calibration IS applied
  * (`setCalibration`, a measurement the user asked for) unless `applyCalibration: false`.

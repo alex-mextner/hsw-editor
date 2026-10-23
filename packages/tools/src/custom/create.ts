@@ -7,7 +7,7 @@ import { clamp } from '../math.ts';
 import { type ToolModel, sectionExtentsAt } from '../model.ts';
 import { sizeOf } from '../math.ts';
 import { type AnyValues } from '../params.ts';
-import { generate, hasToolClass } from '../registry.ts';
+import { classDefaults, generate, hasToolClass } from '../registry.ts';
 import { scaleMeshZ } from './transform.ts';
 import { colorsFromSegments, recolorModel } from './colors.ts';
 import {
@@ -37,7 +37,7 @@ export interface ObjectObservation {
     width?: number | undefined;
     thickness?: number | undefined;
   };
-  dimensionSource: 'photo' | 'user';
+  dimensionSource: 'photo' | 'user' | 'estimated';
   /** Sidecar kind hint: round objects get round generic sections. */
   profileKind?: string;
 }
@@ -252,4 +252,16 @@ export function observeModel(
       ? raw
       : [...raw].reverse().map((r, i) => ({ t: (i + 0.5) / stations, lo: r.lo, hi: r.hi }));
   return { lengthMm: y1 - y0, stations: ordered };
+}
+
+const typicalLengths = new Map<string, number>();
+
+/** Length (mm) of a class built with its default parameters: what an object of that class measures without a scale. */
+export function typicalLengthMm(classId: string): number {
+  let length = typicalLengths.get(classId);
+  if (length === undefined) {
+    length = observeModel(generate(classId, classDefaults(classId), 1)).lengthMm;
+    typicalLengths.set(classId, length);
+  }
+  return length;
 }

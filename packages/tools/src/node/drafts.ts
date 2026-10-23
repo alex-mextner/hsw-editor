@@ -22,7 +22,7 @@ import {
   DraftIdSchema,
   DraftSchema,
 } from '../custom/draft.ts';
-import { type FittedObject, fitObject } from '../custom/create.ts';
+import { type FittedObject, fitObject, typicalLengthMm } from '../custom/create.ts';
 import { type ColorSegment, type CustomTool, ObservedProfileSchema } from '../custom/schema.ts';
 import { MAX_TAGS, unionTags } from '../custom/tags.ts';
 import { exportGlb } from '../glb.ts';
@@ -246,10 +246,12 @@ const MAX_COLOR_SEGMENTS = 24;
 
 /** Observation from the sidecar profile; null when the sidecar profile is missing or not usable. */
 function toObservation(o: SidecarObject): DraftObject['observation'] {
-  if (!o.profile) return null;
+  // a photo without a scale still gives a silhouette profile (in pixels): it is scaled when the object is fitted
+  const profile = o.profile ?? o.profilePx;
+  if (!profile) return null;
   const parsed = ObservedProfileSchema.safeParse({
-    lengthMm: o.profile.length_mm,
-    stations: o.profile.stations.map((s) => ({
+    lengthMm: profile.length_mm,
+    stations: profile.stations.map((s) => ({
       t: Math.min(1, Math.max(0, s.t)),
       lo: s.lo_mm,
       hi: s.hi_mm,
@@ -269,7 +271,8 @@ function toObservation(o: SidecarObject): DraftObject['observation'] {
   return {
     profile: parsed.data,
     colors,
-    ...(o.profile.kind ? { profileKind: o.profile.kind } : {}),
+    ...(profile.kind ? { profileKind: profile.kind } : {}),
+    ...(o.profile ? {} : { profileInPixels: true as const }),
   };
 }
 
@@ -346,8 +349,9 @@ function newObject(photoIndex: number, o: SidecarObject, key: string): DraftObje
     observation,
     fit: null,
     dimensionsMm: null,
-    needsScale: !o.profile,
-    ...(o.profile && !observation
+    needsScale: !o.profile && !o.profilePx,
+    dimensionsEstimated: false,
+    ...((o.profile ?? o.profilePx) && !observation
       ? {
           error:
             'the sidecar profile of this object is not usable (degenerate length or too many stations)',
@@ -355,6 +359,39 @@ function newObject(photoIndex: number, o: SidecarObject, key: string): DraftObje
       : {}),
     images: { ...(crop ? { crop } : {}), ...(cutout ? { cutout } : {}), ...(mask ? { mask } : {}) },
     preview: null,
+  };
+}
+
+interface Sizing {
+  /** What the fit scales the profile to; `null` = no honest size exists (nothing is fitted). */
+  dimensionsMm: {
+    length?: number | undefined;
+    width?: number | undefined;
+    thickness?: number | undefined;
+  } | null;
+  source: 'photo' | 'user' | 'estimated';
+  estimated: boolean;
+}
+
+/**
+ * The sizes an object is fitted at. A scaled photo: the measured profile, plus what the user typed. A photo without a
+ * scale (the profile is in pixels): the typed length if there is one, otherwise the class-typical length of the chosen
+ * (or best suggested) class, flagged as an estimate; with neither there is nothing to scale by.
+ */
+function sizingOf(obj: DraftObject, estimateClass: string | null | undefined): Sizing {
+  const typed = obj.userDimensions;
+  if (!obj.observation?.profileInPixels) {
+    return { dimensionsMm: typed ?? {}, source: typed ? 'user' : 'photo', estimated: false };
+  }
+  if (typed?.length !== undefined) return { dimensionsMm: typed, source: 'user', estimated: false };
+  const classId = obj.classOverridden ? obj.classId : (estimateClass ?? null);
+  if (classId === null || !hasToolClass(classId)) {
+    return { dimensionsMm: null, source: 'user', estimated: false };
+  }
+  return {
+    dimensionsMm: { ...typed, length: typicalLengthMm(classId) },
+    source: 'estimated',
+    estimated: true,
   };
 }
 
@@ -372,29 +409,61 @@ export async function refitObject(
   }
   const pool = obj.suggestions.filter((s) => hasToolClass(s.classId));
   const decision = obj.classOverridden ? { classId: obj.classId } : {};
-  const cacheKey = JSON.stringify([
-    obj.observation,
-    pool,
-    obj.userDimensions ?? null,
-    obj.classOverridden ? obj.classId : undefined,
-    obj.classOverridden,
-  ]);
-  let fitted = deps.drafts.cachedFit(cacheKey);
-  if (!fitted) {
+  let sizing = sizingOf(obj, pool[0]?.classId);
+  obj.dimensionsEstimated = sizing.estimated;
+  obj.needsScale = sizing.dimensionsMm === null;
+  if (sizing.dimensionsMm === null) {
+    // no scale, no typed size and no class to take a typical size from: nothing honest to fit
+    obj.fit = null;
+    obj.dimensionsMm = null;
+    obj.preview = null;
+    return null;
+  }
+  const observation = obj.observation;
+  const fitAt = async (
+    dims: NonNullable<Sizing['dimensionsMm']>,
+    source: Sizing['source'],
+    choice: { classId?: string | null },
+  ): Promise<FittedObject> => {
+    const cacheKey = JSON.stringify([observation, pool, dims, choice]);
+    const known = deps.drafts.cachedFit(cacheKey);
+    if (known) return known;
     // fitting is synchronous CPU work: let queued requests (SSE heartbeats, other API calls) run first
     await new Promise<void>((resolve) => setImmediate(resolve));
-    fitted = fitObject(
+    const made = fitObject(
       {
-        profile: obj.observation.profile,
-        colors: obj.observation.colors,
+        profile: observation.profile,
+        colors: observation.colors,
         candidates: pool,
-        dimensionsMm: obj.userDimensions ?? {},
-        dimensionSource: obj.userDimensions ? 'user' : 'photo',
-        ...(obj.observation.profileKind ? { profileKind: obj.observation.profileKind } : {}),
+        dimensionsMm: dims,
+        dimensionSource: source,
+        ...(observation.profileKind ? { profileKind: observation.profileKind } : {}),
       },
-      decision,
+      choice,
     );
-    deps.drafts.rememberFit(cacheKey, fitted);
+    deps.drafts.rememberFit(cacheKey, made);
+    return made;
+  };
+  let fitted = await fitAt(sizing.dimensionsMm, sizing.source, decision);
+  if (sizing.estimated && fitted.classId !== null && fitted.classId !== pool[0]?.classId && !obj.classOverridden) {
+    // the silhouette preferred another candidate than the top suggestion: that class, at its own typical length, is the
+    // estimate (the class is pinned so the second fit cannot flip back to the first one)
+    const chosen = fitted.classId;
+    sizing = sizingOf(obj, chosen);
+    if (sizing.dimensionsMm !== null) {
+      // a pinned class has no alternatives of its own: the comparison shown is the one that chose it
+      const alternatives = fitted.alternatives;
+      fitted = { ...(await fitAt(sizing.dimensionsMm, sizing.source, { classId: chosen })), alternatives };
+    }
+  }
+  if (sizing.estimated && fitted.classId === null) {
+    // every candidate was rejected by the silhouette: a generic shape sized from a rejected class would be a made-up size
+    obj.dimensionsEstimated = false;
+    obj.needsScale = true;
+    obj.fit = null;
+    obj.dimensionsMm = null;
+    obj.preview = null;
+    return null;
   }
   obj.classId = fitted.classId;
   obj.fit = {
@@ -569,8 +638,10 @@ export async function patchDraftObject(
 function groupInPlace(draft: Draft, keys: readonly string[]): DraftObject {
   const members = keys.map((k) => findOpen(draft, k));
   const score = (o: DraftObject): number =>
+    // a measured profile (mm) always beats one in pixels (the bonus exceeds any suggestion score, <= 1); a pixel one still
+    // beats an object with no usable profile at all
     (o.observation ? 1 : 0) +
-    (o.observation?.profile ? o.observation.profile.lengthMm / 1e6 : 0) +
+    (o.observation && !o.observation.profileInPixels ? 1.01 + o.observation.profile.lengthMm / 1e6 : 0) +
     (o.suggestions[0]?.score ?? 0);
   const primary = members.reduce((a, b) => (score(b) > score(a) ? b : a));
   for (const m of members) {
@@ -765,6 +836,8 @@ async function commitObject(
         colors: obj.observation.colors,
         partColors: fitted.partColors,
         dimensionsMm: fitted.dimensionsMm,
+        // what the user typed, exactly: later refits (a class change in the tool detail) keep aiming at it
+        ...(obj.userDimensions ? { userDimensionsMm: obj.userDimensions } : {}),
         fit: fitted.fit,
         ...(obj.observation.profileKind ? { profileKind: obj.observation.profileKind } : {}),
         sources: [
@@ -838,7 +911,13 @@ export async function commitDraft(
         continue;
       }
       const fitted = await refitObject(deps, draft, obj);
-      if (!fitted) continue;
+      if (!fitted) {
+        result.skipped.push({
+          key: obj.key,
+          reason: 'no size: the photo has no scale and nothing is known about this object; pick a class or type a real length',
+        });
+        continue;
+      }
       const saved = await commitObject(
         deps,
         draft,

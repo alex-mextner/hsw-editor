@@ -380,7 +380,7 @@ palette command "Clean the wall under the board again" run it on demand. Photos 
 
 ### Vision jobs and routes
 
-`apps/server/src/vision` registers the jobs `vision.photo_to_wall`, `vision.photo_to_objects`, `vision.calibrate`, `vision.segment` and `vision.fit`
+`apps/server/src/vision` registers the jobs `vision.photo_to_wall` (photos of a real wall only; a photo of tools only feeds the collection through `vision.photo_to_objects` / `tools.analyze`), `vision.photo_to_objects`, `vision.calibrate`, `vision.segment` and `vision.fit`
 (inputs and results: [vision.md](vision.md)), plus `GET /api/vision/status` (never starts the sidecar) and `POST /api/vision/stop`.
 
 ## Static app

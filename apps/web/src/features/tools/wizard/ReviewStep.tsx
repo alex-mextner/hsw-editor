@@ -42,11 +42,18 @@ export function ReviewStep({
   const objects = useMemo(() => reviewable(draft), [draft]);
   const [focusKey, setFocusKey] = useState<string | null>(objects[0]?.key ?? null);
   const [picked, setPicked] = useState<readonly string[]>([]);
-  // Merge and split replace objects: keys that no longer exist are ignored.
+  // Merge and split replace objects (the sources are discarded): their keys drop out of the selection.
   const checked = useMemo(
-    () => picked.filter((key) => draft.objects.some((object) => object.key === key)),
+    () =>
+      picked.filter((key) =>
+        draft.objects.some(
+          (object) => object.key === key && object.status !== 'discarded' && object.status !== 'added',
+        ),
+      ),
     [picked, draft],
   );
+  // forget keys that dropped out (discarded by a merge or split): they must not come back if the object is accepted again
+  if (checked.length !== picked.length) setPicked(checked);
   const focus = objects.find((object) => object.key === focusKey) ?? objects[0];
   const ready = committable(draft);
   const pendingKeys = objects

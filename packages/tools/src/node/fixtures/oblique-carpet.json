@@ -1,0 +1,358 @@
+{
+ "photo": "oblique view of tools-on-carpet-2026-10-21 (perspective warp, 1600x1200, no scale reference)",
+ "recordedBy": "hsw-editor vision photo-to-objects without a scale (real SAM2/CLIP run)",
+ "objects": [
+  {
+   "id": 55,
+   "areaPx": 10576,
+   "class": {
+    "toolClass": "tape-roll",
+    "prob": 0.66,
+    "topk": [
+     {
+      "toolClass": "tape-roll",
+      "score": 5.3
+     },
+     {
+      "toolClass": "cable",
+      "score": 3.72
+     },
+     {
+      "toolClass": "spool",
+      "score": 3.43
+     }
+    ]
+   },
+   "profilePx": {
+    "kind": "lathe_profile",
+    "length_mm": 205.07,
+    "stations": [
+     {
+      "t": 0.0,
+      "lo_mm": 0.77,
+      "hi_mm": 7.89
+     },
+     {
+      "t": 0.09,
+      "lo_mm": -27.18,
+      "hi_mm": 28.31
+     },
+     {
+      "t": 0.18,
+      "lo_mm": -24.04,
+      "hi_mm": 35.0
+     },
+     {
+      "t": 0.27,
+      "lo_mm": -28.98,
+      "hi_mm": 29.18
+     },
+     {
+      "t": 0.36,
+      "lo_mm": -31.41,
+      "hi_mm": 26.32
+     },
+     {
+      "t": 0.45,
+      "lo_mm": -26.82,
+      "hi_mm": 25.24
+     },
+     {
+      "t": 0.55,
+      "lo_mm": -26.27,
+      "hi_mm": 22.82
+     },
+     {
+      "t": 0.64,
+      "lo_mm": -26.66,
+      "hi_mm": 27.36
+     },
+     {
+      "t": 0.73,
+      "lo_mm": -29.46,
+      "hi_mm": 28.35
+     },
+     {
+      "t": 0.82,
+      "lo_mm": -32.15,
+      "hi_mm": 26.62
+     },
+     {
+      "t": 0.91,
+      "lo_mm": -19.87,
+      "hi_mm": 23.75
+     },
+     {
+      "t": 1.0,
+      "lo_mm": 4.32,
+      "hi_mm": 23.13
+     }
+    ]
+   }
+  },
+  {
+   "id": 40,
+   "areaPx": 8984,
+   "class": {
+    "toolClass": "multimeter",
+    "prob": 0.87,
+    "topk": [
+     {
+      "toolClass": "multimeter",
+      "score": 6.03
+     },
+     {
+      "toolClass": "sd-card",
+      "score": 3.99
+     },
+     {
+      "toolClass": "bit-set",
+      "score": 1.25
+     }
+    ]
+   },
+   "profilePx": {
+    "kind": "lathe_profile",
+    "length_mm": 151.05,
+    "stations": [
+     {
+      "t": 0.0,
+      "lo_mm": -12.68,
+      "hi_mm": 12.35
+     },
+     {
+      "t": 0.09,
+      "lo_mm": -32.52,
+      "hi_mm": 24.3
+     },
+     {
+      "t": 0.18,
+      "lo_mm": -31.56,
+      "hi_mm": 33.85
+     },
+     {
+      "t": 0.27,
+      "lo_mm": -32.59,
+      "hi_mm": 36.62
+     },
+     {
+      "t": 0.36,
+      "lo_mm": -33.63,
+      "hi_mm": 36.6
+     },
+     {
+      "t": 0.45,
+      "lo_mm": -32.65,
+      "hi_mm": 35.56
+     },
+     {
+      "t": 0.55,
+      "lo_mm": -34.54,
+      "hi_mm": 34.97
+     },
+     {
+      "t": 0.64,
+      "lo_mm": -33.71,
+      "hi_mm": 34.51
+     },
+     {
+      "t": 0.73,
+      "lo_mm": -33.75,
+      "hi_mm": 34.48
+     },
+     {
+      "t": 0.82,
+      "lo_mm": -31.29,
+      "hi_mm": 30.96
+     },
+     {
+      "t": 0.91,
+      "lo_mm": -24.87,
+      "hi_mm": 29.15
+     },
+     {
+      "t": 1.0,
+      "lo_mm": -16.49,
+      "hi_mm": -8.77
+     }
+    ]
+   }
+  },
+  {
+   "id": 4,
+   "areaPx": 8968,
+   "class": {
+    "toolClass": "spray-can",
+    "prob": 0.86,
+    "topk": [
+     {
+      "toolClass": "spray-can",
+      "score": 2.73
+     },
+     {
+      "toolClass": "tape-measure",
+      "score": -0.1
+     },
+     {
+      "toolClass": "knife",
+      "score": -0.38
+     }
+    ]
+   },
+   "profilePx": {
+    "kind": "lathe_profile",
+    "length_mm": 165.56,
+    "stations": [
+     {
+      "t": 0.0,
+      "lo_mm": 12.5,
+      "hi_mm": 27.02
+     },
+     {
+      "t": 0.09,
+      "lo_mm": -31.87,
+      "hi_mm": 27.21
+     },
+     {
+      "t": 0.18,
+      "lo_mm": -30.32,
+      "hi_mm": 28.49
+     },
+     {
+      "t": 0.27,
+      "lo_mm": -32.0,
+      "hi_mm": 28.14
+     },
+     {
+      "t": 0.36,
+      "lo_mm": -30.74,
+      "hi_mm": 30.09
+     },
+     {
+      "t": 0.45,
+      "lo_mm": -30.45,
+      "hi_mm": 29.61
+     },
+     {
+      "t": 0.55,
+      "lo_mm": -29.18,
+      "hi_mm": 29.39
+     },
+     {
+      "t": 0.64,
+      "lo_mm": -28.81,
+      "hi_mm": 30.31
+     },
+     {
+      "t": 0.73,
+      "lo_mm": -27.22,
+      "hi_mm": 30.51
+     },
+     {
+      "t": 0.82,
+      "lo_mm": -27.18,
+      "hi_mm": 28.25
+     },
+     {
+      "t": 0.91,
+      "lo_mm": -23.22,
+      "hi_mm": 20.3
+     },
+     {
+      "t": 1.0,
+      "lo_mm": -11.64,
+      "hi_mm": 5.19
+     }
+    ]
+   }
+  },
+  {
+   "id": 71,
+   "areaPx": 4761,
+   "class": {
+    "toolClass": "hammer",
+    "prob": 0.51,
+    "topk": [
+     {
+      "toolClass": "hammer",
+      "score": 6.71
+     },
+     {
+      "toolClass": "toothbrush",
+      "score": 5.85
+     },
+     {
+      "toolClass": "wrench",
+      "score": 5.34
+     }
+    ]
+   },
+   "profilePx": {
+    "kind": "lathe_profile",
+    "length_mm": 203.16,
+    "stations": [
+     {
+      "t": 0.0,
+      "lo_mm": -9.56,
+      "hi_mm": 10.81
+     },
+     {
+      "t": 0.09,
+      "lo_mm": -22.14,
+      "hi_mm": 22.78
+     },
+     {
+      "t": 0.18,
+      "lo_mm": -8.39,
+      "hi_mm": 10.75
+     },
+     {
+      "t": 0.27,
+      "lo_mm": -7.65,
+      "hi_mm": 10.41
+     },
+     {
+      "t": 0.36,
+      "lo_mm": -10.67,
+      "hi_mm": 10.36
+     },
+     {
+      "t": 0.45,
+      "lo_mm": -14.94,
+      "hi_mm": 11.59
+     },
+     {
+      "t": 0.55,
+      "lo_mm": -13.68,
+      "hi_mm": 10.38
+     },
+     {
+      "t": 0.64,
+      "lo_mm": -11.03,
+      "hi_mm": 10.21
+     },
+     {
+      "t": 0.73,
+      "lo_mm": -10.37,
+      "hi_mm": 8.69
+     },
+     {
+      "t": 0.82,
+      "lo_mm": -8.72,
+      "hi_mm": 9.34
+     },
+     {
+      "t": 0.91,
+      "lo_mm": -8.06,
+      "hi_mm": 10.0
+     },
+     {
+      "t": 1.0,
+      "lo_mm": -5.43,
+      "hi_mm": 7.26
+     }
+    ]
+   }
+  }
+ ]
+}

@@ -285,7 +285,8 @@ def tools_import(args: argparse.Namespace, api: Api) -> int:
         if args.json:
             return _dump(result)
         for t in result["tools"]:
-            print(f"added {t['id']}  {t['classId'] or 'generic'}  {t['dimensionsMm']['length']:.0f} mm")
+            flag = " (estimated)" if t["dimensionsMm"].get("source") == "estimated" else ""
+            print(f"added {t['id']}  {t['classId'] or 'generic'}  {t['dimensionsMm']['length']:.0f} mm{flag}")
         for s in result["skipped"]:
             print(f"skipped {s['key']}: {s['reason']}", file=sys.stderr)
         return 0 if result["tools"] else 1
@@ -299,8 +300,14 @@ def _print_objects(draft: dict[str, Any], objects: list[dict[str, Any]]) -> None
         top = ", ".join(f"{s['classId']} {s['score']:.2f}" for s in o["suggestions"][:3]) or "-"
         d = o["dimensionsMm"]
         size = f"{d['length']:.0f}x{d['width']:.0f}x{d['thickness']:.0f}" if d else "-"
+        if d and o.get("dimensionsEstimated"):
+            size += " (estimated)"
         fit = f"{o['fit']['method']} {o['fit']['iou']:.2f}" if o["fit"] else "-"
-        note = "needs scale: --mm-per-px or --two-point" if o["needsScale"] else ""
+        note = (
+            "no size: pick a class or type a real length (PATCH dimensionsMm), or give a scale (--mm-per-px / --two-point)"
+            if o["needsScale"]
+            else ("estimated from the class-typical size; type a real length to correct" if o.get("dimensionsEstimated") else "")
+        )
         rows.append((o["key"], top, size, fit, note))
     _table(rows)
     print(f"\n{len(objects)} object(s) in {len(draft['photos'])} photo(s)")

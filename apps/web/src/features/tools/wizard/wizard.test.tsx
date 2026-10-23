@@ -53,6 +53,7 @@ function object(key: string, patch: Partial<DraftObject> = {}): DraftObject {
     fit: { method: 'class-profile', iou: 0.9, confidence: 0.9, alternatives: [] },
     dimensionsMm: { length: 200, width: 30, thickness: 30 },
     needsScale: false,
+    dimensionsEstimated: false,
     images: {},
     preview: null,
     ...patch,
@@ -152,7 +153,7 @@ describe('ReviewStep', () => {
     expect(classes?.textContent).toContain('30%');
     expect(classes?.textContent).toContain('10%');
     expect(mounted.container.querySelector('[data-testid="wizard-save"]')?.textContent).toContain(
-      'Save 1 tool',
+      'Add 1 tool to collection',
     );
   });
 
@@ -190,6 +191,27 @@ describe('ReviewStep', () => {
     expect(
       mounted.container.querySelector<HTMLButtonElement>('[data-testid="wizard-save"]')?.disabled,
     ).toBe(true);
+  });
+
+  test('an object with a silhouette but no known size offers a length field; one without a silhouette does not', async () => {
+    const observation = {
+      profile: { lengthMm: 100, stations: [{ t: 0.5, lo: -5, hi: 5 }] },
+      colors: [],
+      profileInPixels: true as const,
+    };
+    mounted = await mount(
+      review(
+        draftOf([
+          object('0:1', { status: 'accepted', needsScale: true, dimensionsMm: null, observation }),
+        ]),
+      ),
+    );
+    expect(mounted.container.querySelector('[data-testid="wizard-length-only"]')).not.toBeNull();
+    await mounted.unmount();
+    mounted = await mount(
+      review(draftOf([object('0:1', { status: 'accepted', needsScale: true, dimensionsMm: null })])),
+    );
+    expect(mounted.container.querySelector('[data-testid="wizard-length-only"]')).toBeNull();
   });
 
   test('merge needs two objects of one photo ticked', async () => {

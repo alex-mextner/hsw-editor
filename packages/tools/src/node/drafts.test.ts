@@ -3,6 +3,7 @@ import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { observeModel } from '../custom/create.ts';
+import { typicalLengthMm } from '../custom/create.ts';
 import { generate, presetValues } from '../registry.ts';
 import '../classes/index.ts';
 import {
@@ -68,6 +69,10 @@ function sidecarObject(id: number, preset: string, withScale = true): SidecarObj
 
 class FakeVision implements VisionPort {
   calls = 0;
+  /** Ids returned as a profile in PIXELS (a photo without a scale), 0.8 px per mm. */
+  pixelIds = new Set<number>();
+  /** Ids returned without any class suggestion. */
+  unclassifiedIds = new Set<number>();
   async photoToObjects(req: PhotoObjectsRequest): Promise<SidecarResult> {
     this.calls++;
     for (const d of ['crops_oriented', 'cutouts_oriented', 'masks'])
@@ -80,6 +85,21 @@ class FakeVision implements VisionPort {
     for (const o of objects) {
       for (const rel of [o.cropOriented, o.cutoutOriented, o.mask])
         if (rel) await writeFile(join(req.outDir, rel), PNG_1PX);
+      if (this.pixelIds.has(o.id) && o.profile) {
+        const px = {
+          ...o.profile,
+          length_mm: o.profile.length_mm * 0.8,
+          stations: o.profile.stations.map((st) => ({
+            ...st,
+            lo_mm: st.lo_mm * 0.8,
+            hi_mm: st.hi_mm * 0.8,
+          })),
+        };
+        delete o.profile;
+        o.profilePx = px;
+        o.mmPerPx = null;
+      }
+      if (this.unclassifiedIds.has(o.id)) o.class = { toolClass: null, topk: [] };
     }
     return { status: 'ok', calibration: { method: 'manual', mm_per_px: 1.2 }, objects };
   }
@@ -236,6 +256,169 @@ describe('import draft', () => {
     await expect(mergeDraftObjects(deps, draft.id, [kept, parts[0]?.key ?? ''])).rejects.toThrow(
       'already in the library',
     );
+  });
+
+  test('a photo without a scale estimates sizes from the class and flags them; a typed length corrects one', async () => {
+    vision.pixelIds = new Set([1, 2, 3]);
+    vision.unclassifiedIds = new Set([3]);
+    try {
+      const draft = await deps.drafts.create({
+        mode: 'multi',
+        calibration: null,
+        photos: [{ name: 'oblique.png', bytes: PNG_1PX }],
+      });
+      const analysed = await analyzeDraft(deps, draft.id);
+      const [first, second, unknown] = analysed.objects;
+      expect(first?.dimensionsEstimated).toBe(true);
+      expect(first?.needsScale).toBe(false);
+      expect(first?.fit).not.toBeNull();
+      expect(first?.observation?.profileInPixels).toBe(true);
+      const typical = typicalLengthMm(first?.classId ?? '');
+      expect(first?.dimensionsMm?.length).toBeGreaterThan(typical * 0.9);
+      expect(first?.dimensionsMm?.length).toBeLessThan(typical * 1.1);
+      // an object nothing is known about has no honest size
+      expect(unknown?.needsScale).toBe(true);
+      expect(unknown?.dimensionsEstimated).toBe(false);
+      expect(unknown?.fit).toBeNull();
+
+      // the user types one real length: it replaces the estimate
+      const typed = await patchDraftObject(deps, draft.id, '0:1', {
+        status: 'accepted',
+        dimensionsMm: { length: 300 },
+      });
+      const corrected = typed.objects.find((o) => o.key === '0:1');
+      expect(corrected?.dimensionsEstimated).toBe(false);
+      expect(corrected?.dimensionsMm?.length).toBeGreaterThan(285);
+      expect(corrected?.dimensionsMm?.length).toBeLessThan(315);
+
+      // choosing another class re-estimates from that class
+      const reclassed = await patchDraftObject(deps, draft.id, '0:2', {
+        status: 'accepted',
+        classId: 'hammer',
+      });
+      const hammer = reclassed.objects.find((o) => o.key === '0:2');
+      expect(hammer?.dimensionsEstimated).toBe(true);
+      expect(hammer?.dimensionsMm?.length).toBeGreaterThan(typicalLengthMm('hammer') * 0.9);
+      expect(second?.dimensionsMm?.length).not.toBeCloseTo(hammer?.dimensionsMm?.length ?? 0, 0);
+
+      // estimated and typed sizes reach the collection with their source
+      const committed = await commitDraft(deps, draft.id);
+      expect(committed.tools.length).toBe(2);
+      const sources = await Promise.all(
+        committed.tools.map(async (tool) => (await deps.tools.get(tool.id)).dimensionsMm.source),
+      );
+      expect(sources.sort()).toEqual(['estimated', 'user']);
+    } finally {
+      vision.pixelIds = new Set();
+      vision.unclassifiedIds = new Set();
+    }
+  });
+
+  test('a recorded real photo shot at an angle, with no scale reference, gives fitted tools with flagged estimated sizes', async () => {
+    // fixtures/oblique-carpet.json: the real sidecar's answer (no scale) for a perspective-warped carpet photo
+    const recorded = JSON.parse(
+      await readFile(join(import.meta.dir, 'fixtures/oblique-carpet.json'), 'utf8'),
+    ) as {
+      objects: {
+        id: number;
+        areaPx: number;
+        class: { toolClass: string; prob: number; topk: { toolClass: string; score: number }[] };
+        profilePx: SidecarObject['profilePx'];
+      }[];
+    };
+    const replay: VisionPort = {
+      status: async () => ({ available: true }),
+      photoToObjects: async (req: PhotoObjectsRequest): Promise<SidecarResult> => {
+        for (const d of ['crops_oriented', 'cutouts_oriented', 'masks'])
+          await mkdir(join(req.outDir, d), { recursive: true });
+        const objects: SidecarObject[] = [];
+        for (const r of recorded.objects) {
+          const o: SidecarObject = {
+            id: r.id,
+            areaPx: r.areaPx,
+            cropOriented: `crops_oriented/${r.id}.png`,
+            cutoutOriented: `cutouts_oriented/${r.id}.png`,
+            mask: `masks/${r.id}.png`,
+            profile: null,
+            profilePx: r.profilePx,
+            class: r.class,
+          };
+          for (const rel of [o.cropOriented, o.cutoutOriented, o.mask])
+            if (rel) await writeFile(join(req.outDir, rel), PNG_1PX);
+          objects.push(o);
+        }
+        return { status: 'no_scale', calibration: { ok: false }, objects };
+      },
+      mergeObjects: async () => {
+        throw new Error('unused');
+      },
+      splitObject: async () => {
+        throw new Error('unused');
+      },
+      addObject: async () => {
+        throw new Error('unused');
+      },
+    };
+    const draft = await deps.drafts.create({
+      mode: 'multi',
+      calibration: null,
+      photos: [{ name: 'oblique.jpg', bytes: PNG_1PX }],
+    });
+    const analysed = await analyzeDraft({ ...deps, vision: replay }, draft.id);
+    expect(analysed.objects.length).toBe(recorded.objects.length);
+    for (const o of analysed.objects) {
+      expect(o.needsScale).toBe(false);
+      expect(o.fit).not.toBeNull();
+      expect(o.dimensionsEstimated).toBe(true);
+      const length = o.dimensionsMm?.length ?? 0;
+      const typical = typicalLengthMm(o.classId ?? '');
+      expect(length).toBeGreaterThan(typical * 0.85);
+      expect(length).toBeLessThan(typical * 1.15);
+    }
+    // one real size typed for one tool replaces its estimate and leaves the others flagged
+    const hammer = analysed.objects.find((o) => o.classId === 'hammer');
+    const typed = await patchDraftObject({ ...deps, vision: replay }, draft.id, hammer?.key ?? '', {
+      dimensionsMm: { length: 260 },
+    });
+    const flags = typed.objects.map((o) => [o.classId, o.dimensionsEstimated]);
+    expect(flags.filter(([, estimated]) => estimated).length).toBe(recorded.objects.length - 1);
+    expect(typed.objects.find((o) => o.key === hammer?.key)?.dimensionsEstimated).toBe(false);
+  });
+
+
+  test('an estimated object never outranks a measured one when photos are grouped, and an unsizeable one is reported when committing', async () => {
+    vision.pixelIds = new Set([2]);
+    vision.unclassifiedIds = new Set([3]);
+    try {
+      const draft = await deps.drafts.create({
+        mode: 'multi',
+        calibration: { mmPerPx: 1.2 },
+        photos: [{ name: 'a.png', bytes: PNG_1PX }],
+      });
+      const analysed = await analyzeDraft(deps, draft.id);
+      const measured = analysed.objects.find((o) => o.key === '0:1');
+      const estimated = analysed.objects.find((o) => o.key === '0:2');
+      expect(measured?.dimensionsEstimated).toBe(false);
+      expect(estimated?.dimensionsEstimated).toBe(true);
+      // the estimated one has the better suggestion score (stored, as the grouping reads the draft from disk), yet the measured one stays primary
+      await deps.drafts.update(draft.id, async (d) => {
+        const o = d.objects.find((x) => x.key === '0:2');
+        if (o) o.suggestions = [{ classId: 'screwdriver', score: 0.99 }];
+        const m = d.objects.find((x) => x.key === '0:1');
+        if (m) m.suggestions = [{ classId: 'screwdriver', score: 0.2 }];
+      });
+      const grouped = await groupDraftObjects(deps, draft.id, ['0:1', '0:2']);
+      expect(grouped.objects.find((o) => o.key === '0:1')?.status).not.toBe('discarded');
+      expect(grouped.objects.find((o) => o.key === '0:2')?.status).toBe('discarded');
+      // an accepted object nothing is known about is skipped with a reason, not dropped silently
+      await patchDraftObject(deps, draft.id, '0:3', { status: 'accepted' });
+      const committed = await commitDraft(deps, draft.id, ['0:3']);
+      expect(committed.tools).toEqual([]);
+      expect(committed.skipped.map((s) => s.key)).toEqual(['0:3']);
+    } finally {
+      vision.pixelIds = new Set();
+      vision.unclassifiedIds = new Set();
+    }
   });
 
   test('class override refits with the chosen class and generic loft is possible', async () => {

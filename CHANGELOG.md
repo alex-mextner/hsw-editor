@@ -36,6 +36,12 @@ needs an entry here first.
   board moves in whole cells; the grid detector runs as `vision.calibrate`. `vision.photo_to_objects` accepts the sidecar's `needsViews` shape.
 - Automatic background clean (#168): `photo.clean` job, cleaned photo variants (`Photo.cleanOf`), `fillWall` in `@hsw-editor/overlay`, the
   `wall_clean_background` omp tool, the "auto-clean background" setting, a before/after toggle and the `/api/draw/*` routes ([docs/api.md](docs/api.md)).
+- Vision edit ops (#69): `POST /objects/merge|split|reprofile|add` on the sidecar and `hsw-editor vision objects ...` correct a finished `photo_to_objects` result without re-segmenting the
+  photo; the tool import now starts the daemon's managed sidecar on demand (`GET /api/tools/vision` is available when it can be started) and `POST /api/tools/drafts/:id/add` adds an object the segmentation
+  missed from a click or a box.
+- Tools photos only add tools to the collection (#165): the Add-from-photo wizard says "add to collection", a scale reference is optional, and without one the sizes are the
+  class-typical ones flagged `estimated` (one typed real length corrects a tool); `photo_to_objects` returns `profilePx` for unscaled photos; `vision.photo_to_wall` is documented as
+  real-wall-only.
 - Tool Library (`apps/web/src/features/tools`, [docs/tools.md](docs/tools.md#ui-tool-library-and-add-from-photo), #46): the Tools tab lists
   built-in classes and the user's tools with generated thumbnails, grouped by type, searchable in ru/en and filterable by tag;
   click or drag a tool onto the wall; detail page with live 3D preview, parameters, materials and the holding interface; the

@@ -9,6 +9,14 @@ import type { CalibrationInput } from '../custom/draft.ts';
 /** Sidecar JSON uses `null` for "not available" and sometimes omits the key. */
 const Opt = <T extends z.ZodType>(t: T): z.ZodOptional<z.ZodNullable<T>> => t.nullable().optional();
 
+const SidecarProfileSchema = z.looseObject({
+  kind: z.string().optional(),
+  length_mm: z.number(),
+  max_width_mm: z.number().optional(),
+  stations: z.array(z.looseObject({ t: z.number(), lo_mm: z.number(), hi_mm: z.number() })),
+  iou_recon: z.number().optional(),
+});
+
 export const SidecarObjectSchema = z.looseObject({
   id: z.number().int(),
   areaPx: z.number().optional(),
@@ -19,15 +27,9 @@ export const SidecarObjectSchema = z.looseObject({
   cropOriented: Opt(z.string()),
   cutoutOriented: Opt(z.string()),
   axis: Opt(z.looseObject({ deg: z.number() })),
-  profile: Opt(
-    z.looseObject({
-      kind: z.string().optional(),
-      length_mm: z.number(),
-      max_width_mm: z.number().optional(),
-      stations: z.array(z.looseObject({ t: z.number(), lo_mm: z.number(), hi_mm: z.number() })),
-      iou_recon: z.number().optional(),
-    }),
-  ),
+  profile: Opt(SidecarProfileSchema),
+  /** Without a scale: the same profile measured in PIXELS (the `_mm` fields hold pixels). */
+  profilePx: Opt(SidecarProfileSchema),
   mmPerPx: Opt(z.number()),
   class: Opt(
     z.looseObject({
@@ -74,7 +76,7 @@ export const SidecarResultSchema = z.looseObject({
   status: z.string(),
   outDir: z.string().optional(),
   calibration: Opt(
-    z.looseObject({ method: z.string().optional(), mm_per_px: z.number().optional() }),
+    z.looseObject({ method: Opt(z.string()), mm_per_px: Opt(z.number()) }), // both null without a scale
   ),
   overlay: Opt(z.looseObject({ segmentation: Opt(z.string()) })),
   objects: z.array(SidecarObjectSchema),

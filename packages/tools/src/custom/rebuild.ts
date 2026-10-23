@@ -7,7 +7,7 @@
 import { generate, hasToolClass } from '../registry.ts';
 import type { ToolModel } from '../model.ts';
 import { recolorModel } from './colors.ts';
-import { type FittedObject, dimensionsOf, fitObject, observeModel } from './create.ts';
+import { type FittedObject, dimensionsOf, fitObject, observeModel, typicalLengthMm } from './create.ts';
 import { ToolInputError } from './errors.ts';
 import { scaleMeshZ } from './transform.ts';
 import type { CustomTool, CustomToolPatch } from './schema.ts';
@@ -57,8 +57,32 @@ function refit(tool: ToolDoc, patch: CustomToolPatch): Rebuilt {
   const staysGeneric = (patch.classId === undefined ? tool.classId : patch.classId) === null;
   const keepThickness = tool.classId === null ? staysGeneric : tool.fit.zScale !== 1;
   const wanted = { ...tool.userDimensionsMm, ...patch.dimensionsMm };
+  // an estimated size follows the class: another class means another typical length
+  const targetClass = patch.classId === undefined ? tool.classId : patch.classId;
+  const estimatedLength =
+    tool.dimensionsMm.source === 'estimated' &&
+    wanted.length === undefined &&
+    targetClass !== null &&
+    targetClass !== tool.classId &&
+    hasToolClass(targetClass)
+      ? typicalLengthMm(targetClass)
+      : undefined;
+  // typing a width or a thickness leaves an estimated LENGTH an estimate; typing a length makes the size the user's
+  const typesLength =
+    patch.dimensionsMm !== undefined &&
+    (tool.dimensionsMm.source !== 'estimated' || wanted.length !== undefined);
+  if (
+    tool.dimensionsMm.source === 'estimated' &&
+    targetClass === null &&
+    tool.classId !== null &&
+    wanted.length === undefined
+  ) {
+    // a generic shape has no class to take a typical length from: keeping the old class's length would be a made-up size
+    throw new ToolInputError('a generic shape needs a real length: type one (dimensionsMm.length)');
+  }
   const dims = {
     ...(typed ? { length: tool.dimensionsMm.length } : {}),
+    ...(estimatedLength === undefined ? {} : { length: estimatedLength }),
     ...(keepThickness ? { thickness: tool.dimensionsMm.thickness } : {}),
     ...wanted,
   };
@@ -68,7 +92,7 @@ function refit(tool: ToolDoc, patch: CustomToolPatch): Rebuilt {
       colors: tool.colors,
       candidates: tool.classCandidates,
       dimensionsMm: dims,
-      dimensionSource: patch.dimensionsMm ? 'user' : tool.dimensionsMm.source,
+      dimensionSource: typesLength ? 'user' : tool.dimensionsMm.source,
       ...(tool.profileKind ? { profileKind: tool.profileKind } : {}),
     },
     {

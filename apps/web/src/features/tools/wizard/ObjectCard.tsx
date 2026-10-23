@@ -74,6 +74,15 @@ export const ObjectCard = memo(function ObjectCard({
           </span>
           <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
             {t(`toolWizard.status.${object.status}`)}
+            {object.dimensionsEstimated ? (
+              <span
+                className="inline-flex items-center gap-0.5 text-warn"
+                title={t('toolWizard.object.estimatedHint')}
+              >
+                <RulerIcon className="size-3" aria-hidden />
+                {t('toolWizard.object.estimated')}
+              </span>
+            ) : null}
             {object.needsScale ? (
               <span className="inline-flex items-center gap-0.5 text-warn" title={t('toolWizard.object.needsScale')}>
                 <RulerIcon className="size-3" aria-hidden />
@@ -83,7 +92,7 @@ export const ObjectCard = memo(function ObjectCard({
           </span>
         </span>
       </button>
-      {object.status === 'added' ? null : (
+      {object.status === 'added' || object.status === 'discarded' ? null : (
         <label className="absolute top-1 left-1 flex size-6 cursor-pointer items-center justify-center rounded bg-background/90 shadow-sm">
           <input
             type="checkbox"

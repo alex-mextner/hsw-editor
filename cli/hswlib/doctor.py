@@ -269,7 +269,7 @@ def check_vision(ctx: Context) -> list[Check]:
     if info["installed"]:
         return [Check("vision sidecar", "warn", f"installed ({info['venv']}), not running: the daemon starts it on the first vision job",
                       "models: hsw-editor vision doctor")]
-    return [Check("vision sidecar", "warn", "not installed: photo -> wall/objects is unavailable", "hsw-editor vision setup")]
+    return [Check("vision sidecar", "warn", "not installed: vision (tools photos, wall photos) is unavailable", "hsw-editor vision setup")]
 
 
 def check_draw(ctx: Context) -> list[Check]:

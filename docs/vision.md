@@ -1,9 +1,16 @@
-# Vision: photo -> wall, photo -> objects
+# Vision: photo of tools -> tool collection (and, separately, photo of a wall -> wall)
 
-A photo of tools (on a carpet, or hanging on an HSW wall) becomes a **proposal**: tool items with fitted 3D models, dimensions
-and holder suggestions, as a batch of `packages/core` ops that the UI or an agent confirms (`photo_to_wall`). The same pipeline
-is also a **library** that needs no wall: `photo_to_objects` returns one record per object (mask, crops, class top-k, fitted
-model in mm, colours, embedding) for callers such as the tool library (`packages/tools`). Fast, no AI by default.
+Two products share one pipeline, and they must not be mixed up:
+
+- **A photo of tools** (on a carpet, floor or table, from any angle, any layout, a mixed or overlapping pile) only **recognises tools and adds them to
+  the tool collection** (`packages/tools`, the Add-from-photo wizard). It never builds, fits or places a wall. `photo_to_objects` returns one record
+  per object (mask, crops, class top-k, closed-form profile, fitted model when a scale is known, colours, embedding). A scale reference is optional:
+  without one the sizes are class-typical and flagged as **estimated** (see "No scale"), and the user can type one real size per tool.
+- **A photo of a real HSW wall** (the honeycomb board with tools hanging on it) becomes a **proposal**: tool items with fitted 3D models, dimensions
+  and holder suggestions as a batch of `packages/core` ops that the UI or an agent confirms (`photo_to_wall`, job `vision.photo_to_wall`,
+  `hsw-editor vision photo-to-wall`). It is only for photos of an existing wall; nothing on the tools-photo path calls it.
+
+Fast, no AI by default.
 
 ```
 wall photo ──► vision.photo_to_wall job (apps/server/src/vision)
@@ -255,6 +262,21 @@ Pipeline: calibrate -> segment (SAM2 + OWLv2 fill) -> select plausible objects -
 multi-view check -> per object: closed-form axis/profile, crops, upright crops, per-part colours, CLIP embedding. **No scale is not an
 error**: without a grid, two-point, reference or `mm_per_px` the result has `status: "no_scale"`, every `fit`/`profile`/`dimensionsMm` is `null`, and
 masks, crops, axis, class, colours and embeddings are still produced; run again with `calibrate` (segmentation and recognition come from the cache).
+
+### No scale: estimated sizes (tools photos from any angle)
+
+A tools photo needs no scale reference, and it needs no top-down view: the silhouette profile of each object is measured in the photo plane and does not
+depend on a camera model. Without a scale, each record carries `profilePx` (the same closed-form profile, its `*_mm` fields hold **pixels**; `profile`
+stays `null`). The collection import (`packages/tools`, `typicalLengthMm`) turns it into millimetres in one of two ways, and says which:
+
+- the user typed one real length for that tool (a ruler, the manufacturer's size): the profile is scaled to it (`dimensions.source: "user"`);
+- otherwise the **class-typical length** (the class built with its default parameters) of the chosen, or best suggested, class scales it, and the object is
+  flagged `dimensionsEstimated: true` (`dimensions.source: "estimated"` on the saved tool; the wizard shows "estimated size"). Changing the class
+  re-estimates; typing a length replaces the estimate.
+
+An object with no class and no typed length has no honest size: it stays `needsScale` and is not fitted. Perspective is the limit of the **scaled**
+path: with a `mm_per_px` or two points the fit assumes a camera looking straight down on the plane (`f = 0.375 * diagonal`), so an oblique photo with a
+single scale number is only as good as that assumption; the estimated path does not rely on it, and typing one real size per tool corrects either.
 
 Result (`<out>/objects.json`, also the return value):
 

@@ -29,6 +29,7 @@ function object(key: string, photo: number, patch: Partial<DraftObject> = {}): D
     fit: null,
     dimensionsMm: null,
     needsScale: false,
+    dimensionsEstimated: false,
     images: {},
     preview: null,
     ...patch,

@@ -66,7 +66,7 @@ export const ToolSummarySchema = z.object({
     length: z.number(),
     width: z.number(),
     thickness: z.number(),
-    source: z.enum(['photo', 'user']),
+    source: z.enum(['photo', 'user', 'estimated']),
   }),
   dimsMm: DimsSchema,
   holdingDims: HoldingDimsSchema,
