@@ -2,8 +2,9 @@
  * Offline reconciliation: my queued edits (made on `base`) against the server's wall now (`server`).
  *
  * Every edit is classified by replaying it with the core reducer on top of the server wall:
- *   - `redundant`    applying it changes nothing: the server already has this result (e.g. my own edit
- *                    whose acknowledgement was lost, or the other side made the same move);
+ *   - `redundant`    the server already has this result: applying it changes nothing, or (an edit that creates
+ *                    entities) the entities it touches already look exactly as the edit leaves them. The typical
+ *                    case is my own edit whose acknowledgement was lost;
  *   - `clean`        applies and touches nothing the server side changed since `base`;
  *   - `overlap`      applies, but writes a field the server side also changed (mine would overwrite theirs);
  *   - `inapplicable` the reducer refuses it (the item was removed or locked by the other side).
@@ -14,10 +15,21 @@
  *                  when one of my edits needs it (restored as I last saw it);
  *   - `keepTheirs` drop every edit that overlaps or no longer applies; clean ones still go through.
  * Without conflicts all three are identical, so no question is asked.
+ *
+ * Known limit: "redundant" cannot tell my own lost acknowledgement from another actor making the very same change;
+ * both are treated as mine, so a later edit of mine on that field is not reported as a conflict with it.
  */
-import { applyOp, OpError, type OpErrorCode, type LeafOp, type Wall } from '@hsw-editor/core';
+import { applyOp, OpError, type LeafOp, type OpErrorCode, type Wall } from '@hsw-editor/core';
 import { assertNever } from './assertNever.ts';
-import { diffFootprint, opFootprint, overlappingEntities, subtractFootprint } from './footprint.ts';
+import { deepEqual } from './equal.ts';
+import {
+  diffFootprint,
+  entityKey,
+  opFootprint,
+  overlappingEntities,
+  subtractFootprint,
+  type EntityKind,
+} from './footprint.ts';
 import { editToOp, type QueuedEdit } from './record.ts';
 
 export const STRATEGIES = ['rebase', 'keepMine', 'keepTheirs'] as const;
@@ -43,9 +55,10 @@ export interface ReplayPlan {
   readonly diverged: boolean;
 }
 
+/** An edit that did not go through, and why. `redundant` edits are not listed: there is nothing to tell the user. */
 export interface DroppedEdit {
   readonly edit: QueuedEdit;
-  readonly reason: 'redundant' | 'overlap' | 'inapplicable' | 'rejected';
+  readonly reason: 'overlap' | 'inapplicable' | 'rejected';
   readonly code?: string;
   readonly message?: string;
 }
@@ -80,15 +93,14 @@ function tryApply(
   }
 }
 
-/** Ids an edit refers to, by entity kind, so a removed one can be restored from my own view. */
-function referencedEntities(ops: readonly LeafOp[]): {
-  items: string[];
-  photos: string[];
-  models: string[];
-} {
-  const items: string[] = [];
-  const photos: string[] = [];
-  const models: string[] = [];
+interface Ref {
+  readonly kind: Exclude<EntityKind, 'wall'>;
+  readonly id: string;
+}
+
+/** Entities an edit refers to without creating them, so a removed one can be restored from my own view. */
+function references(ops: readonly LeafOp[]): Ref[] {
+  const refs: Ref[] = [];
   for (const op of ops) {
     switch (op.type) {
       case 'moveItem':
@@ -97,16 +109,16 @@ function referencedEntities(ops: readonly LeafOp[]): {
       case 'setVariant':
       case 'lock':
       case 'attachItem':
-        items.push(op.id);
+        refs.push({ kind: 'item', id: op.id });
         break;
       case 'rename':
-        if (op.itemId !== undefined) items.push(op.itemId);
+        if (op.itemId !== undefined) refs.push({ kind: 'item', id: op.itemId });
         break;
       case 'setCalibration':
-        photos.push(op.photoId);
+        refs.push({ kind: 'photo', id: op.photoId });
         break;
       case 'updateModelRef':
-        models.push(op.id);
+        refs.push({ kind: 'model', id: op.id });
         break;
       case 'addItem':
       case 'removeItem':
@@ -120,81 +132,80 @@ function referencedEntities(ops: readonly LeafOp[]): {
         return assertNever(op);
     }
   }
-  return { items, photos, models };
+  return refs;
 }
 
-/** `addItem`/`addPhoto`/`addModelRef` ops re-creating what `edit` needs and `view` lost, taken from `mine`. */
+/** The stored entity (item, photo or model) with this id, or `undefined`. */
+function entityOf(wall: Wall, kind: Ref['kind'], id: string): object | undefined {
+  switch (kind) {
+    case 'item':
+      return wall.items.find((item) => item.id === id);
+    case 'photo':
+      return wall.photos.find((photo) => photo.id === id);
+    case 'model':
+      return wall.models.find((model) => model.id === id);
+    default:
+      return assertNever(kind);
+  }
+}
+
+/** Ops re-creating what `ops` needs and `view` lost, taken from `mine`. */
 function restoreOps(
   view: Wall,
   mine: Wall,
   ops: readonly LeafOp[],
 ): { ops: LeafOp[]; entities: string[] } {
-  const wanted = referencedEntities(ops);
   const restore: LeafOp[] = [];
   const entities: string[] = [];
-  for (const id of new Set(wanted.items)) {
-    const item = mine.items.find((candidate) => candidate.id === id);
-    if (item && !view.items.some((candidate) => candidate.id === id)) {
-      restore.push({ type: 'addItem', item });
-      entities.push(`item:${id}`);
-    }
-  }
-  for (const id of new Set(wanted.photos)) {
-    const photo = mine.photos.find((candidate) => candidate.id === id);
-    if (photo && !view.photos.some((candidate) => candidate.id === id)) {
-      restore.push({ type: 'addPhoto', photo });
-      entities.push(`photo:${id}`);
-    }
-  }
-  for (const id of new Set(wanted.models)) {
-    const model = mine.models.find((candidate) => candidate.id === id);
-    if (model && !view.models.some((candidate) => candidate.id === id)) {
-      restore.push({ type: 'addModelRef', model });
-      entities.push(`model:${id}`);
-    }
+  const seen = new Set<string>();
+  for (const { kind, id } of references(ops)) {
+    const key = entityKey(kind, id);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (entityOf(view, kind, id) !== undefined) continue;
+    const mineItem = kind === 'item' ? mine.items.find((item) => item.id === id) : undefined;
+    const minePhoto = kind === 'photo' ? mine.photos.find((photo) => photo.id === id) : undefined;
+    const mineModel = kind === 'model' ? mine.models.find((model) => model.id === id) : undefined;
+    if (mineItem) restore.push({ type: 'addItem', item: mineItem });
+    else if (minePhoto) restore.push({ type: 'addPhoto', photo: minePhoto });
+    else if (mineModel) restore.push({ type: 'addModelRef', model: mineModel });
+    else continue;
+    entities.push(key);
   }
   return { ops: restore, entities };
 }
 
+/** The stored state of an entity key (`item:i-1`, `wall:`), for comparing two walls entity by entity. */
+function stateOf(wall: Wall, key: string): unknown {
+  const separator = key.indexOf(':');
+  const kind = key.slice(0, separator);
+  const id = key.slice(separator + 1);
+  switch (kind) {
+    case 'item':
+    case 'photo':
+    case 'model':
+      return entityOf(wall, kind, id);
+    case 'wall':
+      return { name: wall.name, board: wall.board };
+    default:
+      return undefined;
+  }
+}
+
 /**
- * The edit only creates/removes entities and `view` already has exactly that outcome: the typical case is
- * my own `addItem` whose acknowledgement was lost, replayed after a reload. The reducer refuses it
- * (`item_exists`); it is satisfied, not conflicting. Identity is the id plus what the user placed.
+ * The server already looks the way this edit leaves things: every entity the edit touches is, on the server,
+ * exactly as it would be after applying the edit to my own view. A lost acknowledgement of a batch such as
+ * `[addItem n, attachItem n]` is the case this exists for (the reducer refuses it with `item_exists`).
  */
-function alreadyApplied(view: Wall, ops: readonly LeafOp[]): boolean {
-  return ops.every((op) => {
-    switch (op.type) {
-      case 'addItem': {
-        const found = view.items.find((item) => item.id === op.item.id);
-        if (!found) return false;
-        const placed = (item: typeof found) => [item.kind, item.bankId, item.variantId, item.cell];
-        return JSON.stringify(placed(found)) === JSON.stringify(placed(op.item));
-      }
-      case 'removeItem':
-        return !view.items.some((item) => item.id === op.id);
-      case 'addPhoto':
-        return view.photos.some((photo) => photo.id === op.photo.id);
-      case 'removePhoto':
-        return !view.photos.some((photo) => photo.id === op.id);
-      case 'addModelRef':
-        return view.models.some((model) => model.id === op.model.id);
-      case 'removeModelRef':
-        return !view.models.some((model) => model.id === op.id);
-      case 'moveItem':
-      case 'rotateItem':
-      case 'setParams':
-      case 'setVariant':
-      case 'lock':
-      case 'attachItem':
-      case 'rename':
-      case 'setCalibration':
-      case 'setBoard':
-      case 'updateModelRef':
-        return false;
-      default:
-        return assertNever(op);
-    }
-  });
+function satisfiedOnServer(
+  view: Wall,
+  expected: Attempt | OpError,
+  ops: readonly LeafOp[],
+): boolean {
+  if (expected instanceof OpError) return false;
+  return [...opFootprint(ops).keys()].every((key) =>
+    deepEqual(stateOf(view, key), stateOf(expected.wall, key)),
+  );
 }
 
 interface Walked {
@@ -214,12 +225,12 @@ function walk(base: Wall, edits: readonly QueuedEdit[], server: Wall, strategy: 
   const dropped: DroppedEdit[] = [];
   const restored: string[] = [];
   let view = server;
-  // The wall as the user who made the edits sees it: the source of truth for `keepMine` restores.
+  // The wall as the user who made the edits sees it: what "already applied" is measured against and
+  // what `keepMine` restores from.
   let mine = base;
 
   const redundant = (edit: QueuedEdit): void => {
     planned.push({ edit, status: 'redundant', overlapping: [] });
-    dropped.push({ edit, reason: 'redundant' });
     // Its effect on the server is mine, not theirs: later edits of mine must not conflict with it.
     theirs = subtractFootprint(theirs, opFootprint(edit.ops));
   };
@@ -228,10 +239,8 @@ function walk(base: Wall, edits: readonly QueuedEdit[], server: Wall, strategy: 
     const overlapping = overlappingEntities(opFootprint(edit.ops), theirs);
     const attempt = tryApply(view, edit.ops, edit.label);
     const myBefore = mine;
-    if (strategy === 'keepMine') {
-      const mineAttempt = tryApply(mine, edit.ops, edit.label);
-      if (!(mineAttempt instanceof OpError)) mine = mineAttempt.wall;
-    }
+    const expected = tryApply(mine, edit.ops, edit.label);
+    if (!(expected instanceof OpError)) mine = expected.wall;
 
     if (!(attempt instanceof OpError)) {
       if (!attempt.changed) {
@@ -252,7 +261,7 @@ function walk(base: Wall, edits: readonly QueuedEdit[], server: Wall, strategy: 
       continue;
     }
 
-    if (alreadyApplied(view, edit.ops)) {
+    if (satisfiedOnServer(view, expected, edit.ops)) {
       redundant(edit);
       continue;
     }

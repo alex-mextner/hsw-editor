@@ -76,6 +76,7 @@ export class ConnectionMonitor {
 
   /** A real request (or the event stream) reached the daemon. */
   reportSuccess(): void {
+    if (this.disposed) return;
     this.successEpoch += 1;
     if (this.state.status === 'online') return;
     this.cancelTimer();
@@ -85,29 +86,12 @@ export class ConnectionMonitor {
 
   /** A real request failed because the daemon or the network was unreachable (not an API refusal). */
   reportFailure(): void {
-    if (this.disposed) return;
-    const reason = this.failureReason();
-    if (this.state.status === 'offline' && this.state.reason === reason) return;
-    this.set({
-      status: 'offline',
-      reason,
-      failures: 1,
-      since: this.state.status === 'offline' ? this.state.since : this.now(),
-    });
-    this.scheduleProbe();
+    this.enterOffline(this.failureReason(), 1);
   }
 
   /** `window` fired `offline`. */
   notifyBrowserOffline(): void {
-    if (this.disposed) return;
-    if (this.state.status === 'offline' && this.state.reason === 'network') return;
-    this.set({
-      status: 'offline',
-      reason: 'network',
-      failures: 1,
-      since: this.state.status === 'offline' ? this.state.since : this.now(),
-    });
-    this.scheduleProbe();
+    this.enterOffline('network', 1);
   }
 
   /** `window` fired `online`: the network is back, find out whether the daemon is too. */
@@ -115,7 +99,10 @@ export class ConnectionMonitor {
     if (this.state.status === 'offline') void this.probeNow();
   }
 
-  /** Probes immediately (e.g. user pressed "retry"). */
+  /**
+   * Asks the daemon (`probe`) right now. Online and answering: nothing changes. Not answering: offline.
+   * This is also how a stream error is judged: the stream failing says nothing about *why*, the probe does.
+   */
   async probeNow(): Promise<void> {
     if (this.probing || this.disposed) return;
     this.probing = true;
@@ -133,7 +120,7 @@ export class ConnectionMonitor {
     if (ok) {
       this.reportSuccess();
     } else if (epoch === this.successEpoch) {
-      this.probeFailed();
+      this.enterOffline(this.failureReason(), this.state.failures + 1);
     }
   }
 
@@ -148,17 +135,20 @@ export class ConnectionMonitor {
     return this.deps.browserOnline() ? 'daemon' : 'network';
   }
 
-  private probeFailed(): void {
+  /**
+   * Becomes (or stays) offline for `reason`. Already offline for the same reason and not a probe failure
+   * (`failures` is 1): nothing to do, so a burst of failing calls neither notifies nor reschedules.
+   */
+  private enterOffline(reason: OfflineReason, failures: number): void {
+    if (this.disposed) return;
+    const offline = this.state.status === 'offline';
+    if (offline && this.state.reason === reason && failures === 1) return;
     this.set({
       status: 'offline',
-      reason: this.failureReason(),
-      failures: this.state.failures + 1,
-      since: this.state.status === 'offline' ? this.state.since : this.now(),
+      reason,
+      failures: offline && failures === 1 ? this.state.failures : failures,
+      since: offline ? this.state.since : this.now(),
     });
-    this.scheduleProbe();
-  }
-
-  private scheduleProbe(): void {
     this.cancelTimer();
     this.cancel = this.schedule(
       () => {

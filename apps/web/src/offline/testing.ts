@@ -173,3 +173,46 @@ export class FakeSource implements EventSourceLike {
     this.emit('error');
   }
 }
+
+/** Lets pending promise callbacks run (a bounded number of microtask turns, so a hang fails instead of spinning). */
+export async function settle(turns = 8): Promise<void> {
+  for (let turn = 0; turn < turns; turn += 1) await Promise.resolve();
+}
+
+export interface ScheduledTask {
+  readonly ms: number;
+  cancelled: boolean;
+  readonly run: () => void;
+}
+
+/** A `Schedule` whose tasks run only when the test says so; fired and cancelled tasks are not `live`. */
+export class ManualScheduler {
+  readonly tasks: ScheduledTask[] = [];
+
+  readonly schedule = (fn: () => void, ms: number): (() => void) => {
+    const task: ScheduledTask = {
+      ms,
+      cancelled: false,
+      run: () => {
+        task.cancelled = true;
+        fn();
+      },
+    };
+    this.tasks.push(task);
+    return () => {
+      task.cancelled = true;
+    };
+  };
+
+  /** Tasks still waiting, optionally only those with this delay. */
+  live(ms?: number): ScheduledTask[] {
+    return this.tasks.filter((task) => !task.cancelled && (ms === undefined || task.ms === ms));
+  }
+
+  /** Runs the newest waiting task. */
+  fire(ms?: number): void {
+    const task = this.live(ms).at(-1);
+    if (!task) throw new Error(`no scheduled task${ms === undefined ? '' : ` with ${ms} ms`}`);
+    task.run();
+  }
+}

@@ -102,7 +102,11 @@ describe('replayQueue', () => {
     ]);
     daemon.external(move('a', 9, 9));
     const outcome = expectKind(
-      await replayQueue({ store: live, transport: daemon, strategy }),
+      await replayQueue({
+        store: live,
+        transport: daemon,
+        decision: { strategy, serverRev: daemon.wall.rev },
+      }),
       'synced',
     );
     expect(cell(daemon, 'a')).toEqual(expected);
@@ -114,7 +118,11 @@ describe('replayQueue', () => {
     const { daemon, live } = setup((rev) => [edit(1, rev, move('a', 2, 2))]);
     daemon.external({ type: 'removeItem', id: 'a' });
     const outcome = expectKind(
-      await replayQueue({ store: live, transport: daemon, strategy: 'keepMine' }),
+      await replayQueue({
+        store: live,
+        transport: daemon,
+        decision: { strategy: 'keepMine', serverRev: daemon.wall.rev },
+      }),
       'synced',
     );
     expect(outcome.restored).toEqual(['item:a']);
@@ -125,7 +133,11 @@ describe('replayQueue', () => {
     const { daemon, live } = setup((rev) => [edit(1, rev, move('a', 2, 2))]);
     daemon.external({ type: 'removeItem', id: 'a' });
     const outcome = expectKind(
-      await replayQueue({ store: live, transport: daemon, strategy: 'rebase' }),
+      await replayQueue({
+        store: live,
+        transport: daemon,
+        decision: { strategy: 'rebase', serverRev: daemon.wall.rev },
+      }),
       'synced',
     );
     expect(outcome.dropped).toMatchObject([{ reason: 'inapplicable', code: 'item_not_found' }]);
@@ -172,6 +184,51 @@ describe('replayQueue', () => {
     expect(daemon.wall.items.find((i) => i.id === 'a')?.pose.rotZ).toBe(60);
     expect(daemon.wall.rev).toBe(base.rev + 3);
     expect(live.read().nextEditId).toBe(4);
+  });
+
+  test('a decision made for an older daemon state is not applied to a newer one: the user is asked again', async () => {
+    const { daemon, live } = setup((rev) => [edit(1, rev, move('a', 2, 2))]);
+    daemon.external(move('a', 9, 9));
+    const first = expectKind(
+      await replayQueue({ store: live, transport: daemon }),
+      'needs-decision',
+    );
+    daemon.external(move('b', 7, 7)); // the daemon moves on while the dialog is open
+    const again = expectKind(
+      await replayQueue({
+        store: live,
+        transport: daemon,
+        decision: { strategy: 'keepMine', serverRev: first.server.rev },
+      }),
+      'needs-decision',
+    );
+    expect(again.server.rev).toBe(daemon.wall.rev);
+  });
+
+  test('a second replay started while one runs joins it instead of racing it', async () => {
+    const { daemon, live } = setup((rev) => [edit(1, rev, move('a', 2, 2))]);
+    const one = replayQueue({ store: live, transport: daemon });
+    const two = replayQueue({ store: live, transport: daemon });
+    expect(two).toBe(one);
+    await one;
+    expect(daemon.requests).toBe(1);
+  });
+
+  test('a lost acknowledgement of a batch that creates and changes an item is not a conflict', async () => {
+    const { daemon, live } = setup((rev) => [
+      edit(
+        1,
+        rev,
+        { type: 'addItem', item: holder('n', 5, 5) },
+        { type: 'rotateItem', id: 'n', rotZ: 60 },
+      ),
+    ]);
+    daemon.loseAckOnRequest = 1;
+    expectKind(await replayQueue({ store: live, transport: daemon }), 'offline');
+    daemon.loseAckOnRequest = null;
+    const outcome = expectKind(await replayQueue({ store: live, transport: daemon }), 'synced');
+    expect(outcome.applied).toBe(0);
+    expect(daemon.wall.items.filter((i) => i.id === 'n')).toHaveLength(1);
   });
 
   test('a lost acknowledgement does not apply the edit twice', async () => {

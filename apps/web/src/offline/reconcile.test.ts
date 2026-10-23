@@ -181,7 +181,7 @@ describe('resolvePlan', () => {
   });
 });
 
-describe('regressions found in review', () => {
+describe('already-applied edits and derived changes', () => {
   test('my own edit already on the server does not make my follow-up a conflict', () => {
     const item = holder('n', 4, 4);
     const server = apply(base, { type: 'addItem', item });

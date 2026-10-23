@@ -5,7 +5,8 @@
  *
  * Writes of one wall are serialized and coalesced: while a write is in flight only the newest record
  * waits, so a burst of edits costs two IndexedDB transactions, not one per keystroke, and the stored
- * record is always the latest one (never an older write landing after a newer one).
+ * record is always the latest one (never an older write landing after a newer one). A failed write does not
+ * strand the newest record: it is still written, and the caller of `put` hears about the last failure.
  */
 import type { Actor, Op, Wall, WallSummary } from '@hsw-editor/core';
 import type { KvStore } from './kv.ts';
@@ -14,12 +15,12 @@ import { flattenOps, type QueuedEdit, type WallRecord, WALL_RECORD_VERSION } fro
 /** Mirrored walls kept besides those with unsent edits; the oldest beyond this are dropped. */
 export const DEFAULT_MIRROR_LIMIT = 30;
 
-export function newRecord(
-  wall: Wall,
-  actor: Actor,
-  flags: { canUndo: boolean; canRedo: boolean },
-  savedAt: number,
-): WallRecord {
+export interface UndoFlags {
+  readonly canUndo: boolean;
+  readonly canRedo: boolean;
+}
+
+export function newRecord(wall: Wall, actor: Actor, flags: UndoFlags, savedAt: number): WallRecord {
   return {
     v: WALL_RECORD_VERSION,
     wall,
@@ -62,20 +63,21 @@ export function enqueueEdit(
   };
 }
 
-/** A newer server wall (SSE, refetch). The queue keeps its edits: they are replayed on top of it. */
-export function withServerWall(
-  record: WallRecord,
-  wall: Wall,
-  flags: { canUndo: boolean; canRedo: boolean },
-  savedAt: number,
-): WallRecord {
-  return { ...record, wall, canUndo: flags.canUndo, canRedo: flags.canRedo, savedAt };
+/**
+ * A newer server wall (SSE, refetch) becomes the record's base, but only while nothing is queued. With edits
+ * queued the base is the wall they were made on and must stay: reconciliation compares it with what the daemon
+ * has now, and moving it would hide exactly what the other side changed. The open editor keeps the newer wall
+ * in memory for display; the replay takes care of the rest.
+ */
+export function withServerWall(record: WallRecord, wall: Wall, flags: UndoFlags): WallRecord {
+  if (record.edits.length > 0) return record;
+  return { ...record, wall, canUndo: flags.canUndo, canRedo: flags.canRedo };
 }
 
 /**
  * The live record of the open wall. Every change is a function of the *current* record (`update`), so
  * an edit the user makes while a replay is acknowledging earlier ones is never overwritten by a stale copy:
- * both go through the same holder and each sees the other's result.
+ * both go through the same holder and each sees the other's result. The holder stamps `savedAt`.
  */
 export class LiveRecord {
   private current: WallRecord;
@@ -101,6 +103,7 @@ export class LiveRecord {
 
 /** One row of the wall list when the daemon is unreachable. */
 export interface MirroredWall {
+  /** `updatedAt` is when this device last saved the wall, not when the daemon last changed it. */
   readonly summary: WallSummary;
   /** Edits made offline that the daemon has not accepted yet. */
   readonly queued: number;
@@ -120,34 +123,39 @@ export class WallMirror {
   put(record: WallRecord): Promise<void> {
     const id = record.wall.id;
     const running = this.inflight.get(id);
-    if (!running) {
-      // A record left waiting by a failed write is older than this one: never write it afterwards.
-      this.waiting.delete(id);
-      return this.start(id, record);
+    if (running) {
+      this.waiting.set(id, record);
+      return running;
     }
-    this.waiting.set(id, record);
-    return running;
-  }
-
-  private start(id: string, record: WallRecord): Promise<void> {
-    const run = this.store
-      .set(id, record)
-      .finally(() => {
-        this.inflight.delete(id);
-      })
-      .then(() => {
-        const next = this.waiting.get(id);
-        if (!next) return undefined;
-        this.waiting.delete(id);
-        return this.start(id, next);
-      });
+    const run: Promise<void> = this.write(id, record).finally(() => {
+      if (this.inflight.get(id) === run) this.inflight.delete(id);
+    });
     this.inflight.set(id, run);
     return run;
   }
 
+  /** Writes `record`, then whatever newer record queued up meanwhile; the failure of the last write is thrown. */
+  private async write(id: string, first: WallRecord): Promise<void> {
+    let record: WallRecord | undefined = first;
+    let failure: { readonly error: unknown } | undefined;
+    while (record) {
+      try {
+        await this.store.set(id, record);
+        failure = undefined;
+      } catch (error) {
+        failure = { error };
+      }
+      record = this.waiting.get(id);
+      this.waiting.delete(id);
+    }
+    if (failure) throw failure.error;
+  }
+
   /** Resolves when every write accepted so far has landed. */
   async flush(): Promise<void> {
-    while (this.inflight.size > 0) await Promise.all([...this.inflight.values()]);
+    while (this.inflight.size > 0) {
+      await Promise.allSettled([...this.inflight.values()]);
+    }
   }
 
   async remove(wallId: string): Promise<void> {

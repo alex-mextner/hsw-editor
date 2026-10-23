@@ -6,7 +6,7 @@ of edits the daemon has not acknowledged. With the daemon down the editor keeps 
 daemon returns the queue is replayed in order. All op semantics come from `@hsw-editor/core` (`applyOp`): there is no
 second reducer.
 
-This layer is a library: the editor's wall session (`apps/web/src/wall/sync.ts`) consumes it in the follow-up that wires it
+This layer is a library: the editor's wall session (`WallSync` of the web editor, PR #73) consumes it in the follow-up that wires it
 in (#87), so until then nothing in the UI calls it.
 
 ## Storage

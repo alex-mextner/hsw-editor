@@ -71,13 +71,36 @@ describe('record helpers', () => {
     expect(folded.wall.items[0]?.locked).toBe(true);
   });
 
-  test('withServerWall keeps the queue and moves the base', () => {
-    const queued = enqueueEdit(newRecord(wall, ME, flags, 1), [lock], undefined, 2);
+  test('withServerWall moves the base only while nothing is queued (the base is what reconcile compares against)', () => {
+    const clean = newRecord(wall, ME, flags, 1);
     const newer = { ...wall, rev: wall.rev + 4 };
-    const next = withServerWall(queued, newer, { canUndo: true, canRedo: false }, 9);
-    expect(next.wall.rev).toBe(newer.rev);
-    expect(next.edits).toEqual(queued.edits);
-    expect(next.canUndo).toBe(true);
+    const moved = withServerWall(clean, newer, { canUndo: true, canRedo: false });
+    expect(moved.wall.rev).toBe(newer.rev);
+    expect(moved.canUndo).toBe(true);
+    const queued = enqueueEdit(clean, [lock], undefined, 2);
+    expect(withServerWall(queued, newer, { canUndo: true, canRedo: false })).toBe(queued);
+  });
+
+  test('a failed write does not strand the newest record', async () => {
+    const inner = createMemoryStore<WallRecord>(parseWallRecord);
+    let failFirst = true;
+    const flaky: KvStore<WallRecord> = {
+      ...inner,
+      async set(key, value) {
+        if (failFirst) {
+          failFirst = false;
+          throw new Error('quota');
+        }
+        await inner.set(key, value);
+      },
+    };
+    const mirror = new WallMirror(flaky);
+    const w = createEmptyWall('w1', 'W');
+    const first = mirror.put(newRecord(w, ME, flags, 1));
+    const second = mirror.put(newRecord(w, ME, flags, 2));
+    await second; // the newer write succeeded, so the caller is told it is stored
+    await first;
+    expect((await mirror.get('w1'))?.savedAt).toBe(2);
   });
 });
 
@@ -212,7 +235,7 @@ describe('WallMirror', () => {
       },
     };
     const mirror = new WallMirror(racing);
-    await mirror.put({ ...newRecord(wallWith(holder('a', 1, 1)), ME, flags, 1) });
+    await mirror.put(newRecord(wallWith(holder('a', 1, 1)), ME, flags, 1));
     await mirror.put(newRecord(createEmptyWall('w2', 'W2'), ME, flags, 2));
     expect(await mirror.prune(0)).toEqual(['w2']);
     expect((await inner.get('w1'))?.edits).toHaveLength(1);

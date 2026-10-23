@@ -1,33 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { ConnectionMonitor } from './connection.ts';
+import { ManualScheduler, settle } from './testing.ts';
 import { BACKOFF_MAX_MS, backoffDelay } from './timers.ts';
 
-/** Manual scheduler: tasks run only when the test says so. */
-function manualScheduler() {
-  const tasks: { fn: () => void; ms: number; cancelled: boolean }[] = [];
-  return {
-    tasks,
-    schedule(fn: () => void, ms: number) {
-      const task = { fn, ms, cancelled: false };
-      tasks.push(task);
-      return () => {
-        task.cancelled = true;
-      };
-    },
-    /** Runs the newest live task and lets the async probe settle. */
-    async fire() {
-      const task = [...tasks].reverse().find((t) => !t.cancelled);
-      if (!task) throw new Error('no scheduled task');
-      task.cancelled = true;
-      task.fn();
-      for (let i = 0; i < 5; i += 1) await Promise.resolve();
-    },
-    live: () => tasks.filter((t) => !t.cancelled),
-  };
-}
-
 function monitor(options: { daemonUp: { value: boolean }; online?: { value: boolean } }) {
-  const scheduler = manualScheduler();
+  const scheduler = new ManualScheduler();
   const online = options.online ?? { value: true };
   const errors: unknown[] = [];
   const instance = new ConnectionMonitor({
@@ -89,13 +66,16 @@ describe('ConnectionMonitor', () => {
       reconnects += 1;
     });
     instance.reportFailure();
-    await scheduler.fire();
-    await scheduler.fire();
+    scheduler.fire();
+    await settle();
+    scheduler.fire();
+    await settle();
     expect(scheduler.live().map((t) => t.ms)).toEqual([4000]);
     expect(instance.getSnapshot().failures).toBe(3);
 
     daemonUp.value = true;
-    await scheduler.fire();
+    scheduler.fire();
+    await settle();
     expect(instance.getSnapshot()).toMatchObject({ status: 'online', reason: null, failures: 0 });
     expect(reconnects).toBe(1);
     expect(scheduler.live()).toEqual([]);
@@ -119,7 +99,7 @@ describe('ConnectionMonitor', () => {
 
   test('a probe that fails after a real call already succeeded does not undo the recovery', async () => {
     const gate: { release: (ok: boolean) => void } = { release: () => undefined };
-    const scheduler = manualScheduler();
+    const scheduler = new ManualScheduler();
     let reconnects = 0;
     const instance = new ConnectionMonitor({
       probe: () => new Promise<boolean>((resolve) => (gate.release = resolve)),
@@ -131,14 +111,28 @@ describe('ConnectionMonitor', () => {
       reconnects += 1;
     });
     instance.reportFailure();
-    await scheduler.fire(); // probe starts and hangs
+    scheduler.fire(); // probe starts and hangs
     instance.reportSuccess(); // a real request gets through meanwhile
     expect(reconnects).toBe(1);
     gate.release(false); // the older probe now reports failure
-    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    await settle();
     expect(instance.getSnapshot().status).toBe('online');
     expect(scheduler.live()).toEqual([]);
     expect(reconnects).toBe(1);
+  });
+
+  test('probeNow on an online monitor: an answering daemon changes nothing, a silent one means offline', async () => {
+    const daemonUp = { value: true };
+    const { instance } = monitor({ daemonUp });
+    let notified = 0;
+    instance.subscribe(() => {
+      notified += 1;
+    });
+    await instance.probeNow();
+    expect(notified).toBe(0);
+    daemonUp.value = false;
+    await instance.probeNow();
+    expect(instance.getSnapshot()).toMatchObject({ status: 'offline', failures: 1 });
   });
 
   test('the browser coming back online probes immediately', async () => {
@@ -146,12 +140,12 @@ describe('ConnectionMonitor', () => {
     const { instance } = monitor({ daemonUp });
     instance.reportFailure();
     instance.notifyBrowserOnline();
-    for (let i = 0; i < 5; i += 1) await Promise.resolve();
+    await settle();
     expect(instance.getSnapshot().status).toBe('online');
   });
 
   test('a probe that throws counts as a failure', async () => {
-    const scheduler = manualScheduler();
+    const scheduler = new ManualScheduler();
     const instance = new ConnectionMonitor({
       probe: () => Promise.reject(new Error('refused')),
       browserOnline: () => true,
@@ -159,7 +153,8 @@ describe('ConnectionMonitor', () => {
       random: () => 0,
     });
     instance.reportFailure();
-    await scheduler.fire();
+    scheduler.fire();
+    await settle();
     expect(instance.getSnapshot()).toMatchObject({ status: 'offline', failures: 2 });
   });
 
@@ -191,10 +186,14 @@ describe('ConnectionMonitor', () => {
     expect(errors).toHaveLength(1);
   });
 
-  test('dispose stops probing', () => {
+  test('after dispose nothing changes and nothing is scheduled', () => {
     const { instance, scheduler } = monitor({ daemonUp: { value: false } });
     instance.reportFailure();
     instance.dispose();
+    expect(scheduler.live()).toEqual([]);
+    instance.reportSuccess();
+    instance.reportFailure();
+    expect(instance.getSnapshot().status).toBe('offline');
     expect(scheduler.live()).toEqual([]);
   });
 });

@@ -22,6 +22,11 @@ export interface EventSourceLike {
 export const EVENT_SOURCE_CLOSED = 2;
 /** Three missed 15 s heartbeats. */
 export const DEFAULT_STALE_AFTER_MS = 45_000;
+/**
+ * The event that carries the daemon's current wall: it sets the resume position even when that is lower than
+ * the last one seen (a wall restored from a backup). Include it in `events`.
+ */
+export const SNAPSHOT_EVENT = 'snapshot';
 
 export interface ReconnectingSourceOptions {
   /** Builds the stream URL; `since` is the last rev seen (`null` before the first event). */
@@ -34,8 +39,13 @@ export interface ReconnectingSourceOptions {
   readonly onOpen?: (resumed: boolean) => void;
   /** The stream went down (error or silence); a reconnect is already scheduled. */
   readonly onDown?: () => void;
+  /**
+   * The connection broke but the browser is retrying by itself (`CONNECTING`), e.g. the daemon refused the
+   * connection. Nothing is scheduled here; it is a hint to check whether the daemon is reachable.
+   */
+  readonly onInterrupted?: () => void;
   readonly staleAfterMs?: number;
-  readonly schedule?: (fn: () => void, ms: number) => () => void;
+  readonly schedule?: Schedule;
   readonly random?: () => number;
 }
 
@@ -91,36 +101,42 @@ export class ReconnectingSource {
     this.opened = false;
     this.armWatchdog();
     source.addEventListener('open', () => {
-      if (this.source !== source) return;
-      const resumed = this.everOpened;
-      this.everOpened = true;
-      this.opened = true;
-      this.failures = 0;
-      this.armWatchdog();
-      this.options.onOpen?.(resumed);
+      if (this.source === source) this.onOpened();
     });
     source.addEventListener('error', () => {
       if (this.source !== source) return;
-      // CONNECTING: the browser retries on its own (and sends Last-Event-ID). CLOSED: it gave up.
+      // CLOSED: the browser gave up. CONNECTING: it retries on its own (and sends Last-Event-ID).
       if (source.readyState === EVENT_SOURCE_CLOSED) this.down();
+      else this.options.onInterrupted?.();
     });
     for (const name of this.options.events) {
       source.addEventListener(name, (event) => {
-        if (this.source !== source) return;
-        this.armWatchdog();
-        if (!(event instanceof MessageEvent) || typeof event.data !== 'string') return;
-        const rev = Number.parseInt(event.lastEventId, 10);
-        // A `snapshot` is the daemon's word for where the wall is now, even if that is *lower* than what we
-        // saw (restored backup); otherwise only newer revs raise the resume position.
-        if (
-          Number.isInteger(rev) &&
-          (name === 'snapshot' || this.lastRev === null || rev > this.lastRev)
-        ) {
-          this.lastRev = rev;
-        }
-        this.options.onEvent(name, event.data);
+        if (this.source === source) this.onMessage(name, event);
       });
     }
+  }
+
+  private onOpened(): void {
+    const resumed = this.everOpened;
+    this.everOpened = true;
+    this.opened = true;
+    this.failures = 0;
+    this.armWatchdog();
+    this.options.onOpen?.(resumed);
+  }
+
+  private onMessage(name: string, event: Event): void {
+    this.armWatchdog();
+    if (!(event instanceof MessageEvent) || typeof event.data !== 'string') return;
+    const rev = Number.parseInt(event.lastEventId, 10);
+    // Only newer revs raise the resume position, except a snapshot, which says where the wall is *now*.
+    if (
+      Number.isInteger(rev) &&
+      (name === SNAPSHOT_EVENT || this.lastRev === null || rev > this.lastRev)
+    ) {
+      this.lastRev = rev;
+    }
+    this.options.onEvent(name, event.data);
   }
 
   private armWatchdog(): void {
@@ -136,7 +152,6 @@ export class ReconnectingSource {
     this.cancelWatchdog?.();
     this.cancelWatchdog = null;
     this.failures += 1;
-    this.options.onDown?.();
     this.cancelRetryTimer();
     this.cancelRetry = this.schedule(
       () => {
@@ -145,6 +160,8 @@ export class ReconnectingSource {
       },
       backoffDelay(this.failures, this.random()),
     );
+    // After the retry is scheduled: a listener that calls `reconnectNow` cancels it cleanly.
+    this.options.onDown?.();
   }
 
   private teardownSource(): void {
