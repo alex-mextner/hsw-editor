@@ -21,4 +21,7 @@ test('the draw state lives under the daemon home, so the CLI and the daemon shar
     '/x/home/draw/guard.json',
   );
   expect(resolveDrawPaths({ ...base, HSW_EDITOR_HOME: '/x/home', HSW_EDITOR_DATA_DIR: '/y' }).dataDir).toBe('/y');
+  // read like the daemon's Python launcher does: empty is unset, `~` is the user's home
+  expect(resolveDrawPaths({ ...base, HSW_EDITOR_HOME: '' }).dataDir).toBe('/data/hsw-editor');
+  expect(resolveDrawPaths({ ...base, HSW_EDITOR_HOME: '~/hsw' }).dataDir).toBe('/home/u/hsw');
 });

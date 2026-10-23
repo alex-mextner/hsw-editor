@@ -83,7 +83,7 @@ follow `GET /api/jobs/:id/events`; the web wizard hook is VisionPolish's). What 
    every candidate (accepted or rejected, with the gate's reasons) is recorded in `views.json` next to it (`GET .../objects/:key/drawn`; the file is served at
    `.../drawn/<view>.<ext>`). The subject id is a hash of the cut-out's bytes: object keys are reused when a draft is analysed again, so a re-analysis that gives
    the key another picture starts without the old drawings (and the manual upload job, keyed on the same id, does not inherit the old object's upload). A rejected
-   retry never replaces an accepted drawing; the manual backend collects the NEWEST upload (by modification time), so a bad first upload is replaced by uploading another; a manual job is identified by its tag, prompt and subject/style refs, NOT by earlier drawn views chained as `view` refs (their paths change run to run).
+   retry never replaces an accepted drawing; the manual backend collects the NEWEST upload (the later of modification and inode-change time), so a bad first upload is replaced by uploading another; a manual job is identified by its tag, prompt and subject/style refs, NOT by earlier drawn views chained as `view` refs (their paths change run to run).
    Nothing is attached to a tool or a wall: a drawing is `source: 'generated'`, a hint for the fitter, never ground truth, and dimensions still come from the photo.
 4. Each accepted drawing is scored against the sidecar's fit of that object (`vision/<photo>/objects.json`) by `POST /multiview` `generated_views`
    (docs/vision.md "Multi-view check"): `check: { state: "checked", source: "generated", iou, flag, usable, azimuthDeg, elevationDeg }`, or

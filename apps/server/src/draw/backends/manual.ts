@@ -5,7 +5,7 @@
  * the SAME request called again collects them. Job id = hash(tag|prompt|refs), so retries find it.
  */
 import { createHash } from 'node:crypto';
-import { copyFile, mkdir, readdir, stat, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import {
   type DrawBackend,
@@ -32,10 +32,16 @@ export function manualJobDir(req: DrawRequest): string {
   return join(req.outDir, `manual-${manualJobId(req)}`);
 }
 
-/** The inbox files oldest first by modification time (name as the tie-break): the NEWEST upload wins, whatever it is called. */
+/**
+ * The inbox files oldest first by when they arrived (the later of the modification and the inode change time, so a file moved
+ * in with `mv`/`cp -p` counts from the move; name as the tie-break): the NEWEST upload wins, whatever it is called.
+ */
 async function newestLast(inbox: string, names: readonly string[]): Promise<string[]> {
   const stamped = await Promise.all(
-    names.map(async (name) => ({ name, at: (await stat(join(inbox, name))).mtimeMs })),
+    names.map(async (name) => {
+      const { mtimeMs, ctimeMs } = await stat(join(inbox, name));
+      return { name, at: Math.max(mtimeMs, ctimeMs) };
+    }),
   );
   return stamped.sort((a, b) => a.at - b.at || a.name.localeCompare(b.name)).map((f) => f.name);
 }
@@ -55,6 +61,10 @@ export class ManualBackend implements DrawBackend {
     );
     if (have.length === 0) {
       await writeFile(join(jobDir, 'prompt.txt'), `${req.prompt}\n`);
+      // the job is shared by every run of the request, whose chained `view` refs differ: show only the current refs
+      for (const old of (await readdir(jobDir)).filter((name) => name.startsWith('ref-'))) {
+        await rm(join(jobDir, old));
+      }
       for (const [index, ref] of req.refs.entries()) {
         await copyFile(ref.path, join(jobDir, `ref-${index + 1}-${basename(ref.path)}`));
       }

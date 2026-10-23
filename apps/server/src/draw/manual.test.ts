@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, test } from 'bun:test';
-import { utimes } from 'node:fs/promises';
+import { readdir, utimes } from 'node:fs/promises';
 import { DrawError, type DrawRequest } from '@hsw-editor/draw';
 import { ManualBackend, manualJobId } from './backends/manual.ts';
 import { createDrawRoutes } from './routes.ts';
@@ -162,8 +162,10 @@ test('the newest upload (by modification time, whatever its name) is collected, 
   const inbox = `${first.extra.jobDir}/inbox`;
   await Bun.write(`${inbox}/upload-9999-z.png`, await pngBytes(64)); // the first upload (later found to be unusable)
   await Bun.write(`${inbox}/a-better-drawing.png`, await pngBytes(96)); // dropped in by hand later: sorts first by name
-  await utimes(`${inbox}/upload-9999-z.png`, new Date(1_000_000), new Date(1_000_000));
-  await utimes(`${inbox}/a-better-drawing.png`, new Date(2_000_000), new Date(2_000_000));
+  // utimes also moves the inode change time to now, so the times are set around now: an hour apart cannot tie
+  const hour = 3_600_000;
+  await utimes(`${inbox}/upload-9999-z.png`, new Date(Date.now() - hour), new Date(Date.now() - hour));
+  await utimes(`${inbox}/a-better-drawing.png`, new Date(Date.now() + hour), new Date(Date.now() + hour));
   const result = await backend.draw(req);
   expect(result.ok && result.images[0]?.width).toBe(96);
 });
@@ -185,4 +187,28 @@ test('earlier drawn views chained as refs are not part of the manual job identit
   // an upload made for the request without the drawn side is still collected when the side was drawn meanwhile (or elsewhere)
   expect(manualJobId(chained)).toBe(manualJobId(base));
   expect(manualJobId({ ...base, refs: [{ path: '/work/other.png', role: 'subject' }] })).not.toBe(manualJobId(base));
+});
+
+test('the job page shows only the current refs, not those of an earlier run of the same request', async () => {
+  const runtime = createDrawRuntime({ env: { HSW_EDITOR_DATA_DIR: scratch.dir } });
+  const subject = `${scratch.dir}/subject.png`;
+  await writeObjectPng(subject);
+  const side1 = `${scratch.dir}/omp-111-side.png`;
+  const side2 = `${scratch.dir}/chatgpt-222-side.png`;
+  await writeObjectPng(side1);
+  await writeObjectPng(side2);
+  const base: DrawRequest = {
+    version: 1,
+    prompt: 'orthographic top view of the box',
+    refs: [{ path: subject, role: 'subject' }],
+    n: 1,
+    size: '1024x1024',
+    outDir: runtime.paths.workDir,
+    tag: 'wall1/box/top',
+  };
+  const backend = new ManualBackend();
+  await pending(backend, { ...base, refs: [...base.refs, { path: side1, role: 'view' }] });
+  const second = await pending(backend, { ...base, refs: [...base.refs, { path: side2, role: 'view' }] });
+  const refs = (await readdir(second.extra.jobDir ?? '')).filter((name) => name.startsWith('ref-'));
+  expect(refs.sort()).toEqual(['ref-1-subject.png', 'ref-2-chatgpt-222-side.png']);
 });
