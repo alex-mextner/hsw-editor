@@ -50,10 +50,16 @@ interface Rect {
   readonly maxY: number;
 }
 
-/** A solid item of the wall with the rectangle it covers. */
-interface Occupant {
-  readonly item: WallItem;
+/** Footprint of a solid: the rectangle it covers in the wall plane and the world z range it fills. */
+interface Footprint {
   readonly rect: Rect;
+  readonly zMinMm: number;
+  readonly zMaxMm: number;
+}
+
+/** A solid item of the wall with its footprint. */
+interface Occupant extends Footprint {
+  readonly item: WallItem;
 }
 
 /** Clear space kept between a free tool and its neighbours and the board edge. */
@@ -77,14 +83,19 @@ function meets(a: Rect, b: Rect, marginMm: number): boolean {
   );
 }
 
+/** Footprint of a world box. */
+function footprintOfBox(box: Aabb): Footprint {
+  return { rect: rectOf(box), zMinMm: box.min.z, zMaxMm: box.max.z };
+}
+
 /**
- * Wall-plane footprint of an item, as big as the scene draws it (a holder at its parametric variant's size, one whose
- * element left the bank index as its placeholder); null for items with nothing solid to cover (photo references).
+ * Footprint of an item, as big as the scene draws it (a holder at its parametric variant's size, one whose element
+ * left the bank index as its placeholder); null for items with nothing solid to cover (photo references).
  */
-function footprintOf(item: WallItem, wall: Wall, bank: BankLookup): Rect | null {
+function footprintOf(item: WallItem, wall: Wall, bank: BankLookup): Footprint | null {
   if (!isSolid(item)) return null;
   const bounds = itemBounds(item, wall, bank);
-  return bounds === null ? null : rectOf(itemWorldAabb(boundsAabb(bounds), item.pose));
+  return bounds === null ? null : footprintOfBox(itemWorldAabb(boundsAabb(bounds), item.pose));
 }
 
 /** Every solid item of the wall except the draft, with its footprint. */
@@ -92,10 +103,21 @@ function occupantsOf(wall: Wall, bank: BankLookup, draft: WallItem): Occupant[] 
   const occupants: Occupant[] = [];
   for (const item of wall.items) {
     if (item.id === draft.id) continue;
-    const rect = footprintOf(item, wall, bank);
-    if (rect !== null) occupants.push({ item, rect });
+    const footprint = footprintOf(item, wall, bank);
+    if (footprint !== null) occupants.push({ item, ...footprint });
   }
   return occupants;
+}
+
+/**
+ * Whether an occupant can be in the way of the tool whose world box is `tool`: any item overlapping it in the wall plane
+ * is, except board hardware (`board-part`: panels and plates the holders are mounted on) the tool stands clear of in z.
+ */
+function inTheWay(occupant: Occupant, tool: Footprint): boolean {
+  return (
+    occupant.item.kind !== 'board-part' ||
+    (occupant.zMaxMm > tool.zMinMm && occupant.zMinMm < tool.zMaxMm)
+  );
 }
 
 /**
@@ -131,13 +153,14 @@ function hangTarget(
   for (const candidate of candidates) {
     const target = mountTargetFor(ctx, draft, candidate.holderId, candidate.slot);
     if (target === null) continue;
-    const hungRect = rectOf(itemWorldAabb(local, { ...draft.pose, ...target.placement.pose }));
+    const hung = footprintOfBox(itemWorldAabb(local, { ...draft.pose, ...target.placement.pose }));
     // The tool interpenetrates its own holder and sits beside the tools of that holder by construction.
     const clear = !occupants.some(
-      ({ item, rect }) =>
-        item.id !== target.holderId &&
-        !(item.kind === 'tool' && item.parentId === target.holderId) &&
-        meets(hungRect, rect, -TOUCH_MM),
+      (occupant) =>
+        occupant.item.id !== target.holderId &&
+        !(occupant.item.kind === 'tool' && occupant.item.parentId === target.holderId) &&
+        inTheWay(occupant, hung) &&
+        meets(hung.rect, occupant.rect, -TOUCH_MM),
     );
     if (clear) return target;
   }
@@ -161,8 +184,11 @@ function freeSpot(
   reference: Vec2,
 ): Vec2 | null {
   const { width, height } = boardSizeMm(wall.board);
-  const box = rectOf(itemWorldAabb(local, { ...draft.pose, x: 0, y: 0 }));
-  const obstacles = occupantsOf(wall, bank, draft).map(({ rect }) => rect);
+  const footprint = footprintOfBox(itemWorldAabb(local, { ...draft.pose, x: 0, y: 0 }));
+  const box = footprint.rect;
+  const obstacles = occupantsOf(wall, bank, draft)
+    .filter((occupant) => inTheWay(occupant, footprint))
+    .map(({ rect }) => rect);
   const loX = CLEARANCE_MM - box.minX;
   const hiX = width - CLEARANCE_MM - box.maxX;
   const loY = CLEARANCE_MM - box.minY;

@@ -63,9 +63,18 @@ const HOOK = makeElement({
   dims: [40, 40, 50],
   fitsTool: [{ toolClass: 'tape-measure', capacity: 1 }],
 });
+/** A mounting plate: 5 mm deep, so the 27.5 mm back face of a tool hovering at z = 40 stands clear of it. */
+const PLATE = makeElement({
+  id: 'plate',
+  ru: 'Плита',
+  en: 'Plate',
+  category: 'panels',
+  dims: [120, 40, 5],
+});
 const bank = new Map([
   [RAIL.id, RAIL],
   [HOOK.id, HOOK],
+  [PLATE.id, PLATE],
 ]);
 
 const SCREWDRIVER: ToolDragPayload = {
@@ -120,9 +129,10 @@ function itemById(wall: Wall, id: string): WallItem {
 
 /** World box of a wall item's solid: the holder's bank bbox, or the tool's drawn box. */
 function boxOf(item: WallItem, wall: Wall): Aabb {
-  if (item.kind === 'holder') {
-    const spec = bank.get(item.bankId ?? '');
-    if (!spec) throw new Error('unknown holder');
+  if (item.kind === 'holder' || item.kind === 'board-part') {
+    if (item.bankId === undefined) throw new Error(`${item.kind} ${item.id} has no bank element`);
+    const spec = bank.get(item.bankId);
+    if (!spec) throw new Error(`unknown bank element ${item.bankId}`);
     return itemWorldAabb(spec.bboxMm, item.pose);
   }
   const dims = toolBox(item, wall);
@@ -297,6 +307,31 @@ describe('planToolAdd: free spots', () => {
     expect(plan.kind).toBe('free');
     const drawn = itemWorldAabb(WIDE_VARIANT.bboxMm, wide.pose);
     expect(overlap2d(boxOf(itemById(after, plan.itemId), after), drawn)).toBe(false);
+  });
+
+  test('board hardware the tool stands clear of in front is no obstacle', () => {
+    const plate: WallItem = { ...holder('plate', 'plate', 15, 15), kind: 'board-part' };
+    const wall = wallWith(plate);
+    const { wall: after, plan } = add(wall, PLIERS, plate.pose);
+    expect(plan.kind).toBe('free');
+    expect(overlap2d(boxOf(itemById(after, plan.itemId), after), boxOf(plate, after))).toBe(true);
+  });
+
+  test('a compatible holder on a thin plate still takes the tool', () => {
+    const plate: WallItem = { ...holder('plate', 'plate', 6, 10), kind: 'board-part' };
+    const wall = wallWith(plate, holder('rail', 'rail', 6, 10));
+    const { wall: after, plan } = add(wall, SCREWDRIVER);
+    expect(plan.kind).toBe('hung');
+    expect(itemById(after, plan.itemId).parentId).toBe('rail');
+  });
+
+  test('a board part reaching the tool is an obstacle like any other item', () => {
+    // The rail (40 mm deep) reaches the 27.5 mm back face of the pliers hovering at z = 40.
+    const thick: WallItem = { ...holder('thick', 'rail', 15, 15), kind: 'board-part' };
+    const wall = wallWith(thick);
+    const { wall: after, plan } = add(wall, PLIERS, thick.pose);
+    expect(plan.kind).toBe('free');
+    expect(overlap2d(boxOf(itemById(after, plan.itemId), after), boxOf(thick, after))).toBe(false);
   });
 
   test('says there is no room when the board cannot take the tool', () => {
