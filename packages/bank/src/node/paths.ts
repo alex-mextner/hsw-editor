@@ -24,7 +24,9 @@ const REPO_ROOT = resolve(import.meta.dir, '../../../..');
 
 export function bankPaths(env: Record<string, string | undefined> = process.env): BankPaths {
   const home = homedir();
-  const data = env.HSW_EDITOR_DATA_DIR ?? join(home, '.local/share/hsw-editor');
+  // same resolution as the daemon's data home (apps/server config.ts): HSW_EDITOR_HOME, else $XDG_DATA_HOME/hsw-editor
+  const data =
+    env.HSW_EDITOR_HOME ?? join(env.XDG_DATA_HOME ?? join(home, '.local/share'), 'hsw-editor');
   const cache = env.HSW_EDITOR_CACHE_DIR ?? join(home, '.cache/hsw-editor');
   return {
     repoRoot: REPO_ROOT,

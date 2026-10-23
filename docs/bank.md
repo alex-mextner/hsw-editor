@@ -51,7 +51,7 @@ bank.getElement(id); bank.listElements({ category, toolClass, mounting, maxDimsM
 Search is MiniSearch over ru/en names, tags, tool-class synonyms and category names with a light
 stemmer (`text.ts`): AND over the query words first, OR + fuzzy as fallback.
 
-## HTTP contract (implemented by `createBankHandler` in `@hsw-editor/bank/node`; to be mounted by `apps/server`, see below)
+## HTTP contract (`createBankHandler` in `@hsw-editor/bank/node`, mounted by `apps/server`)
 
 | Route | Result |
 |---|---|
@@ -66,12 +66,12 @@ Asset URLs are `/bank/assets/` + `asset.path` from the index. Read routes answer
 only `POST` (otherwise 405 with `Allow`); the asset extension must match its kind (`.glb` under `glb/` and `variant/`,
 `.webp` under `thumb/`).
 
-Mounting in the server: `const bankHandler = createBankHandler({ roots: [paths.bankDir, paths.seedDir], paths: bankPaths() })`
-and, first thing in `fetch`, `const response = await bankHandler(request); if (response) return response;` (it returns
-`null` for URLs that are not bank routes). It serves the built bank from `~/.local/share/hsw-editor/bank` and falls back
-to the committed seed, reloads when the `index.json` of any root changes (including a built bank appearing after the seed
-was loaded), keeps serving the bank in use when a new index cannot be read (an ingest mid-write), and never needs a restart
-after `bank:ingest`.
+Mounting in the server: `apps/server/src/bank-routes.ts` is a server module (`bankModule` in `modules.ts`) that runs after
+the loopback guard and before the wall API. It calls `createBankHandler({ roots: [bankDir, paths.seedDir], paths })`, where
+`bankDir` is `$HSW_BANK_DIR` or `<HSW_EDITOR_HOME>/bank`, and the handler returns `null` for URLs that are not bank routes.
+It serves the built bank and falls back to the committed seed, reloads when the `index.json` of any root changes (including
+a built bank appearing after the seed was loaded), keeps serving the bank in use when a new index cannot be read (an
+ingest mid-write), and never needs a restart after `bank:ingest`.
 
 ## Ingestion pipeline (`bun run bank:ingest`)
 
@@ -88,7 +88,7 @@ root with `HSW_SOURCES_DIR`) -> content hashes + `mesh_tool.py probe` (cached by
 join with the hand-written curation (`packages/bank/curation/sources.ts`) -> render parametric families
 (`packages/bank/generators/families.json` + `families.scad`) with OpenSCAD -> `mesh_tool.py build` (orient into the wall
 frame, anchor, footprint cells, smooth normals, thumbnail rendered headlessly with pyrender/EGL) -> meshopt GLB LOD0/LOD1 ->
-content-hashed assets + `index.json` + `search-index.json` + `report.json` in `~/.local/share/hsw-editor/bank`.
+content-hashed assets + `index.json` + `search-index.json` + `report.json` in `<data home>/bank` (`HSW_EDITOR_HOME`, else `$XDG_DATA_HOME/hsw-editor`, i.e. `~/.local/share/hsw-editor`, the same directory the daemon serves).
 
 - Idempotent/incremental: per-element artefacts are cached under `~/.cache/hsw-editor/bank-build/elements/<key>` where the
   key covers the source hash, part, orientation, the mesh-tool/compressor code and the per-element build inputs (colour,

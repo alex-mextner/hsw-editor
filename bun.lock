@@ -16,6 +16,7 @@
       "name": "@hsw-editor/server",
       "version": "0.1.0",
       "dependencies": {
+        "@hsw-editor/bank": "workspace:*",
         "@hsw-editor/core": "workspace:*",
         "@hsw-editor/draw": "workspace:*",
         "@hsw-editor/user-settings": "workspace:*",

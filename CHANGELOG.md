@@ -21,11 +21,15 @@ needs an entry here first.
 - `bun run release`, `scripts/install.sh` (idempotent, offline when the agent-tools lib is present).
 - HSW element bank (`packages/bank`, `docs/bank.md`): element schema and validator, ru/en search, ingestion pipeline
   (`bun run bank:ingest|bank:verify|bank:build-variant`), 428 elements (144 from sources, 284 generated family rungs),
-  a 103-element redistributable seed under `packages/bank/seed`, and `createBankHandler` (`/api/bank/*`, `/bank/assets/*`).
+  a 103-element redistributable seed under `packages/bank/seed`, and `createBankHandler` (`/api/bank/*`, `/bank/assets/*`),
+  mounted in the daemon by `apps/server/src/bank-routes.ts`.
 
 ### Changed
 
 - `HSW_EDITOR_DATA_DIR` is now `HSW_EDITOR_HOME`.
+- The built bank (`bank:ingest`) lives in `<data home>/bank`, the directory the daemon serves: `HSW_EDITOR_HOME`, else
+  `$XDG_DATA_HOME/hsw-editor`. `bankPaths` no longer reads `HSW_EDITOR_DATA_DIR`; move a bank built under another directory
+  or re-run `bun run bank:ingest`.
 
 ## [0.1.0] - 2026-10-22
 
