@@ -46,6 +46,9 @@ class EngineSpec:
     #: Other engines this one shares (e.g. one resident CLIP for the segmenter and the recogniser).
     requires: tuple[str, ...] = ()
     cpu_ok: bool = True
+    #: Always placed on the GPU whatever the service default is (a request that names `device="cuda"` on a service pinned
+    #: to the CPU): the budget, headroom and eviction still apply, but there is no CPU fallback; no room is an error.
+    strict_cuda: bool = False
 
 
 @dataclass
@@ -122,7 +125,7 @@ class ModelManager:
             try:
                 return fn(engine)
             except Exception as exc:
-                if not (is_oom(exc) and self._device_of(name) == "cuda"):
+                if not (is_oom(exc) and self._device_of(name) == "cuda") or self.specs[name].strict_cuda:
                     raise self._translate(exc) from exc
                 with self._lock:
                     self._log(f"{name}: OOM during inference, falling back to cpu")
@@ -209,7 +212,7 @@ class ModelManager:
             engine.load()
         except Exception as exc:
             self._safe_unload(engine)
-            if is_oom(exc) and device == "cuda" and spec.cpu_ok and self.device != "cuda":
+            if is_oom(exc) and device == "cuda" and spec.cpu_ok and self.device != "cuda" and not spec.strict_cuda:
                 self._log(f"{spec.name}: OOM while loading on cuda, falling back to cpu")
                 self._forced_cpu.add(spec.name)
                 engine = spec.factory("cpu")
@@ -240,15 +243,16 @@ class ModelManager:
         return sum(r.vram_mb for r in self._resident.values() if r.device == "cuda")
 
     def _choose_device(self, spec: EngineSpec, pinned: frozenset[str]) -> str:
-        if self.device == "cpu" or spec.name in self._forced_cpu:
+        if not spec.strict_cuda and (self.device == "cpu" or spec.name in self._forced_cpu):
             return "cpu"
+        gpu_only = spec.strict_cuda or self.device == "cuda"
         if any(self._device_of(dependency) == "cpu" for dependency in spec.requires):
             return "cpu"  # a CPU-resident CLIP/OWL must not be handed to a CUDA engine
         need = spec.vram_estimate_mb
         while True:
             free = self.free_vram_fn()
             if free is None:
-                if self.device == "cuda":
+                if gpu_only:
                     raise MissingDependency("device=cuda requested but no usable CUDA device was found")
                 return "cpu"
             within_budget = self.resident_gpu_mb() + need <= self.vram_budget_mb
@@ -256,7 +260,7 @@ class ModelManager:
                 return "cuda"
             victim = self._lru_victim(pinned)
             if victim is None:
-                if self.device == "cuda" or not spec.cpu_ok:
+                if gpu_only or not spec.cpu_ok:
                     raise InsufficientVram(
                         f"{spec.name} needs ~{need} MB VRAM; {free} MB free, budget {self.vram_budget_mb} MB, "
                         f"{self.resident_gpu_mb()} MB already held by this service",

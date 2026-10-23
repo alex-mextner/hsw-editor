@@ -11,7 +11,7 @@
  * calling the sidecar and without storing the model files twice.
  */
 import { existsSync } from 'node:fs';
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join } from 'node:path';
 import {
   type Actor,
@@ -25,6 +25,7 @@ import {
 } from '@hsw-editor/core';
 import { z } from 'zod';
 import { type JobContext, type JobRegistry, defaultJobRegistry, registerJob } from '../jobs.ts';
+import type { AssetSlot } from '../store/wall-store.ts';
 import type { VisionClient, ServiceRequest } from './client.ts';
 import {
   type CalibrateParams,
@@ -50,14 +51,15 @@ export const JOB_KINDS = {
   photoToObjects: 'vision.photo_to_objects',
 } as const;
 
+/** How many times a job asks the user for a scale (the answer of the last question is always used). */
+const MAX_SCALE_ATTEMPTS = 3;
+
 export interface VisionJobDeps {
   readonly client: VisionClient;
   /** Absolute directory of a wall (`<home>/walls/<id>`). */
   wallDir(wallId: string): string;
-  /** The bank index (`/api/bank/index`) for tool classes and holder hints; null when unavailable. */
-  bankIndex(): Promise<JsonValue | null>;
-  /** The editor's data home (`HSW_EDITOR_HOME`): the stage cache of photos that belong to no wall lives under it. */
-  homeDir(): string;
+  /** The bank index (`/api/bank/index`) of the data home, for tool classes and holder hints; null when unavailable. */
+  bankIndex(home: string): Promise<JsonValue | null>;
 }
 
 const absolutePath = z.string().refine((value) => isAbsolute(value), 'must be an absolute path');
@@ -272,12 +274,54 @@ async function writeStored(
   await writeFile(path, JSON.stringify(stored));
 }
 
+/**
+ * Best effort: deletes files this run created unless the wall (a batch that did commit) names them as a model or a photo.
+ * Failures are logged, never thrown: the caller is already handling the error that made the files useless.
+ */
+async function discardAssets(
+  ctx: JobContext,
+  wallId: string,
+  assets: readonly string[],
+): Promise<void> {
+  if (assets.length === 0) return;
+  try {
+    const { wall } = await ctx.walls.get(wallId);
+    const referenced = new Set([
+      ...wall.models.flatMap((model) => model.file ?? []),
+      ...wall.photos.map((photo) => photo.file),
+    ]);
+    await Promise.all(
+      assets
+        .filter((asset) => !referenced.has(asset))
+        .map((asset) =>
+          ctx.walls
+            .removeAsset(wallId, asset)
+            .catch(() => ctx.log(`vision: could not remove the unused file ${asset}`)),
+        ),
+    );
+  } catch {
+    ctx.log(`vision: could not clean up ${assets.length} unused file(s)`);
+  }
+}
+
 function describeError(error: unknown): Error {
   return error instanceof VisionError
     ? new Error(error.describe(), { cause: error })
     : error instanceof Error
       ? error
       : new Error(String(error));
+}
+
+/**
+ * The scale the photo already carries from the user (two-point or manual): later fits of the photo use it instead of asking
+ * again. A detected grid is not returned: the sidecar finds it again (cached) and its homography is more exact than a scale.
+ */
+function storedScale(photo: Photo): CalibrateParams | undefined {
+  const calibration = photo.calibration;
+  const userScale = calibration?.method === 'two-point' || calibration?.method === 'manual';
+  return userScale && calibration.mmPerPx !== undefined
+    ? { mmPerPx: calibration.mmPerPx }
+    : undefined;
 }
 
 function sameCalibration(a: Calibration | undefined, b: Calibration): boolean {
@@ -333,16 +377,81 @@ async function applyCalibration(
   return outcome.changed ? outcome.wall.rev : null;
 }
 
-/** Stores a model file next to the wall and returns its path relative to the wall dir. */
+const AssetLedgerSchema = z.record(z.string(), z.string());
+
+/** Jobs of different kinds run side by side: whoever stores assets for a wall holds that wall's queue (see `exclusive`). */
+const assetQueues = new Map<string, Promise<void>>();
+
+/**
+ * Runs `work` after every earlier `exclusive` call for the same wall has finished. The asset ledger is read-modify-write
+ * and a photo_to_wall run publishes the files it created only once its ops are applied (or discards them): nobody may
+ * reuse a file in between.
+ */
+async function exclusive<T>(wallId: string, work: () => Promise<T>): Promise<T> {
+  const run = (assetQueues.get(wallId) ?? Promise.resolve()).then(work);
+  const tail = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  assetQueues.set(wallId, tail);
+  try {
+    return await run;
+  } finally {
+    if (assetQueues.get(wallId) === tail) assetQueues.delete(wallId);
+  }
+}
+
+async function readLedger(path: string): Promise<z.infer<typeof AssetLedgerSchema>> {
+  try {
+    return AssetLedgerSchema.parse(JSON.parse(await readFile(path, 'utf8')));
+  } catch {
+    // missing or damaged: the worst a lost entry does is store one duplicate file
+    return {};
+  }
+}
+
+/**
+ * Stores `bytes` as a wall asset, or reuses the file an earlier run stored with identical content (the ledger maps
+ * `<dir>:<sha256>` to the wall-relative path). A re-run that fits the same object again therefore adds nothing, and a
+ * file a caller was already handed is never deleted by a later run. `created` is false for a reused file.
+ * Call it inside `exclusive(wallId, ...)`.
+ */
+async function storeAsset(
+  deps: VisionJobDeps,
+  ctx: JobContext,
+  wallId: string,
+  slot: Omit<AssetSlot, 'bytes'>,
+  bytes: Uint8Array,
+): Promise<{ file: string; created: boolean }> {
+  const ledgerPath = join(workDir(deps, wallId), 'assets.json');
+  const ledger = await readLedger(ledgerPath);
+  const key = `${slot.dir}:${new Bun.CryptoHasher('sha256').update(bytes).digest('hex')}`;
+  const known = ledger[key];
+  if (known !== undefined && existsSync(join(deps.wallDir(wallId), known)))
+    return { file: known, created: false };
+  const file = await ctx.walls.addAsset(wallId, { ...slot, bytes });
+  await mkdir(dirname(ledgerPath), { recursive: true });
+  const temporary = `${ledgerPath}.${process.pid}.tmp`;
+  try {
+    await writeFile(temporary, JSON.stringify({ ...ledger, [key]: file }));
+    await rename(temporary, ledgerPath);
+  } catch (error) {
+    await rm(temporary, { force: true });
+    throw error;
+  }
+  return { file, created: true };
+}
+
+/** Stores a model file of the sidecar's image directory next to the wall. */
 async function storeGlb(
   deps: VisionJobDeps,
   ctx: JobContext,
   wallId: string,
   imageDir: string,
   relative: string,
-): Promise<string> {
+): Promise<{ file: string; created: boolean }> {
   const bytes = new Uint8Array(await readFile(join(imageDir, relative)));
-  return ctx.walls.addAsset(wallId, { dir: 'models', ext: 'glb', bytes, prefix: 'm' });
+  return storeAsset(deps, ctx, wallId, { dir: 'models', ext: 'glb', prefix: 'm' }, bytes);
 }
 
 // ---- progress mapping -----------------------------------------------------------------------------
@@ -443,14 +552,14 @@ async function runPhotoToWall(
   const extra = await Promise.all(
     (input.extraPhotoIds ?? []).map((id) => loadPhoto(deps, ctx, input.wallId, id)),
   );
-  const bank = await deps.bankIndex();
+  const bank = await deps.bankIndex(ctx.home);
   const sha = await sha256Of(photo.path);
   const extraShas = await Promise.all(extra.map((e) => sha256Of(e.path)));
   const bankHash =
     typeof bank === 'object' && bank !== null && !Array.isArray(bank)
       ? (bank['contentHash'] ?? null)
       : null;
-  const key = `p2w-${sha.slice(0, 16)}-${hashOf({ ...input, wallId: undefined, refresh: undefined, askUser: undefined, extraShas, bankHash }).slice(0, 16)}`;
+  const key = `p2w-${sha.slice(0, 16)}-${hashOf({ ...input, wallId: undefined, refresh: undefined, askUser: undefined, extraShas, bankHash, scale: storedScale(photo.photo) }).slice(0, 16)}`;
   if (!input.refresh) {
     const stored = await readStored(deps, input.wallId, key);
     if (stored !== null) {
@@ -463,9 +572,12 @@ async function runPhotoToWall(
   }
 
   const onEvent = progressOf(ctx);
-  let calibrate: CalibrateParams | undefined = input.calibrate;
+  const stored = input.calibrate === undefined ? storedScale(photo.photo) : undefined;
+  let calibrate: CalibrateParams | undefined = input.calibrate ?? stored;
+  // the scale came from the photo itself (nobody was asked): the sidecar's `manual` echo of it is not a new calibration
+  let scaleFromPhoto = stored !== undefined;
   let result: PhotoToWallResult | undefined;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 1; attempt <= MAX_SCALE_ATTEMPTS; attempt++) {
     ctx.progress({ fraction: 0, message: 'starting the vision service…' });
     try {
       result = await deps.client.photoToWall(
@@ -483,7 +595,8 @@ async function runPhotoToWall(
     } catch (error) {
       throw describeError(error);
     }
-    if (result.status === 'ok' || !input.askUser) break;
+    // the last attempt never asks: its answer could not be used
+    if (result.status === 'ok' || !input.askUser || attempt === MAX_SCALE_ATTEMPTS) break;
     const answer = await askForScale(
       ctx,
       input.wallId,
@@ -492,6 +605,7 @@ async function runPhotoToWall(
     );
     if (answer === null) break;
     calibrate = answer;
+    scaleFromPhoto = false;
   }
   if (result === undefined) throw new Error('the vision service returned no result');
   if (result.status !== 'ok' || result.proposal === null) {
@@ -504,41 +618,57 @@ async function runPhotoToWall(
     });
   }
 
-  const calibrationRev = input.applyCalibration
-    ? await applyCalibration(ctx, input.wallId, photo.photo, result.calibration.core)
-    : null;
+  const echoesStoredScale = scaleFromPhoto && result.calibration.core?.['method'] === 'manual';
+  const calibrationRev =
+    input.applyCalibration && !echoesStoredScale
+      ? await applyCalibration(ctx, input.wallId, photo.photo, result.calibration.core)
+      : null;
 
-  // Store each fitted model as a wall asset and fill the model refs' `file`.
+  // Store each fitted model as a wall asset (identical content is stored once) and fill the model refs' `file`. A failure
+  // before the ops are applied must not leave the files this run created behind: nothing would ever reference them.
+  const { items: proposed } = result.proposal;
   const assets: string[] = [];
   const itemOps: ItemOps[] = [];
-  for (const item of result.proposal.items) {
-    const file =
-      item.glb === null
-        ? undefined
-        : await storeGlb(deps, ctx, input.wallId, result.work.imageDir, item.glb);
-    if (file !== undefined) assets.push(file);
-    itemOps.push(withModelFile(item, file));
-  }
+  const applied = await exclusive(input.wallId, async () => {
+    const created: string[] = [];
+    try {
+      for (const item of proposed) {
+        const stored =
+          item.glb === null
+            ? undefined
+            : await storeGlb(deps, ctx, input.wallId, result.work.imageDir, item.glb);
+        if (stored !== undefined) {
+          assets.push(stored.file);
+          if (stored.created) created.push(stored.file);
+        }
+        itemOps.push(withModelFile(item, stored?.file));
+      }
 
-  let applied: { rev: number; itemIds: string[] } | null = null;
-  // Item ids follow the segmentation instance, so a re-run of the same photo (other parameters, refresh) proposes the same
-  // ids: what is already on the wall is not added again (an `addItem` of an existing id would fail the whole job).
-  const current = (await ctx.walls.get(input.wallId)).wall;
-  const onWall = new Set([...current.items.map((i) => i.id), ...current.models.map((m) => m.id)]);
-  const auto = itemOps.filter(
-    ({ item, ops }) =>
-      item.autoApply &&
-      !onWall.has(item.id) &&
-      ops.every((op) => op.type !== 'addModelRef' || !onWall.has(op.model.id)),
-  );
-  if (auto.length > 0) {
-    const outcome = await ctx.walls.apply(input.wallId, {
-      ops: auto.flatMap(({ ops }) => ops),
-      actor: VISION_ACTOR,
-      label: `vision: ${auto.length} object(s) from photo (confidence >= ${String(input.autoApplyConfidence)})`,
-    });
-    applied = { rev: outcome.wall.rev, itemIds: auto.map(({ item }) => item.id) };
-  }
+      // Item ids follow the segmentation instance, so a re-run of the same photo (other parameters, refresh) proposes the same
+      // ids: what is already on the wall is not added again (an `addItem` of an existing id would fail the whole job).
+      const current = (await ctx.walls.get(input.wallId)).wall;
+      const onWall = new Set([
+        ...current.items.map((i) => i.id),
+        ...current.models.map((m) => m.id),
+      ]);
+      const auto = itemOps.filter(
+        ({ item, ops }) =>
+          item.autoApply &&
+          !onWall.has(item.id) &&
+          ops.every((op) => op.type !== 'addModelRef' || !onWall.has(op.model.id)),
+      );
+      if (auto.length === 0) return null;
+      const outcome = await ctx.walls.apply(input.wallId, {
+        ops: auto.flatMap(({ ops }) => ops),
+        actor: VISION_ACTOR,
+        label: `vision: ${auto.length} object(s) from photo (confidence >= ${String(input.autoApplyConfidence)})`,
+      });
+      return { rev: outcome.wall.rev, itemIds: auto.map(({ item }) => item.id) };
+    } catch (error) {
+      await discardAssets(ctx, input.wallId, created);
+      throw error;
+    }
+  });
 
   const items = itemOps.map(({ item, ops }) => ({
     ...item,
@@ -575,23 +705,25 @@ async function runPhotoToObjects(
 ): Promise<JsonValue> {
   let imagePath: string;
   let workDirPath: string;
+  let scale: CalibrateParams | undefined;
   if (input.imagePath !== undefined) {
     if (!existsSync(input.imagePath)) throw new Error(`photo ${input.imagePath} does not exist`);
     imagePath = input.imagePath;
-    workDirPath = join(deps.homeDir(), 'vision', 'cache');
+    workDirPath = join(ctx.home, 'vision', 'cache');
   } else {
     const wallId = input.wallId ?? '';
     const photo = await loadPhoto(deps, ctx, wallId, input.photoId ?? '');
     imagePath = photo.path;
     workDirPath = workDir(deps, wallId);
+    scale = storedScale(photo.photo);
   }
   const request: ServiceRequest = {
     image_path: imagePath,
     work_dir: workDirPath,
-    calibrate: calibrateToService(input.calibrate),
+    calibrate: calibrateToService(input.calibrate ?? scale),
     segment: segmentToService(input.segment),
   };
-  const bank = input.useBank ? await deps.bankIndex() : null;
+  const bank = input.useBank ? await deps.bankIndex(ctx.home) : null;
   if (bank !== null) request['bank_index'] = bank;
   if (input.refresh) request['refresh'] = true;
   if (input.outDir !== undefined) request['out_dir'] = input.outDir;
@@ -634,7 +766,7 @@ async function calibrateWithAsk(
   },
 ) {
   let params = input.calibrate;
-  for (let attempt = 0; attempt < 3; attempt++) {
+  for (let attempt = 1; ; attempt++) {
     const result = await deps.client
       .calibrate(
         {
@@ -647,7 +779,7 @@ async function calibrateWithAsk(
       .catch((error: unknown) => {
         throw describeError(error);
       });
-    if (result.ok || !input.askUser) return result;
+    if (result.ok || !input.askUser || attempt === MAX_SCALE_ATTEMPTS) return result;
     const answer = await askForScale(
       ctx,
       input.wallId,
@@ -657,7 +789,6 @@ async function calibrateWithAsk(
     if (answer === null) return result;
     params = answer;
   }
-  throw new Error('calibration was not established after three attempts');
 }
 
 export function registerVisionJobs(
@@ -734,12 +865,17 @@ export function registerVisionJobs(
           const bytes = new Uint8Array(
             await readFile(join(result.imageDir, result.dir, result.overlay)),
           );
-          overlay = await ctx.walls.addAsset(input.wallId, {
-            dir: 'photos/derived',
-            ext: 'jpg',
-            bytes,
-            prefix: 'seg',
-          });
+          overlay = (
+            await exclusive(input.wallId, () =>
+              storeAsset(
+                deps,
+                ctx,
+                input.wallId,
+                { dir: 'photos/derived', ext: 'jpg', prefix: 'seg' },
+                bytes,
+              ),
+            )
+          ).file;
         }
         ctx.progress({ fraction: 1, message: `${result.instances.length} segment(s)` });
         return asJson({
@@ -773,7 +909,7 @@ export function registerVisionJobs(
         ctx.progress({ fraction: 0.05, message: 'fitting…' });
         const request: ServiceRequest = {
           ...imageRef(deps, input.wallId, photo, input.refresh),
-          calibrate: calibrateToService(input.calibrate),
+          calibrate: calibrateToService(input.calibrate ?? storedScale(photo.photo)),
           segment: segmentToService(input.segment),
           instance: input.instance,
         };
@@ -804,7 +940,13 @@ export function registerVisionJobs(
         }
         const glb = result.fit.glb;
         const file =
-          glb === undefined ? null : await storeGlb(deps, ctx, input.wallId, result.imageDir, glb);
+          glb === undefined
+            ? null
+            : (
+                await exclusive(input.wallId, () =>
+                  storeGlb(deps, ctx, input.wallId, result.imageDir, glb),
+                )
+              ).file;
         ctx.progress({ fraction: 1, message: `confidence ${result.confidence.toFixed(2)}` });
         return asJson({
           instance: result.instance,

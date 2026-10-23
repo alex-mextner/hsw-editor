@@ -137,6 +137,18 @@ def test_verbs_map_to_the_sidecar_cli_and_the_torch_ones_are_wrapped(verb: Modul
     assert wrapped == [True, True, True, False, False]  # the idle daemon and the cheap doctor must not hold the heavy lock
 
 
+def test_help_of_a_heavy_verb_does_not_take_the_heavy_lock(verb: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """`vision photo-to-wall --help` hung while another heavy job held /tmp/3d-cli-heavy.lock."""
+    (tmp_path / "venv" / "bin").mkdir(parents=True)
+    (tmp_path / "venv" / "bin" / "python").write_text("")
+    seen: list[list[str]] = []
+    monkeypatch.setattr(verb.subprocess, "call", lambda command, **_: seen.append(command) or 0)
+    for args in (["photo-to-wall", "--help"], ["photo-to-objects", "-h"], ["embed", "--help"], ["fetch-models", "--help"]):
+        assert verb.run(args) == 0
+    assert all(command[0] != "flock" for command in seen)
+    assert [command[command.index("hsw_vision") + 1] for command in seen] == ["photo-to-wall", "photo-to-objects", "embed", "models"]
+
+
 def test_no_wrap_switch_and_usage(verb: ModuleType, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     (tmp_path / "venv" / "bin").mkdir(parents=True)
     (tmp_path / "venv" / "bin" / "python").write_text("")

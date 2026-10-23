@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 from helpers import Gpu, fake_calibration, make_manager
-from hsw_vision.engines import FIT, FitRunner
+from hsw_vision.engines import FIT, FIT_CUDA, FitRunner
 from hsw_vision.errors import InsufficientVram
 from hsw_vision.geometry import camera_from_calibration
 from hsw_vision.manager import EngineSpec
@@ -23,6 +23,7 @@ CAMERA = camera_from_calibration(fake_calibration(1.0))
 def fit_manager(gpu: Gpu, **kwargs: Any) -> Any:
     manager = make_manager(gpu, [], engines={"other": 2500}, **kwargs)
     manager.register(EngineSpec(FIT, FitRunner, FitRunner.vram_estimate_mb))
+    manager.register(EngineSpec(FIT_CUDA, FitRunner, FitRunner.vram_estimate_mb, cpu_ok=False, strict_cuda=True))
     return manager
 
 
@@ -85,3 +86,27 @@ def test_device_cuda_is_strict(monkeypatch: pytest.MonkeyPatch) -> None:
     manager = fit_manager(Gpu(300))
     with pytest.raises(InsufficientVram):
         stage_fit.fit_mask(MASK, CAMERA, manager=manager, device="cuda")
+
+
+def test_explicit_cuda_overrides_a_service_pinned_to_the_cpu(monkeypatch: pytest.MonkeyPatch) -> None:
+    """`device="cuda"` in the request used to reach `fit_auto` directly; the manager must not turn it into
+    an `insufficient_vram` error because the service default is `cpu`."""
+    devices = install_library(monkeypatch)
+    manager = fit_manager(Gpu(8000), device="cpu")
+    stage_fit.fit_mask(MASK, CAMERA, manager=manager, device="cuda")
+    assert devices == ["cuda"]
+    assert manager.resident_gpu_mb() == FitRunner.vram_estimate_mb  # accounted against the budget like any GPU engine
+    stage_fit.fit_mask(MASK, CAMERA, manager=manager, device="auto")
+    assert devices == ["cuda", "cpu"]  # the service default still decides when the request does not say
+
+
+def test_explicit_cuda_on_a_cpu_service_keeps_the_budget_and_never_falls_back_silently(monkeypatch: pytest.MonkeyPatch) -> None:
+    install_library(monkeypatch)
+    full = fit_manager(Gpu(300), device="cpu")  # less free than the fit needs + headroom
+    with pytest.raises(InsufficientVram):
+        stage_fit.fit_mask(MASK, CAMERA, manager=full, device="cuda")
+    devices = install_library(monkeypatch, fail_on="cuda")
+    out_of_memory = fit_manager(Gpu(8000), device="cpu")
+    with pytest.raises(RuntimeError, match="out of memory"):
+        stage_fit.fit_mask(MASK, CAMERA, manager=out_of_memory, device="cuda")
+    assert devices == ["cuda"]  # no retry on the CPU: the caller asked for the GPU

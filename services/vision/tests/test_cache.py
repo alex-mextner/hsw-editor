@@ -78,3 +78,22 @@ def test_service_stages_are_idempotent_and_results_live_under_the_work_dir(tmp_p
     # a different segmentation parameter is a different cache entry
     service.segment(img, SegmentParams(points_per_side=16))
     assert calls.segment == 2
+
+
+def test_the_key_lock_table_only_holds_keys_being_computed(tmp_path: Path) -> None:
+    """The table of the long-lived sidecar grew by one lock per distinct (photo, stage, params) forever."""
+    from hsw_vision import cache as cache_module
+
+    cache = ResultCache(tmp_path)
+    for index in range(20):
+        cache.get_or_compute("a" * 64, "stage", {"k": index}, lambda: {"value": 1})
+    assert cache_module._KEY_LOCKS == {}
+
+    def failing() -> dict[str, int]:
+        raise RuntimeError("boom")
+
+    try:
+        cache.get_or_compute("a" * 64, "stage", {"k": "fails"}, failing)
+    except RuntimeError:
+        pass
+    assert cache_module._KEY_LOCKS == {}

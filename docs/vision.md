@@ -274,15 +274,22 @@ viewFlagIou?, maxObjects?, extraPhotoIds?, anchorMm?, aiAssist?, applyCalibratio
 - No scale: the job opens a `calibration` input request (`payload {photoId, mode: "two-point"}`) with `ctx.walls.askUser`. The widget answers
   `{pointsPx: [[x,y],[x,y]], distanceMm}` or `{mmPerPx}`; the job re-runs with it. A cancelled request ends as `status: "needs_calibration"` (not a failure).
 - The photo calibration is applied (`setCalibration`) when it differs from the photo's current one (`applyCalibration: false` to skip).
+  A photo that carries a user scale (`two-point` / `manual`) hands it to its later jobs (`photo_to_wall`, `fit`, `photo_to_objects` on a wall photo) when the request has no `calibrate`, so the scale is applied to all fits without asking again.
 - Result: `{status, calibration, calibrationApplied, proposal, applied: {rev, itemIds} | null, events, diagnostics, segmentation}` with per-stage timings,
   skipped counts, cache hits and model residency in `diagnostics`.
-- `GET /api/vision/status` (never starts the sidecar) and `POST /api/vision/stop` (module `routes.ts`).
+- Stored files: the fitted `.glb`s (and the `vision.segment` overlay) are wall assets written before anything is applied, so a proposal is self-contained.
+  Content is stored once (`<wall>/vision/assets.json` maps the SHA-256 of the bytes to the stored file): a re-run that produces the same model reuses its file
+  instead of adding another. Files a caller was already told about are never deleted by a later run; a failed apply removes only the files that run created.
+- No scale after the third attempt ends as `needs_calibration` (the last attempt does not ask a question whose answer would be thrown away).
+- Recognition classes and holder hints come from the bank index the daemon serves (`GET /api/bank/index`, user elements included; read in-process from the same bank handler).
+- `GET /api/vision/status` (never starts the sidecar) and `POST /api/vision/stop` (module `routes.ts`). A stop while a job runs fails that job with `vision_stopped`
+  (re-run it: the next request starts a new sidecar); a stop that arrives while the sidecar is still starting prevents the spawn; a sidecar that no longer answers is killed before a new one is spawned.
 
 ## CLI
 
 `hsw-editor vision setup|status|fetch-models [NAME...]|doctor|photo-to-wall IMAGE --out DIR|photo-to-objects IMAGE --out DIR` wrap `python -m hsw_vision` in the vision venv
 (`setup` creates it, see Install). `photo-to-wall` runs the pipeline in-process (no daemon) and writes `proposal.json`, `result.json`, `timings.json`, `overlay.jpg` to `--out`;
-`photo-to-objects` writes the result directory above (`--out` is also its stage cache: `<out>/cache`). Exit 0 ok, 2 bad input / no scale (`--two-point X1,Y1,X2,Y2 --distance MM`
+`photo-to-objects` writes the result directory above (`--out` is also its stage cache: `<out>/cache`; without `--out` the server job writes `<image cache>/objects/<run id>`, one directory per distinct set of parameters, the newest 8 per photo kept). Exit 0 ok, 2 bad input / no scale (`--two-point X1,Y1,X2,Y2 --distance MM`
 or `--mm-per-px`), 127 missing model/dependency (names the fix). Options: `--device cpu|cuda|auto`, `--method sam2|sam2-dense|u2net`, `--max-objects`, `--refresh`, `--json`;
 `photo-to-objects` also `--categories FILE`, `--topk N`, `--no-colours`, `--extra-photo IMG` (repeatable). `python -m hsw_vision embed IMAGE... --out DIR [--object]` writes CLIP embeddings.
 

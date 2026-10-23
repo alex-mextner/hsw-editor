@@ -16,7 +16,11 @@ segmentation and recognition come from the cache) to get dimensions.
 
 from __future__ import annotations
 
+import os
+import re
+import shutil
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -32,12 +36,13 @@ from hsw_vision.analysis import (
     select_instances,
     write_crop,
 )
+from hsw_vision.cache import params_hash
 from hsw_vision.config import VisionConfig
 from hsw_vision.files import copy_file, save_npy, write_json, write_png
 from hsw_vision.geometry import camera_from_calibration
 from hsw_vision.proposal import MIN_RECOGNITION_PROB, dimensions_mm
 from hsw_vision.schemas import PhotoToObjectsRequest
-from hsw_vision.service import Emit, Image, VisionService, _noop, segmentation_digest
+from hsw_vision.service import Emit, Image, VisionService, _noop, library_version, segmentation_digest
 from hsw_vision.stages import embed as stage_embed
 from hsw_vision.stages import shape as stage_shape
 
@@ -47,6 +52,11 @@ STATUS_NEEDS_CONFIRMATION = "needs_confirmation"
 STATUS_NO_SCALE = "no_scale"
 STATUS_FIT_FAILED = "fit_failed"
 EMBEDDINGS_FILE = "embeddings.npy"
+RUN_ID = re.compile(r"[0-9a-f]{12}")
+#: Run directories (`<image cache>/objects/<run id>`) kept per photo when the caller did not choose an `out_dir`.
+DEFAULT_RUNS_KEPT = 8
+#: A run directory younger than this is never pruned: its files (masks/, crops/, ...) do not move the directory's mtime.
+DEFAULT_RUN_MIN_AGE_S = 3600.0
 
 
 def photo_to_objects(
@@ -71,6 +81,31 @@ def photo_to_objects(
     return run(service or VisionService.create(VisionConfig.from_env()), request, emit, cancel)
 
 
+def default_out_dir(img: Image, req: PhotoToObjectsRequest) -> Path:
+    """`<image cache>/objects/<run id>`: one directory per distinct request on this photo, so two runs with other
+    parameters (or at the same time) never overwrite each other's masks, crops and `objects.json`."""
+    options = req.model_dump(mode="json", exclude=req.TRANSPORT_FIELDS)
+    return img.dir / "objects" / params_hash(options, version=library_version())[:12]
+
+
+def _modified(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except FileNotFoundError:  # another run pruned it meanwhile
+        return 0.0
+
+
+def _prune_default_runs(current: Path, keep: int) -> None:
+    """Keep the `keep` newest run directories next to `current` (which always stays and counts): they hold masks, crops
+    and models. Only `<run id>` directories are touched; the run that is starting is marked as the newest first."""
+    os.utime(current)
+    runs = sorted((p for p in current.parent.iterdir() if RUN_ID.fullmatch(p.name) and p != current), key=_modified, reverse=True)
+    now = time.time()
+    for stale in runs[max(keep, 1) - 1 :]:
+        if now - _modified(stale) >= DEFAULT_RUN_MIN_AGE_S:  # a run still writing its files is not "stale"
+            shutil.rmtree(stale, ignore_errors=True)
+
+
 def run(
     service: VisionService,
     req: PhotoToObjectsRequest,
@@ -82,8 +117,10 @@ def run(
     clock = StageClock(emit, cancel)
     extras = load_extra_photos(service, req)  # cheap validation before any heavy stage
     img = img or service.open(req)
-    out_dir = (req.out_dir or img.dir / "objects").expanduser().resolve()
+    out_dir = (req.out_dir or default_out_dir(img, req)).expanduser().resolve()
     out_dir.mkdir(parents=True, exist_ok=True)
+    if req.out_dir is None:
+        _prune_default_runs(out_dir, DEFAULT_RUNS_KEPT)
     emit({"event": "stage", "stage": "open", "state": "done", "image": {"w": img.size[0], "h": img.size[1]}})
 
     clock.start("calibrate")

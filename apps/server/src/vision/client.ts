@@ -170,7 +170,11 @@ export class HttpVisionClient implements VisionClient {
   private endpoint: Endpoint | undefined;
   private child: SpawnedProcess | undefined;
   private starting: Promise<Endpoint> | undefined;
+  /** `stopEpoch` the pending start began under: after a stop() a new request must not join that doomed start. */
+  private startingEpoch = 0;
   private inFlight = 0;
+  /** Bumped by every explicit `stop()`: a request that was in flight (or still starting the sidecar) then fails with `vision_stopped` instead of respawning it. */
+  private stopEpoch = 0;
   private idleHandle: unknown;
   private readonly scheduler: IdleScheduler;
 
@@ -223,21 +227,29 @@ export class HttpVisionClient implements VisionClient {
     signal?: AbortSignal,
   ): Promise<T> {
     return this.track(async () => {
+      const stopEpoch = this.stopEpoch;
       const response = await this.send(path, { method: 'POST', body: request }, signal);
       if (response.body === null) throw new VisionError('vision_protocol', 'empty stream');
       let result: T | undefined;
-      for await (const line of readLines(response.body)) {
-        const parsed: unknown = JSON.parse(line);
-        const event = StreamEventSchema.parse(parsed);
-        if (event.event === 'result') {
-          result = schema.parse(z.looseObject({ result: z.unknown() }).parse(parsed).result);
-        } else if (event.event === 'error') {
-          throw errorFromBody(parsed, response.status);
-        } else {
-          onEvent(event);
+      try {
+        for await (const line of readLines(response.body)) {
+          const parsed: unknown = JSON.parse(line);
+          const event = StreamEventSchema.parse(parsed);
+          if (event.event === 'result') {
+            result = schema.parse(z.looseObject({ result: z.unknown() }).parse(parsed).result);
+          } else if (event.event === 'error') {
+            throw errorFromBody(parsed, response.status);
+          } else {
+            onEvent(event);
+          }
         }
+      } catch (error) {
+        // the connection broke because the sidecar was stopped on purpose: say so instead of a transport error
+        if (this.stoppedSince(stopEpoch) && !(error instanceof VisionError)) throw stoppedError();
+        throw error;
       }
       if (result === undefined) {
+        this.assertNotStopped(stopEpoch);
         throw new VisionError('vision_protocol', 'the stream ended without a result', {
           fix: 'the sidecar stopped mid-run; check `hsw-editor vision doctor` and retry',
         });
@@ -262,7 +274,21 @@ export class HttpVisionClient implements VisionClient {
     };
   }
 
+  /** Stops the sidecar this client spawned; requests in flight fail with `vision_stopped` (nothing is respawned for them). */
   async stop(): Promise<void> {
+    this.stopEpoch++;
+    await this.terminate();
+  }
+
+  private stoppedSince(epoch: number): boolean {
+    return epoch !== this.stopEpoch;
+  }
+
+  private assertNotStopped(epoch: number): void {
+    if (this.stoppedSince(epoch)) throw stoppedError();
+  }
+
+  private async terminate(): Promise<void> {
     this.clearIdle();
     const child = this.child;
     this.child = undefined;
@@ -307,11 +333,13 @@ export class HttpVisionClient implements VisionClient {
     signal?: AbortSignal,
   ): Promise<Response> {
     const endpoint = await this.ensure();
+    const stopEpoch = this.stopEpoch;
     let response: Response;
     try {
       response = await this.fetchEndpoint(endpoint, path, init, signal);
     } catch (error) {
       if (signal?.aborted) throw error;
+      this.assertNotStopped(stopEpoch);
       // The sidecar may have died (or been stopped by a previous idle timer): forget it, start once more.
       this.endpoint = undefined;
       const fresh = await this.ensure();
@@ -376,15 +404,17 @@ export class HttpVisionClient implements VisionClient {
 
   private async ensure(): Promise<Endpoint> {
     if (this.endpoint !== undefined) return this.endpoint;
-    if (this.starting !== undefined) return this.starting;
-    this.starting = this.resolveOrStart().finally(() => {
-      this.starting = undefined;
+    if (this.starting !== undefined && this.startingEpoch === this.stopEpoch) return this.starting;
+    this.startingEpoch = this.stopEpoch;
+    const starting = this.resolveOrStart(this.stopEpoch).finally(() => {
+      if (this.starting === starting) this.starting = undefined;
     });
-    this.endpoint = await this.starting;
+    this.starting = starting;
+    this.endpoint = await starting;
     return this.endpoint;
   }
 
-  private async resolveOrStart(): Promise<Endpoint> {
+  private async resolveOrStart(stopEpoch: number): Promise<Endpoint> {
     const existing = await this.lookup();
     if (existing !== undefined && (await this.tryGet(existing, '/health')) !== null)
       return existing;
@@ -397,10 +427,10 @@ export class HttpVisionClient implements VisionClient {
         },
       );
     }
-    return this.start();
+    return this.start(stopEpoch);
   }
 
-  private async start(): Promise<Endpoint> {
+  private async start(stopEpoch: number): Promise<Endpoint> {
     const project = join(this.options.repoRoot, 'services', 'vision');
     if (!existsSync(join(this.venv, 'bin', 'python'))) {
       throw new VisionError(
@@ -411,8 +441,16 @@ export class HttpVisionClient implements VisionClient {
         },
       );
     }
+    // An explicit stop() wins over a start that began before it: check before every step that touches shared state (the
+    // child, the state file) and before the spawn, because a newer start may already own them.
+    this.assertNotStopped(stopEpoch);
+    // A sidecar this client spawned earlier that no longer answers must not keep running (and holding VRAM) next to the new one.
+    await this.terminate();
+    this.assertNotStopped(stopEpoch);
     await mkdir(dirname(this.stateFile), { recursive: true });
+    this.assertNotStopped(stopEpoch);
     await rm(this.stateFile, { force: true });
+    this.assertNotStopped(stopEpoch);
     const env: Record<string, string> = {};
     for (const [key, value] of Object.entries(this.env)) if (value !== undefined) env[key] = value;
     env['UV_PROJECT_ENVIRONMENT'] = this.venv;
@@ -433,6 +471,7 @@ export class HttpVisionClient implements VisionClient {
     });
     const deadline = Date.now() + this.startTimeoutMs;
     while (Date.now() < deadline) {
+      this.assertNotStopped(stopEpoch);
       if (exitCode !== undefined) {
         throw new VisionError(
           'vision_start_failed',
@@ -453,7 +492,7 @@ export class HttpVisionClient implements VisionClient {
       }
       await Bun.sleep(150);
     }
-    await this.stop();
+    await this.terminate();
     throw new VisionError(
       'vision_start_timeout',
       `the vision sidecar did not become healthy in ${this.startTimeoutMs} ms`,
@@ -467,7 +506,7 @@ export class HttpVisionClient implements VisionClient {
     this.clearIdle();
     if (this.child === undefined || this.inFlight > 0) return;
     this.idleHandle = this.scheduler.start(() => {
-      void this.stop();
+      void this.terminate();
     }, this.idleStopMs);
   }
 
@@ -476,6 +515,16 @@ export class HttpVisionClient implements VisionClient {
     this.scheduler.cancel(this.idleHandle);
     this.idleHandle = undefined;
   }
+}
+
+function stoppedError(): VisionError {
+  return new VisionError(
+    'vision_stopped',
+    'the vision sidecar was stopped while this request ran',
+    {
+      fix: 'run the job again (the next request starts a new sidecar)',
+    },
+  );
 }
 
 function errorFromBody(body: unknown, status: number): VisionError {

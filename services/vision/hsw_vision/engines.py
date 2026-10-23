@@ -14,6 +14,8 @@ RECOGNISER = "recogniser"
 SEGMENTER_SAM2 = "sam2"
 SEGMENTER_U2NET = "u2net"
 FIT = "fit"
+#: The fit engine for a request that says `device="cuda"` on a service pinned to the CPU (`EngineSpec.strict_cuda`).
+FIT_CUDA = "fit-cuda"
 # Estimates (MB). The library's `Segmenter.vram_estimate_mb` (2000) already includes the CLIP/OWLv2 it shares, which are
 # separate resident engines here, so the SAM2 entry is its OWN share (measured spike peak for AMG + OWLv2 + CLIP: ~1.9 GB).
 #: FIT: the soft-silhouette optimiser peaks at ~40 MB of tensors, the CUDA context it opens adds a few hundred MB.
@@ -66,6 +68,7 @@ def default_specs(manager: ModelManager) -> dict[str, EngineSpec]:
         OWL: EngineSpec(OWL, owl, VRAM_ESTIMATES[OWL]),
         RECOGNISER: EngineSpec(RECOGNISER, recogniser, VRAM_ESTIMATES[RECOGNISER], requires=(CLIP,)),
         FIT: EngineSpec(FIT, FitRunner, VRAM_ESTIMATES[FIT]),
+        FIT_CUDA: EngineSpec(FIT_CUDA, FitRunner, VRAM_ESTIMATES[FIT], cpu_ok=False, strict_cuda=True),
     }
 
 

@@ -59,6 +59,20 @@ def test_every_segmentation_run_writes_a_new_mask_directory_and_old_ones_stay_re
     assert dirs == sorted([second["dir"], third["dir"]])  # the oldest run was pruned, the newest two kept
 
 
+def test_a_mask_directory_an_in_flight_request_holds_is_not_pruned(tmp_path: Path, photo: Path) -> None:
+    """A request two refreshes behind lost the masks it was still reading."""
+    service, _ = make_service(tmp_path)
+    ref = ImageRef(image_path=photo, work_dir=tmp_path / "w", refresh=True)
+    slow = service.open(ref)
+    held = service.segment(slow, SegmentParams())  # `slow` is still in flight: it pins this directory
+    for _ in range(3):
+        service.segment(service.open(ref), SegmentParams())
+    assert 1 in service.masks(slow, held, only=[1])
+    del slow  # the request is done: the next run may prune its directory
+    service.segment(service.open(ref), SegmentParams())
+    assert not (service.open(ref).dir / held["dir"]).exists()
+
+
 def test_a_refresh_recomputes_each_stage_once_even_when_two_stages_need_it(tmp_path: Path, photo: Path) -> None:
     """Review finding: refresh + reference calibration ran SAM2 twice (once for the reference, once for the pipeline)."""
     service, calls = make_service(tmp_path)

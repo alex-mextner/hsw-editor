@@ -119,7 +119,36 @@ def test_the_library_entry_point_takes_plain_options(tmp_path: Path, photo: Path
 def test_default_out_dir_lives_in_the_image_cache(tmp_path: Path, photo: Path) -> None:
     service, _ = make_service(tmp_path)
     result = objects.run(service, PhotoToObjectsRequest(image_path=photo, work_dir=tmp_path / "w"))
-    assert Path(result["outDir"]).parent.parent == (tmp_path / "w").resolve() and Path(result["outDir"]).name == "objects"
+    out = Path(result["outDir"])
+    assert out.parent.parent.parent == (tmp_path / "w").resolve() and out.parent.name == "objects"
+
+
+def test_default_out_dir_is_one_directory_per_distinct_request(tmp_path: Path, photo: Path) -> None:
+    """Every run on a photo shared `<image cache>/objects`, so a run with other parameters (or two at once)
+    overwrote the first one's masks, crops and `objects.json`."""
+    service, _ = make_service(tmp_path)
+    base = {"image_path": photo, "work_dir": tmp_path / "w", "calibrate": SCALE}
+    first = objects.run(service, PhotoToObjectsRequest(**base))
+    other = objects.run(service, PhotoToObjectsRequest(**base, topk=3))
+    again = objects.run(service, PhotoToObjectsRequest(**base, refresh=True))
+    assert first["outDir"] != other["outDir"]
+    assert again["outDir"] == first["outDir"]  # the same request is the same directory (a refresh is not a parameter)
+    assert (Path(first["outDir"]) / "objects.json").is_file() and (Path(other["outDir"]) / "objects.json").is_file()
+
+
+def test_default_run_directories_are_bounded(tmp_path: Path, photo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Every distinct parameter set left a result directory (masks, crops, models) behind forever."""
+    monkeypatch.setattr(objects, "DEFAULT_RUNS_KEPT", 3)
+    monkeypatch.setattr(objects, "DEFAULT_RUN_MIN_AGE_S", 0.0)
+    service, _ = make_service(tmp_path)
+    base = {"image_path": photo, "work_dir": tmp_path / "w", "calibrate": SCALE}
+    first = Path(objects.run(service, PhotoToObjectsRequest(**base, topk=1))["outDir"])
+    stray = first.parent / "masks"  # not a run directory (older versions wrote their result straight into `objects/`)
+    stray.mkdir()
+    outs = [first, *(Path(objects.run(service, PhotoToObjectsRequest(**base, topk=k))["outDir"]) for k in range(2, 7))]
+    left = sorted(p.name for p in first.parent.iterdir())
+    runs = [name for name in left if name != "masks"]
+    assert len(runs) == 3 and outs[-1].name in runs and "masks" in left  # the run that just finished always survives
 
 
 def test_a_missing_extra_photo_fails_before_any_stage(tmp_path: Path, photo: Path) -> None:

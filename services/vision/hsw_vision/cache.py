@@ -13,15 +13,25 @@ import json
 import os
 import tempfile
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 SCHEMA_VERSION = 1
 
+
+@dataclass
+class _KeyLock:
+    lock: threading.Lock = field(default_factory=threading.Lock)
+    users: int = 0
+
+
 #: One lock per result file for the whole process: the service creates a `ResultCache` per request, so a per-instance
-#: table would never see two requests for the same key.
-_KEY_LOCKS: dict[Path, threading.Lock] = {}
+#: table would never see two requests for the same key. An entry is dropped with its last user,
+#: so the table of a long-lived sidecar holds only the keys being computed right now.
+_KEY_LOCKS: dict[Path, _KeyLock] = {}
 _KEY_LOCKS_GUARD = threading.Lock()
 
 
@@ -49,9 +59,20 @@ class ResultCache:
         self.misses = 0
 
     @staticmethod
-    def _key_lock(path: Path) -> threading.Lock:
+    @contextmanager
+    def _key_lock(path: Path) -> Iterator[None]:
+        key = path.resolve()
         with _KEY_LOCKS_GUARD:
-            return _KEY_LOCKS.setdefault(path.resolve(), threading.Lock())
+            entry = _KEY_LOCKS.setdefault(key, _KeyLock())
+            entry.users += 1
+        try:
+            with entry.lock:
+                yield
+        finally:
+            with _KEY_LOCKS_GUARD:
+                entry.users -= 1
+                if entry.users == 0:
+                    del _KEY_LOCKS[key]
 
     def image_dir(self, image_sha: str) -> Path:
         return self.root / image_sha[:16]

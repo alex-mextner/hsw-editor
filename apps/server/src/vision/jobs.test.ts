@@ -2,7 +2,8 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
+import { z } from 'zod';
 import {
   type Actor,
   type InputRequest,
@@ -196,6 +197,10 @@ class FakeWalls implements JobWalls {
   asked: NewInputRequest[] = [];
   answers: Partial<InputRequest>[] = [];
   private nextAsset = 1;
+  /** Assets the job deleted again. */
+  removed: string[] = [];
+  /** Makes every apply that is not the calibration fail (a rejected batch of proposal ops). */
+  failBatchesWith: Error | undefined;
 
   constructor(private readonly dir: string) {
     this.wall = {
@@ -221,6 +226,8 @@ class FakeWalls implements JobWalls {
     _wallId: string,
     request: { ops: Op[]; actor: Actor; label?: string | undefined },
   ): Promise<Outcome> {
+    if (this.failBatchesWith !== undefined && request.ops[0]?.type !== 'setCalibration')
+      throw this.failBatchesWith;
     this.applied.push(request);
     this.wall = { ...this.wall, rev: this.wall.rev + 1 };
     const op = request.ops[0] as Op;
@@ -234,6 +241,11 @@ class FakeWalls implements JobWalls {
       canRedo: false,
       entry: undefined,
     };
+  }
+
+  async removeAsset(_wallId: string, relative: string): Promise<void> {
+    this.removed.push(relative);
+    rmSync(join(this.dir, relative), { force: true });
   }
 
   async addAsset(_wallId: string, slot: AssetSlot): Promise<string> {
@@ -276,7 +288,6 @@ function harness(): Harness {
       client,
       wallDir: () => wallDir,
       bankIndex: async () => ({ contentHash: 'h1', toolClasses: [], elements: [] }),
-      homeDir: () => home,
     },
     registry,
   );
@@ -300,6 +311,7 @@ function harness(): Harness {
         signal: new AbortController().signal,
         progress: (update) => progress.push(update),
         log: () => {},
+        home,
         walls,
       };
       return parsed.run(ctx);
@@ -504,6 +516,108 @@ describe('vision.photo_to_wall', () => {
     expect(readdirSync(join(h.wallDir, 'models'))).toHaveLength(1);
   });
 
+  test('a failed apply removes the model files it created (not the ones an earlier run handed out) and reports the original error', async () => {
+    const h = harness();
+    h.client.results.push(okResult(h.imageDir, [proposalItem(1, 0.9, false)]));
+    await h.run('vision.photo_to_wall', { wallId: WALL_ID, photoId: PHOTO_ID }); // m-1.glb is out there now
+    writeFileSync(join(h.imageDir, 'models', 'fit-002.glb'), 'glb-2-new');
+    h.client.results.push(
+      okResult(h.imageDir, [proposalItem(1, 0.95, true), proposalItem(2, 0.96, true)]),
+    );
+    h.walls.failBatchesWith = new Error('item_exists');
+    await expect(
+      h.run('vision.photo_to_wall', {
+        wallId: WALL_ID,
+        photoId: PHOTO_ID,
+        autoApplyConfidence: 0.9,
+      }),
+    ).rejects.toThrow('item_exists');
+    expect(h.walls.assets).toHaveLength(2); // m-1 (first run) and m-2 (created by the failed run)
+    expect(h.walls.removed).toEqual(['models/m-2.glb']);
+    expect(readdirSync(join(h.wallDir, 'models'))).toEqual(['m-1.glb']);
+  });
+
+  test('a damaged asset ledger is treated as empty instead of failing the job', async () => {
+    const h = harness();
+    mkdirSync(join(h.wallDir, 'vision'), { recursive: true });
+    writeFileSync(join(h.wallDir, 'vision', 'assets.json'), '{"models:abc": ');
+    h.client.results.push(okResult(h.imageDir, [proposalItem(1, 0.9, false)]));
+    const out = objectOf(
+      await h.run('vision.photo_to_wall', { wallId: WALL_ID, photoId: PHOTO_ID }),
+    );
+    expect(out['status']).toBe('ok');
+    expect(h.walls.assets).toHaveLength(1);
+  });
+
+  test('a failing photo_to_wall never deletes a model file a concurrent vision.fit was just handed', async () => {
+    const h = harness();
+    h.client.fitResult = {
+      instance: 1,
+      fit: { glb: 'models/fit-001.glb' }, // the same bytes photo_to_wall stores for item 1
+      dimensionsMm: { length_mm: 160 },
+      confidence: 0.82,
+      residual: 0.07,
+      imageDir: h.imageDir,
+    };
+    h.client.results.push(okResult(h.imageDir, [proposalItem(1, 0.95, true)]));
+    h.walls.failBatchesWith = new Error('item_exists');
+    const [wall, fit] = await Promise.allSettled([
+      h.run('vision.photo_to_wall', {
+        wallId: WALL_ID,
+        photoId: PHOTO_ID,
+        autoApplyConfidence: 0.9,
+      }),
+      h.run('vision.fit', {
+        wallId: WALL_ID,
+        photoId: PHOTO_ID,
+        instance: 1,
+        calibrate: { mmPerPx: 1.5 },
+      }),
+    ]);
+    expect(wall.status).toBe('rejected');
+    if (fit.status !== 'fulfilled') throw new Error('the fit job failed');
+    const modelFile = objectOf(fit.value)['modelFile'];
+    expect(typeof modelFile).toBe('string');
+    expect(readdirSync(join(h.wallDir, 'models'))).toContain(basename(String(modelFile)));
+  });
+
+  test('a re-run that fits the same objects reuses the stored model files; changed content gets a new file and nothing is deleted', async () => {
+    const h = harness();
+    const items = () => [proposalItem(1, 0.9, false), proposalItem(2, 0.9, false)];
+    h.client.results.push(okResult(h.imageDir, items()));
+    const first = objectOf(
+      await h.run('vision.photo_to_wall', { wallId: WALL_ID, photoId: PHOTO_ID }),
+    );
+    h.client.results.push(okResult(h.imageDir, items()));
+    const again = objectOf(
+      await h.run('vision.photo_to_wall', { wallId: WALL_ID, photoId: PHOTO_ID, refresh: true }),
+    );
+    const files = (out: Record<string, JsonValue>): JsonValue[] =>
+      z
+        .array(z.json())
+        .parse(objectOf(out['proposal'] ?? null)['ops'])
+        .map((op) => objectOf(op))
+        .filter((op) => op['type'] === 'addModelRef')
+        .map((op) => objectOf(op['model'] ?? null)['file'] ?? null);
+    expect(files(first)).toEqual(['models/m-1.glb', 'models/m-2.glb']);
+    expect(files(again)).toEqual(files(first)); // same bytes: the same files
+    expect(h.walls.assets).toHaveLength(2);
+
+    // the fit of object 2 changed: it gets its own file, the earlier one stays where the caller was told it is
+    writeFileSync(join(h.imageDir, 'models', 'fit-002.glb'), 'glb-2-better');
+    h.client.results.push(okResult(h.imageDir, items()));
+    const changed = objectOf(
+      await h.run('vision.photo_to_wall', { wallId: WALL_ID, photoId: PHOTO_ID, refresh: true }),
+    );
+    expect(files(changed)).toEqual(['models/m-1.glb', 'models/m-3.glb']);
+    expect(h.walls.removed).toEqual([]);
+    expect(readdirSync(join(h.wallDir, 'models')).sort()).toEqual([
+      'm-1.glb',
+      'm-2.glb',
+      'm-3.glb',
+    ]);
+  });
+
   test('maps service events onto job progress, request_view travels as a data payload', async () => {
     const h = harness();
     h.client.events = [
@@ -570,6 +684,26 @@ describe('vision.photo_to_wall', () => {
     expect(out['status']).toBe('ok');
   });
 
+  test('the last scale attempt does not open a question whose answer would be thrown away', async () => {
+    const h = harness();
+    const needs = (): PhotoToWallResult => ({
+      ...okResult(h.imageDir, []),
+      status: 'needs_calibration',
+      proposal: null,
+      calibration: { ok: false, needs: 'scale', message: 'still no scale' },
+    });
+    h.client.results.push(needs(), needs(), needs());
+    for (let i = 0; i < 3; i++)
+      h.walls.answers.push({ status: 'answered', answer: { mmPerPx: 1 + i } });
+    const out = objectOf(
+      await h.run('vision.photo_to_wall', { wallId: WALL_ID, photoId: PHOTO_ID }),
+    );
+    expect(out['status']).toBe('needs_calibration');
+    expect(h.client.photoToWallCalls).toHaveLength(3);
+    expect(h.walls.asked).toHaveLength(2);
+    expect(h.walls.answers).toHaveLength(1); // the third answer was never requested
+  });
+
   test('a cancelled calibration request ends as needs_calibration, not as a failure', async () => {
     const h = harness();
     const needs = okResult(h.imageDir, []);
@@ -627,6 +761,32 @@ describe('vision.photo_to_wall', () => {
     ).rejects.toThrow('missing on disk');
   });
 
+  test('a scale the photo already carries from the user is handed to the service and not re-applied as a `manual` calibration', async () => {
+    const h = harness();
+    h.walls.wall = {
+      ...h.walls.wall,
+      photos: h.walls.wall.photos.map((p) => ({
+        ...p,
+        calibration: { method: 'two-point' as const, mmPerPx: 1.5, focalPx: 400 },
+      })),
+    };
+    const result = okResult(h.imageDir, []);
+    // the service echoes a scale given as `mm_per_px` as a `manual` calibration
+    h.client.results.push({
+      ...result,
+      calibration: {
+        ...result.calibration,
+        core: { method: 'manual', mmPerPx: 1.5, focalPx: 400 },
+      },
+    });
+    const out = objectOf(
+      await h.run('vision.photo_to_wall', { wallId: WALL_ID, photoId: PHOTO_ID }),
+    );
+    expect(h.client.photoToWallCalls[0]?.['calibrate']).toEqual({ mm_per_px: 1.5 });
+    expect(out['calibrationApplied']).toBe(false);
+    expect(h.walls.applied).toHaveLength(0);
+  });
+
   test('an already identical calibration is not applied again', async () => {
     const h = harness();
     h.walls.wall = {
@@ -668,6 +828,21 @@ describe('stage jobs', () => {
       type: 'setCalibration',
       calibration: { method: 'manual', mmPerPx: 1.25 },
     });
+  });
+
+  test('vision.calibrate that still has no scale after the third attempt returns needs_calibration instead of throwing', async () => {
+    const h = harness();
+    h.client.calibrateResults.push(
+      { ok: false, needs: 'scale', message: 'no scale' },
+      { ok: false, needs: 'scale', message: 'no scale' },
+      { ok: false, needs: 'scale', message: 'no scale' },
+    );
+    for (let i = 0; i < 3; i++)
+      h.walls.answers.push({ status: 'answered', answer: { mmPerPx: 1 + i } });
+    const out = objectOf(await h.run('vision.calibrate', { wallId: WALL_ID, photoId: PHOTO_ID }));
+    expect(out['status']).toBe('needs_calibration');
+    expect(h.client.calibrateCalls).toHaveLength(3);
+    expect(h.walls.asked).toHaveLength(2);
   });
 
   test('vision.segment stores the overlay as a derived asset and returns plain instances', async () => {
@@ -736,6 +911,26 @@ describe('stage jobs', () => {
     });
     expect(out['modelFile']).toBe('models/m-1.glb');
     expect(out['confidence']).toBe(0.82);
+  });
+
+  test('repeated identical vision.fit runs reuse one stored model file', async () => {
+    const h = harness();
+    h.client.fitResult = {
+      instance: 1,
+      fit: { glb: 'models/fit-001.glb' },
+      dimensionsMm: { length_mm: 160 },
+      confidence: 0.82,
+      residual: 0.07,
+      imageDir: h.imageDir,
+    };
+    const input = { wallId: WALL_ID, photoId: PHOTO_ID, instance: 1, calibrate: { mmPerPx: 1.5 } };
+    for (let run = 0; run < 3; run++)
+      expect(objectOf(await h.run('vision.fit', input))['modelFile']).toBe('models/m-1.glb');
+    expect(h.walls.assets).toHaveLength(1);
+    // another fit of the same instance (other template) is another file; the first stays
+    writeFileSync(join(h.imageDir, 'models', 'fit-001.glb'), 'glb-box');
+    expect(objectOf(await h.run('vision.fit', input))['modelFile']).toBe('models/m-2.glb');
+    expect(h.walls.removed).toEqual([]);
   });
 
   test('vision.fit asks for a scale when the sidecar reports calibration_needed, then retries', async () => {

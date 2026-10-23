@@ -95,7 +95,9 @@ def run(args: list[str]) -> int:
     if verb == "setup":
         return setup(rest)
     argv = ["models", "fetch", *rest] if verb == "fetch-models" else [verb, *rest]
-    return run_in_venv(argv, heavy=verb in HEAVY_VERBS)
+    # `VERB --help` only prints the options: it must not queue behind another heavy job on the workstation-wide lock.
+    asks_for_help = any(token in ("-h", "--help") for token in rest)
+    return run_in_venv(argv, heavy=verb in HEAVY_VERBS and not asks_for_help)
 
 
 # ---- setup: the only command that installs packages ------------------------------------------------------

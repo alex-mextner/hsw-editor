@@ -491,6 +491,170 @@ describe('endpoint resolution and lifecycle', () => {
     await client.stop();
   });
 
+  /** `fakeSpawn` that also hands out the processes it started, so a test can kill one the way the OS would. */
+  function trackedSpawn(log: {
+    argv: string[][];
+    kills: string[];
+    env: Record<string, string>[];
+  }): {
+    spawn: SpawnFn;
+    processes: SpawnedProcess[];
+  } {
+    const base = fakeSpawn(log);
+    const processes: SpawnedProcess[] = [];
+    return {
+      processes,
+      spawn: (request) => {
+        const started = base(request);
+        processes.push(started);
+        return started;
+      },
+    };
+  }
+
+  test('respawns on the next request after the sidecar it started has died', async () => {
+    const log = {
+      argv: [] as string[][],
+      kills: [] as string[],
+      env: [] as Record<string, string>[],
+    };
+    const { spawn, processes } = trackedSpawn(log);
+    const client = new HttpVisionClient({
+      repoRoot: '/repo',
+      env: {},
+      venv: venv(),
+      stateFile: join(root, 'state.json'),
+      spawn,
+      scheduler: new ManualScheduler(),
+    });
+    expect((await client.calibrate({})).method).toBe('grid');
+    processes[0]?.kill('SIGKILL'); // killed from outside: the server is gone and `exited` resolves
+    await processes[0]?.exited;
+    expect((await client.status()).running).toBe(false);
+    expect((await client.calibrate({})).method).toBe('grid');
+    expect(log.argv).toHaveLength(2);
+    expect((await client.status()).managed).toBe(true);
+    await client.stop();
+  });
+
+  test('a request that finds the connection dead before `exited` fired starts a new sidecar, kills the old one and retries once', async () => {
+    const log = {
+      argv: [] as string[][],
+      kills: [] as string[],
+      env: [] as Record<string, string>[],
+    };
+    const { spawn } = trackedSpawn(log);
+    const client = new HttpVisionClient({
+      repoRoot: '/repo',
+      env: {},
+      venv: venv(),
+      stateFile: join(root, 'state.json'),
+      spawn,
+      scheduler: new ManualScheduler(),
+    });
+    await client.calibrate({});
+    // the HTTP server dies but the process has not been reaped yet (no `exited`): the cached endpoint is stale
+    await servers[0]?.stop(true);
+    expect((await client.calibrate({})).method).toBe('grid');
+    expect(log.argv).toHaveLength(2);
+    expect(log.kills).toEqual(['SIGTERM']); // the unresponsive first sidecar does not keep running next to the new one
+    await client.stop();
+    expect(log.kills).toEqual(['SIGTERM', 'SIGTERM']);
+  });
+
+  test('an explicit stop() fails the request in flight with vision_stopped and does not respawn for it', async () => {
+    const log = {
+      argv: [] as string[][],
+      kills: [] as string[],
+      env: [] as Record<string, string>[],
+    };
+    const started = Promise.withResolvers<void>();
+    const never = Promise.withResolvers<Response>();
+    const client = new HttpVisionClient({
+      repoRoot: '/repo',
+      env: {},
+      venv: venv(),
+      stateFile: join(root, 'state.json'),
+      spawn: fakeSpawn(log, () => {
+        started.resolve();
+        return never.promise;
+      }),
+      scheduler: new ManualScheduler(),
+    });
+    const pending = client.photoToWall({}, () => {}).catch((caught: unknown) => caught);
+    await started.promise;
+    await client.stop();
+    expect(await pending).toMatchObject({ code: 'vision_stopped' });
+    expect(log.argv).toHaveLength(1);
+  });
+
+  test('an explicit stop() while the sidecar is still starting is vision_stopped, not a start failure', async () => {
+    const spawned = Promise.withResolvers<void>();
+    const exited = Promise.withResolvers<number>();
+    const spawn: SpawnFn = () => {
+      spawned.resolve();
+      return {
+        pid: 1,
+        exited: exited.promise,
+        kill: () => exited.resolve(0),
+        stderrTail: () => '',
+      }; // never writes the state file: still "starting"
+    };
+    const client = new HttpVisionClient({
+      repoRoot: '/repo',
+      env: {},
+      venv: venv(),
+      stateFile: join(root, 'state.json'),
+      spawn,
+      scheduler: new ManualScheduler(),
+      startTimeoutMs: 10_000,
+    });
+    const pending = client.calibrate({}).catch((caught: unknown) => caught);
+    await spawned.promise;
+    await client.stop();
+    expect(await pending).toMatchObject({ code: 'vision_stopped' });
+  });
+
+  test('a request made right after stop() does not join the start that stop() doomed', async () => {
+    const log = {
+      argv: [] as string[][],
+      kills: [] as string[],
+      env: [] as Record<string, string>[],
+    };
+    const working = fakeSpawn(log);
+    const firstSpawned = Promise.withResolvers<void>();
+    const exited = Promise.withResolvers<number>();
+    let spawns = 0;
+    const spawn: SpawnFn = (request) => {
+      spawns++;
+      if (spawns > 1) return working(request);
+      firstSpawned.resolve();
+      return {
+        pid: 1,
+        exited: exited.promise,
+        kill: () => exited.resolve(0),
+        stderrTail: () => '',
+      };
+    };
+    const client = new HttpVisionClient({
+      repoRoot: '/repo',
+      env: {},
+      venv: venv(),
+      stateFile: join(root, 'state.json'),
+      spawn,
+      scheduler: new ManualScheduler(),
+      startTimeoutMs: 10_000,
+    });
+    const first = client.calibrate({}).catch((caught: unknown) => caught);
+    await firstSpawned.promise;
+    const stopping = client.stop();
+    const second = client.calibrate({});
+    await stopping;
+    expect(await first).toMatchObject({ code: 'vision_stopped' });
+    expect((await second).method).toBe('grid');
+    await client.stop();
+  });
+
   test('a sidecar that dies while starting is reported with its stderr tail', async () => {
     const spawn: SpawnFn = () => ({
       pid: 1,

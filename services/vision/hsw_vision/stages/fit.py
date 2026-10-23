@@ -10,7 +10,7 @@ from typing import Any
 
 import numpy as np
 
-from hsw_vision.engines import FIT, FitRunner
+from hsw_vision.engines import FIT, FIT_CUDA, FitRunner
 from hsw_vision.errors import BadRequest, InsufficientVram
 from hsw_vision.geometry import Camera, rotation_z_deg, rz
 from hsw_vision.manager import ModelManager
@@ -57,7 +57,8 @@ def fit_mask(
 ) -> dict[str, Any]:
     """Fit one object. `extra_views` are more `{mask, K, R, t}` of the SAME object (joint multi-view fit).
 
-    `device="cpu"` bypasses the GPU entirely. Otherwise the optimiser runs as the manager's `fit` engine, so its CUDA
+    `device="cpu"` bypasses the GPU entirely; `device="cuda"` on a service pinned to the CPU runs as the `fit-cuda` engine
+    (the request overrides the service default, the VRAM accounting stays). Otherwise the optimiser runs as the manager's `fit` engine, so its CUDA
     context is accounted against the VRAM budget (LRU eviction, CPU when the card is full) and an out-of-memory error
     reloads it on the CPU; `device="cuda"` is strict (`insufficient_vram` when the manager could not place it there)."""
     from threed_vision import io as tv_io
@@ -86,7 +87,12 @@ def fit_mask(
             raise InsufficientVram("device=cuda requested for the fit but the GPU budget has no room", fix="free GPU memory or use device=auto")
         return lib.fit_auto(views, device=runner.device, **kwargs)
 
-    result = lib.fit_auto(views, device="cpu", **kwargs) if device == "cpu" else manager.call(FIT, run)
+    if device == "cpu":
+        result = lib.fit_auto(views, device="cpu", **kwargs)
+    else:
+        # An explicit `cuda` wins over a service pinned to the CPU (HSW_VISION_DEVICE=cpu), through the same accounting:
+        # the budget and headroom apply and there is no silent CPU fallback.
+        result = manager.call(FIT_CUDA if device == "cuda" and manager.device == "cpu" else FIT, run)
     out = tv_io.to_jsonable(result)
     out["centre_px"] = centre_px
     return out

@@ -9,6 +9,7 @@ from __future__ import annotations
 import shutil
 import threading
 import uuid
+import weakref
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from importlib import metadata
@@ -78,11 +79,27 @@ def segmentation_identity(segmentation: dict[str, Any]) -> list[str]:
     return [segmentation["dir"], segmentation_digest(segmentation)]
 
 
+#: Every `Image` that is alive, i.e. every request in flight (the handler drops its `Image` when the response is done).
+_LIVE_IMAGES: weakref.WeakSet[Image] = weakref.WeakSet()
+#: Requests run on a thread pool: registering an `Image` and walking the set must not interleave.
+_LIVE_IMAGES_GUARD = threading.Lock()
+
+
+def _pinned_segmentations(image_dir: Path) -> set[Path]:
+    """Mask directories of `image_dir` that an in-flight request still reads (it obtained the segmentation from
+    `VisionService.segment`, which pins the directory on its `Image`)."""
+    with _LIVE_IMAGES_GUARD:
+        return {image_dir / name for live in _LIVE_IMAGES if live.dir == image_dir for name in tuple(live.pinned)}
+
+
 def _prune_segmentations(image_dir: Path, prefix: str, keep: int) -> None:
-    """Delete all but the `keep` newest `<prefix>*` mask directories (an interrupted run's leftovers age out too)."""
+    """Delete all but the `keep` newest `<prefix>*` mask directories (an interrupted run's leftovers age out too).
+    A directory an in-flight request holds is never deleted, however many refreshes happened meanwhile."""
     runs = sorted((p for p in image_dir.glob(f"{prefix}*") if p.is_dir()), key=lambda p: p.stat().st_mtime, reverse=True)
+    pinned = _pinned_segmentations(image_dir)
     for stale in runs[keep:]:
-        shutil.rmtree(stale, ignore_errors=True)
+        if stale not in pinned:
+            shutil.rmtree(stale, ignore_errors=True)
 
 
 def library_version() -> str:
@@ -92,7 +109,7 @@ def library_version() -> str:
         return "unknown"
 
 
-@dataclass
+@dataclass(eq=False)
 class Image:
     """A photo opened for processing: pixels are decoded once, results cached next to the wall."""
 
@@ -104,6 +121,13 @@ class Image:
     #: Stage results already recomputed for this `refresh` run: a refresh recomputes each stage ONCE, however many
     #: later stages ask for it again (calibrate-by-reference and the pipeline both need the segmentation).
     refreshed: set[str] = field(default_factory=set)
+    #: Mask directories (names under `dir`) of the segmentations this request obtained: pruning leaves them alone while
+    #: the request (this object) is alive.
+    pinned: set[str] = field(default_factory=set)
+
+    def __post_init__(self) -> None:
+        with _LIVE_IMAGES_GUARD:
+            _LIVE_IMAGES.add(self)
 
     @property
     def size(self) -> tuple[int, int]:
@@ -195,6 +219,7 @@ class VisionService:
             return result
 
         result, cached = self._cached(img, "segment", key, compute)
+        img.pinned.add(result["dir"])
         return {**result, "cached": cached}
 
     def masks(self, img: Image, segmentation: dict[str, Any], only: Iterable[int] | None = None) -> dict[int, np.ndarray]:

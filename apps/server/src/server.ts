@@ -61,6 +61,7 @@ export async function startServer(
       get: (id) => store.get(id),
       apply: (id, request) => store.apply(id, request),
       addAsset: (id, slot) => store.addAsset(id, slot),
+      removeAsset: (id, relative) => store.removeAsset(id, relative),
       askUser: async (id, request, actor, signal) => {
         const created = await store.createRequest(id, request, actor);
         return store.awaitRequest(id, created.id, signal);

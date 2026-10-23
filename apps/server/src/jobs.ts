@@ -47,6 +47,8 @@ export interface JobWalls {
   get(wallId: string): Promise<WallState>;
   apply(wallId: string, request: ApplyRequest): Promise<Outcome>;
   addAsset(wallId: string, slot: AssetSlot): Promise<string>;
+  /** Deletes an asset the job stored and nothing references (a failed run cleans up after itself). */
+  removeAsset(wallId: string, relative: string): Promise<void>;
   /**
    * Opens an input request (the UI renders a widget) and resolves with it once answered or cancelled.
    * Aborting `signal` cancels the question.

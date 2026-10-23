@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -38,6 +38,9 @@ class SegmentParams(Strict):
 
 
 class ImageRef(Strict):
+    #: Fields that say where/how a request is served, not what it computes: they never enter a result's identity.
+    TRANSPORT_FIELDS: ClassVar[frozenset[str]] = frozenset({"image_path", "work_dir", "refresh"})
+
     image_path: Path
     #: Result cache root (the wall's `vision/` directory); defaults to the service cache dir.
     work_dir: Path | None = None
@@ -120,7 +123,9 @@ class PhotoToObjectsRequest(PhotoRequest):
     """Photo -> per-object results (mask, crop, class top-k, fitted model, colours) with no wall involved.
 
     `out_dir`: where masks, crops, cut-outs, models, overlays and `objects.json` are written (paths in the result are
-    relative to it); default `<work_dir>/<image sha16>/objects`."""
+    relative to it); default `<work_dir>/<image sha16>/objects/<run id>` (the run id hashes the request parameters)."""
+
+    TRANSPORT_FIELDS: ClassVar[frozenset[str]] = ImageRef.TRANSPORT_FIELDS | {"out_dir"}
 
     out_dir: Path | None = None
     topk: int = Field(default=5, ge=1, le=20)
