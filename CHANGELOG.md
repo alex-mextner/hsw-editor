@@ -142,6 +142,10 @@ needs an entry here first.
 
 ### Fixed
 
+- The Tools panel and photo mode work with the daemon stopped after one online visit (#219, [docs/offline.md](docs/offline.md)): the tool library reads (list, classes, per-tool JSON and
+  holding) answered `Cache-Control: no-store`, which the service worker refuses to store, so the panel said "the tool library is unavailable" offline; they answer `no-cache` now and the worker keeps them
+  network-first (the daemon's answer online, the kept copy only when it is unreachable, so the edit form never shows or saves a stale tool), with class and tool thumbnails and versioned library tool models. A page-side warmup stores the tool library and every file of the open wall
+  (including the cleaned photo variants that only photo mode loads) on the first visit, which the worker cannot see because it does not control that visit yet.
 - The committed bank seed declares the current `TOOL_CLASSES` (it kept the 27 classes that predate the finer ones), so the
   palette, tool picker and bank filter on a seed-served bank offer chisel, punch, hacksaw, long-nose/locking/water-pump
   pliers, crimper and hex-key-set; `exportSeed` writes the vocabulary from `TOOL_CLASSES` instead of the built root (#156).

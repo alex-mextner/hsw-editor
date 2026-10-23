@@ -31,6 +31,10 @@ export class FakeCache {
       this.entries.delete(typeof request === 'string' ? request : request.url),
     );
   }
+
+  keys(): Promise<Request[]> {
+    return Promise.resolve([...this.entries.keys()].map((url) => new Request(url)));
+  }
 }
 
 export class FakeCacheStorage {

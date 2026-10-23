@@ -232,6 +232,8 @@ export const shellEn = {
   'offline.cat.index': 'Bank index',
   'offline.cat.toolModels': 'Tool models',
   'offline.cat.toolIndex': 'Tool model index',
+  'offline.cat.toolLibrary': 'Tool library',
+  'offline.cat.toolThumbnails': 'Tool thumbnails',
   'offline.downloadTools': 'Tool models',
   'offline.clearToolModels': 'Clear tool models',
   'offline.toolsUnavailable':
@@ -508,6 +510,8 @@ export const shellRu: FeatureRu<typeof shellEn> = {
   'offline.cat.index': 'Индекс банка',
   'offline.cat.toolModels': 'Модели инструментов',
   'offline.cat.toolIndex': 'Индекс моделей инструментов',
+  'offline.cat.toolLibrary': 'Библиотека инструментов',
+  'offline.cat.toolThumbnails': 'Миниатюры инструментов',
   'offline.downloadTools': 'Модели инструментов',
   'offline.clearToolModels': 'Очистить модели инструментов',
   'offline.toolsUnavailable':

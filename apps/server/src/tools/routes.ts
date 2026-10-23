@@ -62,6 +62,15 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+/**
+ * A read of the library or the class list: the browser may keep it but must revalidate (the same header as the bank index), so the
+ * service worker stores it and the Tools panel opens with the daemon stopped (docs/offline.md). Everything else stays `no-store`: writes,
+ * errors, drafts and answers keyed by parameter values in the query.
+ */
+function cacheableJson(body: unknown): Response {
+  return Response.json(body, { headers: { 'cache-control': 'no-cache' } });
+}
+
 function fail(status: number, code: string, message: string, details?: unknown): Response {
   return json({ error: { code, message, ...(details === undefined ? {} : { details }) } }, status);
 }
@@ -319,13 +328,13 @@ async function route(
   if (a === 'drafts') return draftRoute(request, deps, context, parts.slice(1));
 
   if (a === undefined) {
-    if (method === 'GET') return json({ tools: await deps.tools.list() });
+    if (method === 'GET') return cacheableJson({ tools: await deps.tools.list() });
     if (method === 'POST') return createManual(request, deps);
     return fail(405, 'method_not_allowed', 'GET or POST');
   }
   const id = a;
   if (b === undefined) {
-    if (method === 'GET') return json({ tool: await deps.tools.get(id) });
+    if (method === 'GET') return cacheableJson({ tool: await deps.tools.get(id) });
     if (method === 'PATCH') {
       const patch = await readBody(request, CustomToolPatchSchema);
       const saved = await deps.tools.update(id, (tool) => {
@@ -346,7 +355,7 @@ async function route(
   if (b === 'holding') {
     const tool = await deps.tools.get(id);
     try {
-      return json(holdingOf(tool));
+      return cacheableJson(holdingOf(tool));
     } catch (error) {
       if (error instanceof ToolInputError) throw error;
       return fail(409, 'conflict', `tool ${id} can no longer be rebuilt: ${String(error)}`);
@@ -374,10 +383,12 @@ async function classRoute(
   resource: string | undefined,
 ): Promise<Response> {
   if (request.method !== 'GET') return fail(405, 'method_not_allowed', 'GET only');
-  if (classId === undefined) return json({ classes: listToolClasses().map(describeClass) });
+  if (classId === undefined) {
+    return cacheableJson({ classes: listToolClasses().map(describeClass) });
+  }
   if (!hasToolClass(classId)) return fail(404, 'class_not_found', `no tool class ${classId}`);
   const cls = getToolClass(classId);
-  if (resource === undefined) return json(describeClass(cls));
+  if (resource === undefined) return cacheableJson(describeClass(cls));
   if (resource !== 'model.glb' && resource !== 'holding' && resource !== 'thumb.webp') {
     return fail(404, 'not_found', 'unknown class resource');
   }

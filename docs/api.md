@@ -213,6 +213,8 @@ diagnosed after the fact. Module `apps/server/src/clientErrors.ts`, behind the s
 
 Owned by `packages/tools` ([tools.md](tools.md)); mounted by `apps/server/src/tools/module.ts`. Data: `$HSW_EDITOR_HOME/tools/`.
 
+Caching: tool responses are `Cache-Control: no-store`, except the reads the service worker keeps for offline use ([offline.md](offline.md)): `GET /api/tools`, `GET /api/tools/classes`, `GET /api/tools/classes/:id`, `GET /api/tools/:id` and `GET /api/tools/:id/holding` answer `no-cache` (stored, always revalidated); the thumbnails and library files below are `no-cache` / `must-revalidate`. Writes, errors, drafts and the class `holding` (keyed by parameter values) stay `no-store`.
+
 | Method & path | Body / query | Response |
 | --- | --- | --- |
 | `GET /api/tools/classes` | | `{ classes: ToolClassInfo[] }`: id, family, `familyLabel`, ru/en names, `bankClass`, keywords, parameter `schema` (num: min/max/def/step/unit, choice: options, color), `presets`, `thumb` (URL of the default thumbnail), `dimsMm` `{ x: width, y: length, z: thickness }` and `holdingDims` (`holding.dims`) of the default build (computed once per process) |

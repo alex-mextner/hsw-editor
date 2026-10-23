@@ -233,9 +233,14 @@ export async function downloadAssets(
       }
       let storedBytes: number | null;
       try {
-        storedBytes = await storeResponse(deps, new Request(url), response, route, {
-          pinned: options.pin,
-        });
+        // Without `pin` the stored flag is left as it is: a run that does not pin must never unpin what the user kept offline.
+        storedBytes = await storeResponse(
+          deps,
+          new Request(url),
+          response,
+          route,
+          options.pin ? { pinned: true } : {},
+        );
       } catch (error) {
         // The body is read while it is stored: an abort or a dropped connection surfaces here, not at `fetch`.
         if (
