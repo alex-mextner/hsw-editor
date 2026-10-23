@@ -9,7 +9,7 @@ export type StripeColour = 'red' | 'white';
 /** sRGB channels, 0..1. */
 export type Rgb = readonly [number, number, number];
 
-/** Material colour of one GLB mesh and the box it occupies in the item frame (millimetres). */
+/** A colour region of a GLB mesh (the whole mesh, or the red-ish / other triangles of a vertex-painted one) and its box in the item frame (millimetres). */
 export interface ColourPart {
   readonly min: readonly [number, number, number];
   readonly max: readonly [number, number, number];
