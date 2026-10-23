@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync } from 'node:fs';
 import { ServerResponse } from 'node:http';
 import { fileURLToPath, URL } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
@@ -6,6 +6,26 @@ import react from '@vitejs/plugin-react';
 import { defineConfig, loadEnv, type ProxyOptions } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 import { pwaPluginOptions } from './src/pwa/pluginOptions.ts';
+
+/**
+ * Demo build (`VITE_HSW_DEMO=1`, GitHub Pages): the committed seed bank is copied next to the app at the URLs the daemon would
+ * serve (`/api/bank/index`, `/api/bank/search-index`, `/bank/assets/...`), so the bank browser needs no code path of its own.
+ */
+function demoSeedBank() {
+  const seed = fileURLToPath(new URL('../../packages/bank/seed', import.meta.url));
+  return {
+    name: 'hsw-demo-seed-bank',
+    closeBundle() {
+      const out = fileURLToPath(new URL('./dist', import.meta.url));
+      mkdirSync(`${out}/api/bank`, { recursive: true });
+      cpSync(`${seed}/index.json`, `${out}/api/bank/index`);
+      cpSync(`${seed}/search-index.json`, `${out}/api/bank/search-index`);
+      for (const dir of ['glb', 'thumb']) {
+        cpSync(`${seed}/${dir}`, `${out}/bank/assets/${dir}`, { recursive: true });
+      }
+    },
+  };
+}
 
 const stateLibDist = fileURLToPath(
   new URL('../../vendor/state-lib/dist/index.js', import.meta.url),
@@ -39,6 +59,7 @@ export default defineConfig(({ mode }) => {
       tailwindcss(),
       // App shell precache, runtime caches and the update flow: src/pwa (docs/offline.md).
       VitePWA(pwaPluginOptions()),
+      ...(env['VITE_HSW_DEMO'] === '1' ? [demoSeedBank()] : []),
     ],
     define: { __STATE_BACKEND__: JSON.stringify(useStateLib ? 'state-lib' : 'baseline') },
     resolve: {

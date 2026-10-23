@@ -43,6 +43,7 @@ needs an entry here first.
   `/api/bank/index` with `source: "user"` (a _mine_ badge and filter in the bank), so search, filters and tool compatibility
   see it. The dialog edits name ru/en, category, tags, footprint cells (hex grid picker), mounting kind and pegs, `fitsTool`
   classes with dimension ranges, with a live 3D preview. See `docs/bank.md` ("User elements").
+- GitHub Pages build is a read-only offline demo ([docs/offline.md](docs/offline.md), #88): `VITE_HSW_DEMO=1` serves the committed seed bank as static files, opens one bundled wall on the first visit, refuses edits with a notice and makes no wall, health or event-stream request.
 
 ### Changed
 

@@ -55,7 +55,10 @@ export function startPwa(options: { beforeApply?: () => Promise<void> } = {}): P
     ...(options.beforeApply ? { beforeApply: options.beforeApply } : {}),
     reload: () => window.location.reload(),
   });
-  void updates.start();
+  updates.start().catch((error: unknown) => {
+    // Offline the browser cannot re-fetch /sw.js to register: the installed worker keeps serving, nothing to report.
+    if (navigator.onLine) console.error('service worker registration failed', error);
+  });
   scheduleUpdateChecks(updates, {
     isOnline: () => navigator.onLine,
     isVisible: () => document.visibilityState === 'visible',

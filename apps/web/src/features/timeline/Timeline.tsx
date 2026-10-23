@@ -3,6 +3,7 @@ import { Bot, Redo2, Terminal, Undo2, User } from 'lucide-react';
 import { api } from '@/api/http.ts';
 import type { ChangeEntry } from '@/api/schemas.ts';
 import { useShortcutLabel } from '@/commands/app.ts';
+import { DEMO } from '@/demo/mode.ts';
 import { IconButton } from '@/components/IconButton.tsx';
 import { useI18n } from '@/i18n/index.ts';
 import { cn } from '@/lib/cn.ts';
@@ -25,7 +26,7 @@ export function Timeline() {
   const rev = session?.confirmedRev ?? 0;
 
   useEffect(() => {
-    if (!wallId) return;
+    if (!wallId || DEMO) return; // the demo has no history endpoint
     let cancelled = false;
     // Debounced: a burst of edits triggers one refresh once the revision settles.
     const timer = setTimeout(() => {

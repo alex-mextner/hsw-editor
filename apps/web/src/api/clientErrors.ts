@@ -1,4 +1,5 @@
 import { errorMessage } from '@/bank/loadErrors.ts';
+import { DEMO } from '@/demo/mode.ts';
 
 /**
  * Fire-and-forget client error log: `POST /api/client-errors` (JSONL on the server, 204 on success).
@@ -140,6 +141,7 @@ export function createClientErrorLogger(deps: ClientErrorLoggerDeps) {
 }
 
 async function postEntry(entry: ClientErrorEntry): Promise<void> {
+  if (DEMO) return; // the static demo has no daemon to report to
   const response = await fetch(CLIENT_ERRORS_ROUTE, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
