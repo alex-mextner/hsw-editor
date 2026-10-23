@@ -1,16 +1,28 @@
 import { describe, expect, test } from 'bun:test';
 import type { Pose } from '@hsw-editor/core';
 import type { RankedSeat, RemovalReport } from '@hsw-editor/physics';
+import type { AssetContext } from './assets.ts';
 import { seatOps } from './seat.ts';
 import {
   type HolderRating,
   rankCandidates,
   ratingOfSeat,
+  ratingsStore,
+  rateHolders,
   settleAfterDrop,
   steadyOrder,
   SWITCH_MARGIN,
 } from './suggest.ts';
-import { fakeEditor, fakeSeat, holderItem, toolItem, wallOf } from './testWall.testkit.ts';
+import {
+  contextOf,
+  fakeEditor,
+  fakeSeat,
+  fakeToolModel,
+  holderItem,
+  RACK,
+  toolItem,
+  wallOf,
+} from './testWall.testkit.ts';
 
 const SEATED_H1: Pose = { x: 85, y: 31, z: 15, rotX: 0, rotY: 0, rotZ: 180 };
 const SEATED_H2: Pose = { x: 245, y: 31, z: 15, rotX: 0, rotY: 0, rotZ: 180 };
@@ -39,6 +51,52 @@ function answer(seats: Record<string, RankedSeat>) {
 const AT = { x: 180, y: 70 };
 
 describe('settleAfterDrop', () => {
+  test('waits for the rebuilt model of a resized tool, and gives up without asking the worker when it never comes', async () => {
+    const wall = wallWith([['h1', 100]]);
+    const waiting = fakeEditor(wall, () => [fakeSeat('h1', SEATED_H1)]);
+    const built = Promise.withResolvers<boolean>();
+    const pending = settleAfterDrop('drv', AT, { ...waiting.deps, settled: () => built.promise });
+    await Promise.resolve();
+    expect(waiting.requests).toEqual([]);
+    built.resolve(true);
+    expect(await pending).toBe('seated');
+    const never = fakeEditor(wall, () => [fakeSeat('h1', SEATED_H1)]);
+    expect(await settleAfterDrop('drv', AT, { ...never.deps, settled: async () => false })).toBe(
+      'kept',
+    );
+    expect(never.requests).toEqual([]);
+  });
+
+  test('a later drop of the same tool during the model wait is not undone by the earlier drop', async () => {
+    const wall = wallWith([
+      ['h1', 100],
+      ['h2', 260],
+    ]);
+    const editor = fakeEditor(
+      wall,
+      answer({
+        h1: fakeSeat('h1', SEATED_H1, { combined: 0.9 }),
+        h2: fakeSeat('h2', SEATED_H2, { combined: 0.4 }),
+      }),
+    );
+    const outcome = await settleAfterDrop('drv', AT, {
+      ...editor.deps,
+      settled: async () => {
+        // The user dragged the tool to the other holder meanwhile.
+        editor.wall = {
+          ...wall,
+          items: wall.items.map((item) =>
+            item.id === 'drv' ? { ...item, parentId: 'h2', slot: 0 } : item,
+          ),
+        };
+        return true;
+      },
+    });
+    expect(outcome).toBe('stale');
+    expect(editor.requests).toEqual([]);
+    expect(editor.submitted).toEqual([]);
+  });
+
   test('a clearly more stable holder in reach takes the tool: one hang batch with the seat pose on its nearest free slot', async () => {
     const editor = fakeEditor(
       wallWith([
@@ -251,5 +309,71 @@ describe('steadyOrder', () => {
 
   test('a different set of rows starts again from the ranked order', () => {
     expect(ids(steadyOrder(ranked, ['a', 'b', 'x']))).toEqual(['a', 'b', 'c', 'd']);
+  });
+});
+
+describe('rateHolders', () => {
+  const wall = wallWith([['h1', 100]]);
+  const driver = wall.items.find((item) => item.id === 'drv');
+  if (driver === undefined) throw new Error('fixture without a tool');
+  const seat = fakeSeat(RACK.id, SEATED_H1);
+  const modelKeyOfDriver = (): string => fakeToolModel(driver)?.key ?? '';
+  const run = (
+    options: {
+      readonly toolModel?: AssetContext['toolModel'];
+      readonly rank?: () => Promise<RankedSeat[]>;
+      readonly modelKey?: string;
+    } = {},
+  ) =>
+    rateHolders({
+      wall,
+      ctx: contextOf(wall, options.toolModel === undefined ? {} : { toolModel: options.toolModel }),
+      toolItem: driver,
+      modelKey: options.modelKey ?? fakeToolModel(driver)?.key ?? '',
+      holderIds: [RACK.id],
+      cancelled: () => false,
+      rank: options.rank ?? (async () => [seat]),
+    });
+
+  test('stores the rating under the model it was made for; no seat at all is a rating (null) too', async () => {
+    ratingsStore.set(new Map());
+    await run();
+    expect(ratingsStore.get().get(`${modelKeyOfDriver()}|${RACK.id}`)).toEqual(ratingOfSeat(seat));
+    ratingsStore.set(new Map());
+    await run({ rank: async () => [] });
+    expect(ratingsStore.get().get(`${modelKeyOfDriver()}|${RACK.id}`)).toBeNull();
+  });
+
+  test('a holder that cannot take the tool at all is rated null, once', async () => {
+    ratingsStore.set(new Map());
+    await rateHolders({
+      wall,
+      ctx: contextOf(wall),
+      toolItem: driver,
+      modelKey: fakeToolModel(driver)?.key ?? '',
+      holderIds: ['not-in-the-bank'],
+      cancelled: () => false,
+      rank: async () => [seat],
+    });
+    expect(ratingsStore.get().get(`${fakeToolModel(driver)?.key}|not-in-the-bank`)).toBeNull();
+  });
+
+  test('a model that is still being rebuilt stores nothing, so the next run rates it', async () => {
+    ratingsStore.set(new Map());
+    await run({ toolModel: () => null });
+    expect(ratingsStore.get().size).toBe(0);
+  });
+
+  test('a model that changed under the cards (a dimension draft) is not rated under the old key', async () => {
+    ratingsStore.set(new Map());
+    let key = modelKeyOfDriver();
+    await run({
+      toolModel: () => ({ key, path: '/m.glb' }),
+      rank: async () => {
+        key = `${key}?draft`;
+        return [seat];
+      },
+    });
+    expect(ratingsStore.get().size).toBe(0);
   });
 });

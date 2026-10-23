@@ -79,7 +79,9 @@ what was applied to the wall at `rev`; for `undo`/`redo`, `ref` is the rev being
 - Response `200 { rev, changed, op, inverse, wall, warnings }`. `changed:false` = every op was a no-op (nothing
   written, `rev` unchanged). `warnings` are geometry/reference problems (`cell_collision`, `out_of_board`,
   `cell_out_of_board`, `rotation_off_symmetry`, `missing_parent`, `parent_not_holder`, `slot_collision`,
-  `slot_without_parent`, `missing_photo`, `missing_model`); they never block.
+  `slot_without_parent`, `missing_photo`, `missing_model`); they never block. `out_of_board` is about the item's origin and is
+  not raised for a tool hung on a holder whose origin lies within 1000 mm of that holder: it may overhang the board edge
+  (physics judges how it hangs).
 
 Op types (`packages/core/src/schema.ts`; JSON schema via `opJsonSchema()`): `addItem`, `removeItem`, `moveItem`,
 `rotateItem`, `setParams`, `setVariant`, `lock`, `attachItem`, `addPhoto`, `removePhoto`, `setCalibration`, `setBoard`,

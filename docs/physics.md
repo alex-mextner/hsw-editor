@@ -153,6 +153,15 @@ is how it went in. Verdicts: `free`, `needs_tilt`, `needs_two_hands` (tool heavi
 2.5 kg, a neighbour closer than 12 mm to the grip, or more than 450 mm of lift), `blocked` (with the ids in the way).
 `convenience` is 0.6 + 0.4 * clearance / 40 mm for a free path, 0.5 with a tilt, 0.3 with two hands, 0 blocked.
 
+The exact measurements are the expensive part (`minGap` between two dense meshes a few millimetres apart costs 100 ms or more), so they
+are only made where they can change the answer: every pose and every solid is first tested with the boxes (a box gap is never
+more than the true gap, so a solid whose box is at least as far as the closest neighbour so far cannot lower the clearance, and one
+whose box does not touch the tool's box cannot intersect it), the search for a gap shrinks to the closest neighbour found, the rest gap
+is first looked for below the room a finger needs (a cheap search) and only then up to the whole search distance, and a tool that is
+cramped at rest (it needs two hands whatever the way out) is not measured along the way at all: its `clearanceMm` is the rest gap, an
+upper bound, and its convenience is capped at 0.3 anyway. A cramped rack of screwdrivers went from 26 s to 0.15 s per tool; the
+whole showcase wall takes 1.5 s (`apps/server` physics report) instead of 55 s.
+
 ### Holder ranking and auto-hang
 
 `rankHolders(tool, candidates)` seats the tool in every candidate holder and sorts by

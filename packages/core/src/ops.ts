@@ -515,6 +515,8 @@ function updateModelRef(wall: Wall, op: Narrow<'updateModelRef'>): LeafResult {
 /** Footprints are not known to the core, so only items anchored to the same cell can collide. */
 const COLLIDING_KINDS: ReadonlySet<string> = new Set(['holder', 'board-part']);
 const POSE_EPSILON_MM = 1e-6;
+/** The farthest a hung tool's origin may lie from its holder (the longest tool of the library is 700 mm) before it is not hung there any more. */
+const TOOL_REACH_MM = 1000;
 
 /** Non-fatal problems of a wall; an empty list means a clean layout. */
 export function checkWall(wall: Wall): WallWarning[] {
@@ -523,6 +525,7 @@ export function checkWall(wall: Wall): WallWarning[] {
   const photoIds = new Set(wall.photos.map((photo) => photo.id));
   const modelIds = new Set(wall.models.map((model) => model.id));
   const byCell = new Map<string, string[]>();
+  const byId = new Map(wall.items.map((item) => [item.id, item]));
   const kindById = new Map(wall.items.map((item) => [item.id, item.kind]));
   const bySlot = new Map<string, string[]>();
   for (const item of wall.items) {
@@ -552,11 +555,20 @@ export function checkWall(wall: Wall): WallWarning[] {
       }
     }
     const { x, y } = item.pose;
+    // A tool hung on a holder is placed by its holder: its origin (the butt, a grip point) may well lie beyond the board edge
+    // when the tool overhangs it (a long screwdriver, a spray can in a low cup), which is physics' business, not a layout error.
+    // Only within reach of the holder it hangs on, though: a tool placed kilometres away is still out of the board.
+    const parent =
+      item.kind === 'tool' && item.parentId !== undefined ? byId.get(item.parentId) : undefined;
+    const hung =
+      parent?.kind === 'holder' &&
+      Math.hypot(x - parent.pose.x, y - parent.pose.y) <= TOOL_REACH_MM;
     if (
-      x < -POSE_EPSILON_MM ||
-      x > size.width + POSE_EPSILON_MM ||
-      y < -POSE_EPSILON_MM ||
-      y > size.height + POSE_EPSILON_MM
+      !hung &&
+      (x < -POSE_EPSILON_MM ||
+        x > size.width + POSE_EPSILON_MM ||
+        y < -POSE_EPSILON_MM ||
+        y > size.height + POSE_EPSILON_MM)
     ) {
       warnings.push({
         code: 'out_of_board',
