@@ -57,6 +57,7 @@ export async function storeResponse(
   }
   const bytes = await bodyBytes(response);
   const cache = await deps.caches.open(route.cache);
+  const replacing = (await cache.match(request)) !== undefined;
   try {
     await cache.put(request, response.clone());
   } catch (error) {
@@ -79,8 +80,9 @@ export async function storeResponse(
       ...(options.pinned === undefined ? {} : { pinned: options.pinned }),
     });
   } catch (error) {
-    // An entry the registry does not know can never be evicted or counted: undo the put rather than leak it.
-    await cache.delete(request);
+    // A new file the registry does not know can never be evicted or counted: undo the put rather than leak it.
+    // An overwritten file keeps its old registry row, so deleting it would leave a row with no file behind it.
+    if (!replacing) await cache.delete(request).catch(() => false);
     throw error;
   }
   if (route.evictable) await evict(deps, route.cache, 1, new Set([request.url]));
