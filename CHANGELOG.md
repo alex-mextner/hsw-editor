@@ -36,6 +36,13 @@ needs an entry here first.
 - omp agent panel (`apps/web/src/features/omp`, docked in the editor shell): streaming transcript with tool calls, approvals and
   questions, model/thinking switch, sessions, steer/queue/abort, usage; `wall_view` screenshots and `wall_select` served by the
   3D viewport. Docs in `docs/omp.md`.
+- User-made bank elements (#58): import an STL, GLB or 3MF (`hsw-editor bank add|list|show|rm|edit`, the _Add element_ dialog of
+  the web bank, `/api/bank/user/*` + job `bank.user.import`). The mesh is normalised to a GLB in the wall frame (mm, Z-up/Y-up
+  sources mapped by a chosen orientation), checked for watertightness and repaired when possible, thumbnailed headlessly (software
+  fallback without EGL) and stored in `<home>/bank-user`, outside the built bank's generations. The daemon merges it into
+  `/api/bank/index` with `source: "user"` (a _mine_ badge and filter in the bank), so search, filters and tool compatibility
+  see it. The dialog edits name ru/en, category, tags, footprint cells (hex grid picker), mounting kind and pegs, `fitsTool`
+  classes with dimension ranges, with a live 3D preview. See `docs/bank.md` ("User elements").
 
 ### Changed
 

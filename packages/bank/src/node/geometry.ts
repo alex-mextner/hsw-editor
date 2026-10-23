@@ -37,6 +37,17 @@ function toCells(pairs: readonly [number, number][]): CellOffset[] {
   return pairs.map(([dCol, dRow2]) => ({ dCol, dRow2 }));
 }
 
+/** Footprint record of a cell list: `cols`/`rows` derived the way `validateBankIndex` checks them. */
+export function footprintOf(cells: readonly CellOffset[]): BankElement['footprint'] {
+  const cols = cells.map((c) => c.dCol);
+  const rows2 = cells.map((c) => c.dRow2);
+  return {
+    cells: [...cells],
+    cols: Math.max(...cols) - Math.min(...cols) + 1,
+    rows: Math.ceil((Math.max(...rows2) - Math.min(...rows2)) / 2) + 1,
+  };
+}
+
 function round3(n: number): number {
   return Math.round(n * 1000) / 1000;
 }
@@ -49,8 +60,6 @@ export function geometryOf(
   const bbox = built.bboxMm;
   if (!bbox) throw new Error('build result has no bounding box');
   const cells = toCells(built.cells ?? [[0, 0]]);
-  const cols = cells.map((c) => c.dCol);
-  const rows2 = cells.map((c) => c.dRow2);
   const mountingCells =
     mountKind === 'none'
       ? []
@@ -67,11 +76,7 @@ export function geometryOf(
       y: round3(bbox.max[1] - bbox.min[1]),
       z: round3(bbox.max[2] - Math.max(0, bbox.min[2])),
     },
-    footprint: {
-      cells,
-      cols: Math.max(...cols) - Math.min(...cols) + 1,
-      rows: Math.ceil((Math.max(...rows2) - Math.min(...rows2)) / 2) + 1,
-    },
+    footprint: footprintOf(cells),
     mountingCells,
   };
 }

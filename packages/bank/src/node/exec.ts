@@ -136,7 +136,20 @@ function ensureVenv(paths: BankPaths): Promise<void> {
 }
 
 /** Runs scripts/bank/py/mesh_tool.py on a job document and returns its JSON result. */
-export async function runMeshTool<T>(paths: BankPaths, job: object, name: string): Promise<T> {
+export function runMeshTool<T>(paths: BankPaths, job: object, name: string): Promise<T> {
+  return runPythonScript<T>(paths, 'scripts/bank/py/mesh_tool.py', job, name);
+}
+
+/**
+ * Runs a script that lives in the repository (path relative to the repo root) inside the bank venv
+ * with a JSON job document and returns its JSON result file.
+ */
+export async function runPythonScript<T>(
+  paths: BankPaths,
+  script: string,
+  job: object,
+  name: string,
+): Promise<T> {
   await ensureVenv(paths);
   // unique per call: concurrent runs (ingest + variant endpoint, parallel requests) never share job files
   const id = `${name}-${process.pid}-${crypto.randomUUID()}`;
@@ -154,7 +167,7 @@ export async function runMeshTool<T>(paths: BankPaths, job: object, name: string
         project,
         '--no-sync',
         'python',
-        join(project, 'mesh_tool.py'),
+        join(paths.repoRoot, script),
         jobFile,
         resultFile,
       ],
@@ -164,7 +177,7 @@ export async function runMeshTool<T>(paths: BankPaths, job: object, name: string
   try {
     if (result.exitCode !== 0)
       throw new Error(
-        `mesh_tool ${name} failed (${result.exitCode}): ${result.stderr.slice(-2000)}`,
+        `${script} ${name} failed (${result.exitCode}): ${result.stderr.slice(-2000)}`,
       );
     return (await Bun.file(resultFile).json()) as T;
   } finally {

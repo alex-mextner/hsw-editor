@@ -156,6 +156,31 @@ The bank routes (`/api/bank/*`, `/bank/assets/*`) are owned by `packages/bank` (
 packages (omp bridge, draw backends, vision proxy, bank) plug into the daemon through `apps/server/src/modules.ts`
 (`ServerModule`); they run after the loopback guard, so they inherit it.
 
+### User elements (`/api/bank/user/*`, job `bank.user.import`)
+
+Elements the user imported from a mesh (STL, GLB, 3MF). They are ordinary `BankElement`s with `source: "user"`, ids
+`my-<slug>`, `provenance.origin: "user-upload"` and `license.redistributable: false`; the daemon merges them into
+`GET /api/bank/index` (own ETag, search index, `/bank/assets/*`), so filters, search and the compatibility maths see them.
+Zod contract: `packages/bank/src/user.ts`. Storage and conversion: `docs/bank.md` ("User elements").
+
+| Method & path | Body / query | Response |
+| --- | --- | --- |
+| `GET /api/bank/user/elements` | | `{ elements: BankElement[] }` |
+| `GET /api/bank/user/elements/:id` | | `{ element, meta: UserElementMeta }` (original file name, format, sha256, import settings, watertight/repaired, warnings) |
+| `POST /api/bank/user/uploads` | `multipart/form-data` `file` (`.stl`, `.glb`, `.3mf`; 100 MB; extension and content are both checked) | `201 { upload: Upload }`: id, parts (triangles, bbox, watertight, guessed orientation), `defaultPartId`, `suggestedName`. Uploads expire after 24 h |
+| `POST /api/bank/user/uploads/:id/preview` | `ConvertSettings` (`partId`, `orient {out, up}`, `anchor`, `unit`, `repair`; all optional) | `{ conversion }`: `glbUrl` (uncompressed GLB in the wall frame), `bboxMm`, `dimsMm`, detected `footprint` and `mountingCells`, `watertight`, `repaired`, `settings` (defaults applied), `warnings` |
+| `GET /api/bank/user/uploads/:id/preview/<hash>.glb` | | the preview GLB |
+| `DELETE /api/bank/user/uploads/:id` | | `{ ok: true }` |
+| `POST /api/bank/user/elements/:id/reopen` | | `201 { upload, input }`: the stored original as a new upload plus the element's metadata as an import input (edit dialog) |
+| `PATCH /api/bank/user/elements/:id` | any of `name`, `description`, `category`, `tags`, `toolClasses`, `fitsTool`, `footprint`, `mounting`, `printNotes` | `{ element }`; geometry untouched; a footprint edit drops pegs outside it |
+| `DELETE /api/bank/user/elements/:id[?force=1]` | | `{ ok: true }`; `409 element_in_use` (`details.walls: [{ wallId, items }]`) while a wall places it, unless `force=1` |
+| `POST /api/jobs` `{ kind: "bank.user.import", input }` | `UserImportInput`: `uploadId` and/or `replaceId`, `name {ru?, en?}`, `category`, `tags`, `toolClasses`, `fitsTool`, `footprint`, `mounting {kind, cells}`, `settings`, `id?`, `printNotes?` | `202 { job }`; `progress.message` is `converting`, `compressing`, `publishing`; the result is `{ element, conversion }` |
+
+Errors: `400 invalid_body` (schema, mounting cell outside the footprint, footprint without `{0,0}`), `404 element_not_found` /
+`upload_not_found`, `409 duplicate_element` (`details.id`: same geometry already imported) / `element_exists` / `element_in_use` /
+`source_missing`, `413 payload_too_large`, `415 unsupported_media_type`, `422 mesh_unreadable`, `503 converter_unavailable`
+(the bank python environment, `uv`, is missing). `replaceId` without `uploadId` re-converts the stored original (id kept).
+
 ## Client errors
 
 The web app reports failures it survived (a missing GLB/thumbnail, a render error, an unhandled rejection) so they can be
@@ -284,6 +309,7 @@ walls/<id>/wall.json        snapshot (atomic write: tmp + fsync + rename)
 walls/<id>/history.jsonl    one JSON entry per rev, appended + fsynced BEFORE wall.json is replaced
 walls/<id>/photos/ models/  uploaded and generated assets (photos/derived/ for drawn views)
 walls/.trash/               deleted walls
+bank-user/                  user-made bank elements: index.json, glb/, thumb/, meta/, sources/, uploads/ (docs/bank.md)
 settings.json               per-user settings document (atomic write, mode 0600; a corrupt file is kept as settings.json.corrupt-<ts>)
 logs/client-errors.jsonl    client error reports (+ .1 after rotation at 5 MiB)
 tools/<id>/                 user tool library: tool.json, model.glb, model-lod1.glb, thumb.webp, source/ (see tools.md)

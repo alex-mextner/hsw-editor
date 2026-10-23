@@ -11,3 +11,4 @@ export {
 } from './search.ts';
 export type { SearchHit } from './search.ts';
 export { stemTerm, tokenize, normalizeText } from './text.ts';
+export * from './user.ts';
