@@ -55,6 +55,17 @@ export function ObjectEditor({ draft, object, classes, edits }: ObjectEditorProp
   const dims = object.dimensionsMm;
   const typed = object.userDimensions;
 
+  /** No size is known yet (nothing to scale by): one typed real length is enough to fit and add the tool. */
+  const commitLength = (): void => {
+    const raw = dimDraft['length'];
+    setDimDraft(({ length: _done, ...rest }) => rest);
+    if (raw === undefined) return;
+    const value = Number(raw.replace(',', '.'));
+    if (Number.isFinite(value) && value > 0) {
+      void edits.patch(object.key, { dimensionsMm: { length: value } });
+    }
+  };
+
   const commitDim = (key: (typeof DIM_KEYS)[number]): void => {
     const raw = dimDraft[key];
     setDimDraft(({ [key]: _done, ...rest }) => rest);
@@ -169,10 +180,32 @@ export function ObjectEditor({ draft, object, classes, edits }: ObjectEditorProp
 
       <Block title={t('toolWizard.editor.dimensions')}>
         {object.needsScale || dims === null ? (
-          <output className="flex items-start gap-1.5 text-xs text-warn">
-            <RulerIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden />
-            {t('toolWizard.object.needsScale')}
-          </output>
+          <>
+            <output className="flex items-start gap-1.5 text-xs text-warn">
+              <RulerIcon className="mt-0.5 size-3.5 shrink-0" aria-hidden />
+              {t('toolWizard.object.needsScale')}
+            </output>
+            {object.observation === null || locked ? null : (
+              <label className="grid gap-1 text-xs text-muted-foreground">
+                {t('toolDetail.dim.length')}
+                <Input
+                  type="number"
+                  inputMode="decimal"
+                  min={0.1}
+                  step={0.5}
+                  value={dimDraft['length'] ?? ''}
+                  disabled={edits.busy}
+                  className="h-7 w-32 text-right font-mono text-xs"
+                  data-testid="wizard-length-only"
+                  onChange={(event) => setDimDraft({ ...dimDraft, length: event.target.value })}
+                  onBlur={commitLength}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') commitLength();
+                  }}
+                />
+              </label>
+            )}
+          </>
         ) : (
           <>
             <div className="grid grid-cols-3 gap-2" data-testid="wizard-dims">
@@ -197,9 +230,11 @@ export function ObjectEditor({ draft, object, classes, edits }: ObjectEditorProp
               ))}
             </div>
             <p className="text-[11px] text-muted-foreground">
-              {typed !== undefined && Object.keys(typed).length > 0
-                ? t('toolWizard.editor.dimsTyped')
-                : t('toolWizard.editor.dimsPhoto')}
+              {object.dimensionsEstimated
+                ? t('toolWizard.editor.dimsEstimated')
+                : typed !== undefined && Object.keys(typed).length > 0
+                  ? t('toolWizard.editor.dimsTyped')
+                  : t('toolWizard.editor.dimsPhoto')}
               {object.fit === null
                 ? ''
                 : ` · ${t('toolWizard.editor.fit', { percent: percent(object.fit.confidence) })}`}

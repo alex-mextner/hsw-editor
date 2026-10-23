@@ -37,7 +37,8 @@ export const ColorSegmentSchema = z.strictObject({
 });
 export type ColorSegment = z.infer<typeof ColorSegmentSchema>;
 
-export const DimensionSourceSchema = z.enum(['photo', 'user']);
+/** `estimated`: the photo had no scale, so the length is the class-typical one (a flagged guess); `user`: typed by the user. */
+export const DimensionSourceSchema = z.enum(['photo', 'user', 'estimated']);
 
 export const CustomToolSchema = z.strictObject({
   version: z.literal(1),

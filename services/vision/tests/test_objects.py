@@ -43,6 +43,7 @@ def test_every_object_has_mask_crops_class_fit_colours_and_embedding(tmp_path: P
     assert long_tool["class"]["prob"] == pytest.approx(0.8)
     assert long_tool["dimensionsMm"]["length"] == pytest.approx(180.0) and long_tool["mmPerPx"] == 1.0
     assert (out / long_tool["fit"]["glb"]).read_bytes() == b"glTF-fake" and long_tool["fit"]["kind"] == "box"
+    assert long_tool["profilePx"] is None
     assert long_tool["profile"]["length_mm"] == pytest.approx(180.0, abs=1.5) and min(abs(long_tool["axis"]["deg"]), 180 - abs(long_tool["axis"]["deg"])) < 1
     assert long_tool["colours"]["parts"][0]["hex"] == "#c83c3c" and long_tool["confidence"] == pytest.approx(0.6)
     assert long_tool["needsViews"] and long_tool["needsView"] is True and long_tool["status"] == "ok"
@@ -66,6 +67,7 @@ def test_a_run_without_scale_still_returns_masks_crops_classes_and_colours(tmp_p
     assert result["status"] == "no_scale" and result["needs"] == "scale" and calls.fit == []
     first = result["objects"][0]
     assert first["fit"] is None and first["dimensionsMm"] is None and first["profile"] is None and first["mmPerPx"] is None
+    assert first["profilePx"]["length_mm"] == pytest.approx(180.0, abs=1.5)  # the same profile, measured in pixels
     assert first["status"] == "no_scale" and first["axis"]["unit"]  # the axis needs no scale
     assert (out / first["mask"]).is_file() and (out / first["cropOriented"]).is_file()
     assert first["class"]["toolClass"] == "screwdriver" and first["colours"] is not None

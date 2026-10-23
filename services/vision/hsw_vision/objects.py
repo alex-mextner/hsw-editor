@@ -349,7 +349,10 @@ def _record(
     box = crop_box(inst, img.size, req.crop_pad)
     _write_cutout(img.rgb, mask, box, out_dir / cutout_rel)
 
-    axis, profile = service.stages.axis_and_profile(mask, mm_per_px)
+    # Without a scale the profile is still measured, in PIXELS (`profilePx`): the caller may scale it by a class-typical size
+    # (an estimate it must flag) or by a size the user types; `profile` stays null because its numbers would not be millimetres.
+    axis, measured = service.stages.axis_and_profile(mask, mm_per_px if scaled else 1.0)
+    profile, profile_px = (measured, None) if scaled else (None, measured)
     upright, upright_cutout, _ = stage_shape.upright_crops(img.rgb, mask, axis["deg"], req.crop_pad)
     write_png(out_dir / f"crops_oriented/{ident}.png", upright)
     write_png(out_dir / f"cutouts_oriented/{ident}.png", upright_cutout)
@@ -395,6 +398,7 @@ def _record(
         "cutoutOriented": f"cutouts_oriented/{ident}.png",
         "axis": axis,
         "profile": profile,
+        "profilePx": profile_px,
         "mmPerPx": mm_per_px,
         "embedding": None
         if embedding is None

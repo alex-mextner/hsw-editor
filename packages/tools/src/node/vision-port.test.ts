@@ -37,6 +37,18 @@ describe('HttpVisionPort', () => {
     expect(events).toEqual(['stage']);
   });
 
+  test('accepts the no-scale answer of the sidecar (calibration method and scale are null)', async () => {
+    const url = sidecar(
+      () =>
+        new Response(
+          `${JSON.stringify({ event: 'result', result: { status: 'no_scale', calibration: { ok: false, method: null, mm_per_px: null }, objects: [{ id: 1, profile: null, profilePx: { length_mm: 100, stations: [{ t: 0.5, lo_mm: -5, hi_mm: 5 }] } }] } })}\n`,
+        ),
+    );
+    const result = await new HttpVisionPort(new FetchVisionTransport(url)).photoToObjects(REQUEST);
+    expect(result.status).toBe('no_scale');
+    expect(result.objects[0]?.profilePx?.length_mm).toBe(100);
+  });
+
   test('sends the calibration and categories the sidecar expects', async () => {
     let seen: unknown;
     const url = sidecar(async (req) => {

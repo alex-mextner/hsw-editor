@@ -100,7 +100,7 @@ hsw-editor bank rm my-driver-holder --force
 | `vision status [--json]` | installed? running? endpoint, resident engines, models on disk; exit 3 when not installed / not running |
 | `vision fetch-models [NAME...]` | the only command that downloads model weights |
 | `vision doctor` | models, free VRAM, onnxruntime CUDA state, heavy imports |
-| `vision photo-to-wall IMAGE --out DIR` | photo -> wall proposal without the daemon (`proposal.json`, `result.json`, `timings.json`, `overlay.jpg`) |
+| `vision photo-to-wall IMAGE --out DIR` | photo of a REAL wall -> wall proposal without the daemon (`proposal.json`, `result.json`, `timings.json`, `overlay.jpg`); never for photos of tools lying around (use `photo-to-objects`) |
 | `vision photo-to-objects IMAGE --out DIR` | photo -> per-object masks, crops, classes, fitted models, colours, embeddings (`objects.json`) |
 | `vision embed IMAGE... --out DIR [--object]` | CLIP embeddings (`embeddings.npy`, `embeddings.json`) |
 

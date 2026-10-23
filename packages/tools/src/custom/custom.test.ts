@@ -7,7 +7,7 @@ import { generate, presetValues } from '../registry.ts';
 import '../classes/index.ts';
 import { ToolStore } from '../node/store.ts';
 import { fitClassToProfile } from './fit.ts';
-import { fitObject, observeModel } from './create.ts';
+import { fitObject, observeModel, typicalLengthMm } from './create.ts';
 import { ToolInputError } from './errors.ts';
 import { createManualTool } from './manual.ts';
 import { applyPatch } from './rebuild.ts';
@@ -222,6 +222,34 @@ describe('tool patches', () => {
     const patched = applyPatch(docOf(fitted, 'lathe_profile'), { name: { en: 'Bottle' } });
     expect(patched.tool.name.en).toBe('Bottle');
     expect(patched.tool.dimensionsMm.thickness).toBeCloseTo(before, 3);
+  });
+
+  test('an estimated size follows the class when a saved tool changes class; a typed length replaces it', () => {
+    const fitted = fitObject({
+      profile: observeModel(generate('screwdriver', {}, 0)),
+      colors: [],
+      candidates: [{ classId: 'screwdriver', score: 0.9 }],
+      dimensionsMm: { length: typicalLengthMm('screwdriver') },
+      dimensionSource: 'estimated',
+    });
+    const doc = docOf(fitted);
+    expect(doc.dimensionsMm.source).toBe('estimated');
+    const asHammer = applyPatch(doc, { classId: 'hammer' });
+    expect(asHammer.tool.classId).toBe('hammer');
+    expect(asHammer.tool.dimensionsMm.source).toBe('estimated');
+    const hammer = typicalLengthMm('hammer');
+    expect(asHammer.tool.dimensionsMm.length).toBeGreaterThan(hammer * 0.9);
+    expect(asHammer.tool.dimensionsMm.length).toBeLessThan(hammer * 1.1);
+    const typed = applyPatch(doc, { dimensionsMm: { length: 300 } });
+    expect(typed.tool.dimensionsMm.source).toBe('user');
+    // the estimate belongs to a class: a generic shape needs a typed length instead
+    expect(() => applyPatch(doc, { classId: null })).toThrow(ToolInputError);
+    expect(applyPatch(doc, { classId: null, dimensionsMm: { length: 120 } }).tool.classId).toBeNull();
+    // a new class plus a typed width: the length still follows the class, and stays an estimate
+    const both = applyPatch(doc, { classId: 'hammer', dimensionsMm: { width: 20 } });
+    expect(both.tool.dimensionsMm.source).toBe('estimated');
+    expect(both.tool.dimensionsMm.length).toBeGreaterThan(hammer * 0.9);
+    expect(both.tool.dimensionsMm.length).toBeLessThan(hammer * 1.1);
   });
 
   test('a later length edit keeps the earlier thickness edit of a class tool', () => {

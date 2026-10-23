@@ -67,6 +67,8 @@ export const DraftObjectSchema = z.strictObject({
       profile: ObservedProfileSchema,
       colors: z.array(ColorSegmentSchema),
       profileKind: z.string().optional(),
+      /** The photo had no scale: `profile` is in pixels and is scaled by a class-typical or a typed size when fitted. */
+      profileInPixels: z.literal(true).optional(),
     })
     .nullable(),
   userDimensions: z
@@ -99,6 +101,8 @@ export const DraftObjectSchema = z.strictObject({
     })
     .nullable(),
   needsScale: z.boolean(),
+  /** The size is the class-typical one (no scale on the photo, nothing typed): a flagged estimate, never a measurement. */
+  dimensionsEstimated: z.boolean().default(false),
   /** Crop / cut-out of the object, relative to the draft directory. */
   images: z.strictObject({
     crop: z.string().optional(),

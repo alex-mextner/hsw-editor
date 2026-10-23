@@ -71,10 +71,10 @@ def state_file() -> Path:
 def configure(subs: Any) -> None:
     parser = subs.add_parser(
         "vision",
-        help=f"photo -> wall/objects vision service: {' | '.join(VERBS)}",
+        help=f"vision service (photo of tools -> objects, photo of a real wall -> wall): {' | '.join(VERBS)}",
         description="Vision sidecar (services/vision). setup: create the vision venv (light lock + heavy torch/ORT stack). "
         "status: is it running, which models are on disk. fetch-models: explicit model download (heavy). "
-        "doctor: models, GPU, onnxruntime CUDA. photo-to-wall / photo-to-objects IMAGE --out DIR: run the pipeline without "
+        "doctor: models, GPU, onnxruntime CUDA. photo-to-objects IMAGE --out DIR: tools in a photo (carpet, table, any angle) -> objects for the tool collection; photo-to-wall IMAGE --out DIR: a photo of a REAL wall -> wall proposal; both run without "
         "the daemon. embed IMAGE... --out DIR: CLIP embeddings. serve: the sidecar itself (the daemon starts it). "
         "`hsw-editor vision VERB --help` shows the verb's options (docs/vision.md).",
     )

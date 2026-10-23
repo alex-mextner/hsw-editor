@@ -1,7 +1,7 @@
 """`python -m hsw_vision`: the sidecar server and server-less runs of the same pipeline.
 
   serve                       run the HTTP sidecar (loopback 127.0.0.1:8795, or --socket PATH)
-  photo-to-wall IMAGE --out DIR   photo -> wall proposal, no server (evidence runs, `hsw-editor vision photo-to-wall`)
+  photo-to-wall IMAGE --out DIR   photo of a REAL wall -> wall proposal, no server (never for tools lying on a floor: use photo-to-objects)
   photo-to-objects IMAGE --out DIR   photo -> per-object masks, crops, classes, fitted models, colours (objects.json)
   objects merge|split|reprofile|add OUT_DIR ...   edit a finished photo-to-objects result without re-segmenting the photo
   embed IMAGE... --out DIR       CLIP embeddings (512 floats, L2-normalised) of whole images or their single object
@@ -50,7 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", type=int)
     serve.add_argument("--socket", help="serve on a unix socket instead of loopback TCP")
 
-    p2w = subs.add_parser("photo-to-wall", help="photo -> wall proposal without the server")
+    p2w = subs.add_parser("photo-to-wall", help="photo of a real wall -> wall proposal without the server (not for tools on a floor/table)")
     add_photo_options(p2w, out_help="output + result-cache directory")
     p2w.add_argument("--photo-id", help="id of the photo on a wall (recorded in item sources)")
     p2w.add_argument("--auto-apply", type=float, metavar="CONF", help="flag items >= CONF as autoApply (default: never)")

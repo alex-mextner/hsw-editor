@@ -98,7 +98,10 @@ photo(s) --sidecar photo_to_objects--> objects (mask, crop, class top-k, closed-
 - **Colours**: the sidecar's colour segments along the axis map to parts by overlap (one dominant colour per part; metal
   stays metal unless the photo shows black oxide). User colour edits are stored per part (`partColors`).
 - **Dimensions**: from the photo scale (grid, two points, mm/px) or typed by the user; the user's numbers win and trigger
-  a refit. A photo without a scale still gets masks, classes and colours, the objects say `needsScale`.
+  a refit. A scale reference is optional: without one the profile (in pixels, `profilePx`) is scaled by the class-typical length
+  of the chosen or best suggested class and the object is flagged `dimensionsEstimated` (saved as `dimensionsMm.source:
+  "estimated"`); typing one real length replaces the estimate. Only an object with no class and no typed size says `needsScale`.
+  A photo of tools never builds or places a wall; tools are only added to the collection.
 - **Several photos of one tool**: group the objects; the most informative observation is the primary, the suggestions of
   the others are merged, all photos are kept in `source/`.
 - **Tags**: free-form labels on a tool (`tags`, normalised: trimmed, lower-cased, de-duplicated, 1-40 characters, at most 20) for
@@ -175,8 +178,8 @@ of the left panel; commands in `apps/web/src/commands`).
   (live preview; "Save to my library" stores a customised class as a user tool), real dimensions and colours per part of
   a user tool (refit through `PATCH /api/tools/:id`), materials of the parts read from the GLB, and the holding
   interface drawn along the axis (width and thickness silhouettes, zones, hang point, widest section, measured dims).
-- **Add from photo** (wizard): photos (several tools per photo, or one tool in several photos) + scale reference (the
-  honeycomb grid, two points with a real distance, or a known mm/px) -> `POST /api/tools/drafts`, job `tools.analyze`
+- **Add from photo** (wizard, "add to collection"): photos from any angle (several tools per photo, or one tool in several photos) + an optional scale reference (the
+  honeycomb grid when the photo shows one, two points with a real distance, or a known mm/px; without any, sizes are estimated and flagged) -> `POST /api/tools/drafts`, job `tools.analyze`
   -> review grid (crop, top-3 classes with confidence and a manual override, name, accept / discard, merge, same-tool
   group, split, real dimensions, live 3D preview of the fitted model, comparison with the built-in candidates by
   silhouette IoU) -> `commit` into the user library with tags. Without the vision sidecar (`GET /api/tools/vision`
