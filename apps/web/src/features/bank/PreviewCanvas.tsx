@@ -1,10 +1,12 @@
-import { Suspense, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { OrbitControls, useGLTF } from '@react-three/drei';
 import type { Group } from 'three';
 import type { BankElement } from '@hsw-editor/bank';
 import { bankRoutes } from '@/bank/client.ts';
 import { useMediaQuery } from '@/hooks/useMediaQuery.ts';
+import { useI18n } from '@/i18n/index.ts';
+import { ModelBoundary } from '@/scene/ModelBoundary.tsx';
 import { MM } from '@/scene/units.ts';
 import { frameModel, PREVIEW_FOV_DEG, type PreviewFrame } from './framing.ts';
 
@@ -50,6 +52,7 @@ interface PreviewCanvasProps {
  */
 export function PreviewCanvas({ element, mode, onLoaded }: PreviewCanvasProps) {
   const frame = useMemo(() => frameModel(element.bboxMm, element.dimsMm), [element]);
+  const { locale } = useI18n();
   const reducedMotion = useMediaQuery('(prefers-reduced-motion: reduce)');
   const [orbiting, setOrbiting] = useState(true);
   // Static scenes (orbit stopped, reduced motion) stop rendering; controls and loads invalidate.
@@ -69,14 +72,22 @@ export function PreviewCanvas({ element, mode, onLoaded }: PreviewCanvasProps) {
     >
       <hemisphereLight args={['#ffffff', '#52525b', 1.6]} />
       <directionalLight position={[2, 3, 4]} intensity={2} />
-      <Suspense fallback={null}>
+      {/* A failed GLB leaves the canvas empty: the thumbnail underneath is the fallback. Hover previews
+          stay quiet (no toast per card the pointer crosses); the detail view reports normally. */}
+      <ModelBoundary
+        url={url}
+        bankId={element.id}
+        name={element.name[locale]}
+        quiet={mode === 'hover'}
+        placeholder={() => null}
+      >
         <Model
           url={url}
           frame={frame}
           spin={mode === 'hover' && !reducedMotion}
           onLoaded={onLoaded}
         />
-      </Suspense>
+      </ModelBoundary>
       {mode === 'orbit' ? (
         <OrbitControls
           enablePan={false}

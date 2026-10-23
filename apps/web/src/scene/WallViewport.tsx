@@ -1,9 +1,11 @@
-import { Suspense, useMemo } from 'react';
+import { useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Stats } from '@react-three/drei';
 import type { Wall } from '@hsw-editor/core';
 import { ViewportContextMenu } from '@/features/viewport/ViewportContextMenu.tsx';
+import { api } from '@/api/http.ts';
 import { bankStore } from '@/bank/client.ts';
+import { useT } from '@/i18n/index.ts';
 import { editorStore, setSelection } from '@/state/editor.ts';
 import { useStore } from '@/state/react.ts';
 import { themeStore } from '@/state/theme.ts';
@@ -18,6 +20,7 @@ import { FpsProbe } from './FpsProbe.tsx';
 import { GhostItem } from './GhostItem.tsx';
 import { ItemsLayer } from './ItemsLayer.tsx';
 import { measureClick, MeasureOverlay } from './MeasureTool.tsx';
+import { ModelBoundary } from './ModelBoundary.tsx';
 import { scenePalette } from './palette.ts';
 import { PlacementMarker } from './PlacementMarker.tsx';
 import { PhotoOverlay } from './PhotoOverlay.tsx';
@@ -29,6 +32,7 @@ const GEOMETRY_WARNINGS = new Set(['cell_collision', 'out_of_board', 'cell_out_o
 
 /** The R3F viewport for the open wall. Reads everything from the stores; sends edits through the session. */
 export function WallViewport({ wall }: { readonly wall: Wall }) {
+  const t = useT();
   const editor = useStore(editorStore);
   const theme = useStore(themeStore);
   const bankState = useStore(bankStore);
@@ -84,18 +88,24 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
           fitToken={editor.fitToken}
         />
         <BoardMesh board={wall.board} palette={palette} occupied={occupied} />
-        <Suspense fallback={null}>
-          {editor.overlay.photoId ? (
+        {editor.overlay.photoId ? (
+          // A photo that fails to load must not blank the viewport: draw nothing, toast once.
+          <ModelBoundary
+            url={api.photoUrl(wall.id, editor.overlay.photoId)}
+            name={t('asset.photo')}
+            placeholder={() => null}
+          >
             <PhotoOverlay
               wall={wall}
               photoId={editor.overlay.photoId}
               opacity={editor.overlay.opacity}
             />
-          ) : null}
-        </Suspense>
+          </ModelBoundary>
+        ) : null}
         <ItemsLayer
           wall={wall}
           bank={bank}
+          bankReady={bankState.status === 'ready'}
           palette={palette}
           invalidIds={invalidIds}
           onItemPointerDown={beginItemDrag}

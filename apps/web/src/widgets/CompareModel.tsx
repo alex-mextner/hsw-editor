@@ -1,8 +1,9 @@
-import { Component, Suspense, useEffect, useMemo, type ReactNode } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Edges, useGLTF } from '@react-three/drei';
 import { Box3, Color, Mesh, MeshStandardMaterial, Vector3, type Object3D } from 'three';
 import type { ModelRef } from '@hsw-editor/core';
 import { api } from '@/api/http.ts';
+import { ModelBoundary } from '@/scene/ModelBoundary.tsx';
 import { MM } from '@/scene/units.ts';
 import type { Dims } from './compareMath.ts';
 
@@ -18,20 +19,6 @@ interface CompareModelProps {
   readonly tint: boolean;
   /** Real size of a loaded GLB, reported so the tile can frame the camera when `dimensionsMm` is unknown. */
   readonly onSize: (id: string, dims: Dims) => void;
-}
-
-/** A model that fails to load (bad GLB, 404) degrades to its box instead of taking the tile down. */
-class ModelBoundary extends Component<
-  { readonly fallback: ReactNode; readonly children: ReactNode },
-  { readonly failed: boolean }
-> {
-  override state = { failed: false };
-  static getDerivedStateFromError(): { failed: boolean } {
-    return { failed: true };
-  }
-  override render(): ReactNode {
-    return this.state.failed ? this.props.fallback : this.props.children;
-  }
 }
 
 export function DimBox({
@@ -110,17 +97,21 @@ function GlbModel({ wallId, model, color, opacity, tint, onSize }: CompareModelP
   );
 }
 
+/** A model that fails to load (bad GLB, 404) degrades to its box instead of taking the tile down. */
 export function CompareModel(props: CompareModelProps) {
-  const { model, color, opacity } = props;
+  const { wallId, model, color, opacity } = props;
   const box = (
     <DimBox dims={model.dimensionsMm ?? FALLBACK_DIMS_MM} color={color} opacity={opacity} />
   );
   if (model.file === undefined) return box;
   return (
-    <ModelBoundary fallback={box}>
-      <Suspense fallback={box}>
-        <GlbModel {...props} />
-      </Suspense>
+    <ModelBoundary
+      url={api.modelUrl(wallId, model.id)}
+      name={model.label}
+      fallback={box}
+      placeholder={() => box}
+    >
+      <GlbModel {...props} />
     </ModelBoundary>
   );
 }

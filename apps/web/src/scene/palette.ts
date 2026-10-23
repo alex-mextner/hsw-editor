@@ -9,6 +9,8 @@ export interface ScenePalette {
   readonly itemSelected: string;
   readonly itemInvalid: string;
   readonly itemLocked: string;
+  /** Placeholder box of an item whose model is missing or failed to load. */
+  readonly itemMissing: string;
   readonly ghostOk: string;
   readonly ghostBad: string;
   readonly measure: string;
@@ -23,6 +25,7 @@ const DARK: ScenePalette = {
   itemSelected: '#f5b942',
   itemInvalid: '#ef5350',
   itemLocked: '#7d8696',
+  itemMissing: '#fb923c',
   ghostOk: '#4ade80',
   ghostBad: '#ef5350',
   measure: '#38bdf8',
@@ -37,6 +40,7 @@ const LIGHT: ScenePalette = {
   itemSelected: '#d97706',
   itemInvalid: '#dc2626',
   itemLocked: '#9ca3af',
+  itemMissing: '#ea580c',
   ghostOk: '#16a34a',
   ghostBad: '#dc2626',
   measure: '#0284c7',

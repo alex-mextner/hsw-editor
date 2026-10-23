@@ -19,6 +19,8 @@ interface InstancedBoxesProps {
   readonly dimsMm: Vec3;
   readonly centreMm: Vec3;
   readonly color: string;
+  /** Material opacity; the loading stand-in is nearly solid, a failed-model placeholder is see-through. */
+  readonly opacity?: number;
   readonly placements: readonly Placement[];
   readonly onItemPointerDown: (id: string, event: ThreeEvent<PointerEvent>) => void;
 }
@@ -28,6 +30,7 @@ export function InstancedBoxes({
   dimsMm,
   centreMm,
   color,
+  opacity = 0.85,
   placements,
   onItemPointerDown,
 }: InstancedBoxesProps) {
@@ -70,7 +73,7 @@ export function InstancedBoxes({
       }}
     >
       <boxGeometry args={[1, 1, 1]} />
-      <meshStandardMaterial roughness={0.7} transparent opacity={0.85} />
+      <meshStandardMaterial roughness={0.7} transparent opacity={opacity} />
     </instancedMesh>
   );
 }

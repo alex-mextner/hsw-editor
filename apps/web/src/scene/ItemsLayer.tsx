@@ -1,13 +1,19 @@
-import { Suspense, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import type { BankElement } from '@hsw-editor/bank';
-import type { Wall, WallItem } from '@hsw-editor/core';
-import { resolveModel, variantVersion, type ModelSource } from '@/bank/models.ts';
-import { toolDims } from '@/wall/toolPresets.ts';
+import type { Wall } from '@hsw-editor/core';
+import { goneReasonFor } from '@/bank/assetRecovery.ts';
+import { lastKnownElement } from '@/bank/client.ts';
+import { failureReason } from '@/bank/failureView.ts';
+import { variantVersion } from '@/bank/models.ts';
+import { useI18n } from '@/i18n/index.ts';
 import { useStore } from '@/state/react.ts';
 import { editorStore } from '@/state/editor.ts';
 import { InstancedModel, type Placement } from './InstancedModel.tsx';
 import { InstancedBoxes } from './InstancedBoxes.tsx';
+import { groupItems } from './itemGroups.ts';
+import { ModelBoundary } from './ModelBoundary.tsx';
+import { ModelPlaceholder } from './ModelPlaceholder.tsx';
 import type { ScenePalette } from './palette.ts';
 import { mm } from './units.ts';
 
@@ -34,51 +40,27 @@ function useFarLod(wall: Wall): boolean {
 interface ItemsLayerProps {
   readonly wall: Wall;
   readonly bank: ReadonlyMap<string, BankElement>;
+  /** The bank index is loaded: only then is an absent element id "missing from the bank". */
+  readonly bankReady: boolean;
   readonly palette: ScenePalette;
   readonly invalidIds: ReadonlySet<string>;
   readonly onItemPointerDown: (id: string, event: ThreeEvent<PointerEvent>) => void;
 }
 
-interface Group {
-  readonly source: ModelSource | null;
-  /** Box stand-in for items without a bank model (tool presets, missing assets). */
-  readonly boxMm: { readonly x: number; readonly y: number; readonly z: number };
-  readonly items: WallItem[];
-}
-
-const FALLBACK_BOX = { x: 30, y: 30, z: 20 };
-
-function boxFor(item: WallItem, wall: Wall) {
-  return item.kind === 'tool' ? (toolDims(item, wall) ?? FALLBACK_BOX) : FALLBACK_BOX;
-}
-
-/** Items sharing one model (or one stand-in box size) draw together as a single instanced group. */
-function groupItems(wall: Wall, bank: ReadonlyMap<string, BankElement>): [string, Group][] {
-  const byKey = new Map<string, Group>();
-  for (const item of wall.items) {
-    if (item.kind === 'photo-ref') continue;
-    const source = resolveModel(item, bank);
-    const boxMm = boxFor(item, wall);
-    const key = source?.key ?? `box:${boxMm.x}x${boxMm.y}x${boxMm.z}`;
-    const group = byKey.get(key);
-    if (group) group.items.push(item);
-    else byKey.set(key, { source, boxMm, items: [item] });
-  }
-  return [...byKey.entries()];
-}
-
 export function ItemsLayer({
   wall,
   bank,
+  bankReady,
   palette,
   invalidIds,
   onItemPointerDown,
 }: ItemsLayerProps) {
+  const { t, locale } = useI18n();
   const editor = useStore(editorStore);
   // Re-render when a regenerated model arrives: `resolveModel` reads that cache outside React state.
   useStore(variantVersion);
   const far = useFarLod(wall);
-  const groups = groupItems(wall, bank);
+  const groups = groupItems(wall, bank, bankReady);
 
   const selected = useMemo(() => new Set(editor.selection), [editor.selection]);
 
@@ -109,38 +91,69 @@ export function ItemsLayer({
             tint,
           };
         });
+        if (group.missing) {
+          const gone = goneReasonFor(group.missing.bankId) ?? { kind: 'removed' as const };
+          return (
+            <ModelPlaceholder
+              key={key}
+              dimsMm={group.boxMm}
+              centreMm={group.centreMm}
+              placements={placements}
+              palette={palette}
+              name={lastKnownElement(group.missing.bankId)?.name[locale] ?? group.missing.name}
+              reason={failureReason({ kind: 'unknown', gone }, t)}
+              onItemPointerDown={onItemPointerDown}
+            />
+          );
+        }
         if (!group.source) {
           return (
             <InstancedBoxes
               key={key}
               dimsMm={group.boxMm}
-              centreMm={{ x: 0, y: 0, z: group.boxMm.z / 2 }}
+              centreMm={group.centreMm}
               color={palette.item}
               placements={placements}
               onItemPointerDown={onItemPointerDown}
             />
           );
         }
-        const url = far ? group.source.lod1 : group.source.lod0;
+        const { source } = group;
+        const url = far ? source.lod1 : source.lod0;
         return (
-          <Suspense
+          // One boundary per instanced group: a failing model never takes the other groups down.
+          <ModelBoundary
             key={key}
+            url={url}
+            bankId={source.element.id}
+            name={source.element.name[locale]}
             fallback={
               <InstancedBoxes
-                dimsMm={group.source.dimsMm}
-                centreMm={group.source.centreMm}
+                dimsMm={source.dimsMm}
+                centreMm={source.centreMm}
                 color={palette.item}
                 placements={placements}
                 onItemPointerDown={onItemPointerDown}
               />
             }
+            placeholder={(view) => (
+              <ModelPlaceholder
+                dimsMm={source.dimsMm}
+                centreMm={source.centreMm}
+                placements={placements}
+                palette={palette}
+                name={view.name}
+                reason={view.reason}
+                onItemPointerDown={onItemPointerDown}
+              />
+            )}
           >
             <InstancedModel
               url={url}
               placements={placements}
               onItemPointerDown={onItemPointerDown}
             />
-          </Suspense>
+          </ModelBoundary>
         );
       })}
     </group>

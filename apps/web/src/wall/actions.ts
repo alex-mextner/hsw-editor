@@ -65,7 +65,9 @@ export function addElementToWall(element: BankElement): string | null {
 
 /** Remembers the selected holders/tools so Paste can put copies of them on the wall. */
 export function copySelection(): void {
-  const items = selectedItems().filter((item) => item.kind !== 'photo-ref' && item.cell !== undefined);
+  const items = selectedItems().filter(
+    (item) => item.kind !== 'photo-ref' && item.cell !== undefined,
+  );
   if (items.length > 0) clipboardStore.set(items);
 }
 

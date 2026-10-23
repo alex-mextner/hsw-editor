@@ -1,3 +1,4 @@
+import { assetsRu } from './catalog/assets.ts';
 import { bankRu } from './catalog/bank.ts';
 import { compareRu } from './catalog/compare.ts';
 import { shellRu } from './catalog/shell.ts';
@@ -11,4 +12,5 @@ export const ru: Catalogue = {
   ...bankRu,
   ...widgetsRu,
   ...compareRu,
+  ...assetsRu,
 };

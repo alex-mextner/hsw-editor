@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BankElement } from '@hsw-editor/bank';
-import { bankStore, loadBank } from '@/bank/client.ts';
+import { bankStore, refreshBank } from '@/bank/client.ts';
 import { useI18n } from '@/i18n/index.ts';
 import { useStore } from '@/state/react.ts';
 import { addElementToWall, currentWall } from '@/wall/actions.ts';
@@ -24,13 +24,13 @@ export function BankPanel() {
   const noticeTimer = useRef<number | undefined>(undefined);
 
   useEffect(() => {
-    void loadBank();
+    void refreshBank();
   }, []);
   useEffect(() => () => window.clearTimeout(noticeTimer.current), []);
 
   const retry = useCallback(() => {
     setRetrying(true);
-    void loadBank().finally(() => setRetrying(false));
+    void refreshBank({ force: true }).finally(() => setRetrying(false));
   }, []);
 
   const show = useCallback((next: BankNotice) => {
