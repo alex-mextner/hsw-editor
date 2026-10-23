@@ -7,7 +7,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Html } from '@react-three/drei';
 import { useThree, type ThreeEvent } from '@react-three/fiber';
-import { EdgesGeometry, LineBasicMaterial, type Vector3 } from 'three';
+import { LineBasicMaterial, type Vector3 } from 'three';
 import type { RegionMesh, SolveResult } from './engine.ts';
 import { buildRegionBatch, regionsSignature, type RegionBatch } from './regionGeometry.ts';
 import { createStripeMaterial, setStripeDpr, type StripeTheme } from './stripeMaterial.ts';
@@ -47,7 +47,6 @@ export function InvalidZones({ result, theme, describeRegion }: InvalidZonesProp
   if (stable.signature !== signature) setStable({ signature, regions: result?.regions ?? [] });
   const regions = stable.regions;
   const batch = useMemo(() => buildRegionBatch(regions, MM), [regions]);
-  const edges = useMemo(() => (batch ? new EdgesGeometry(batch.geometry, 30) : null), [batch]);
   // A tooltip belongs to the geometry it was raised on: after an update replaces the regions it is not shown.
   const [hoverState, setHover] = useState<{
     batch: RegionBatch;
@@ -69,9 +68,9 @@ export function InvalidZones({ result, theme, describeRegion }: InvalidZonesProp
   useEffect(
     () => () => {
       batch?.geometry.dispose();
-      edges?.dispose();
+      batch?.edges.dispose();
     },
-    [batch, edges],
+    [batch],
   );
   useEffect(
     () => () => {
@@ -82,7 +81,7 @@ export function InvalidZones({ result, theme, describeRegion }: InvalidZonesProp
     [surface, hidden, outline],
   );
 
-  if (!batch || !edges) return null;
+  if (!batch) return null;
 
   const onMove = (event: ThreeEvent<PointerEvent>): void => {
     const region = event.faceIndex == null ? undefined : batch.regionOfTriangle(event.faceIndex);
@@ -108,7 +107,7 @@ export function InvalidZones({ result, theme, describeRegion }: InvalidZonesProp
         onPointerOut={() => setHover(null)}
       />
       <lineSegments
-        geometry={edges}
+        geometry={batch.edges}
         material={outline}
         renderOrder={RENDER_ORDER + 2}
         frustumCulled={false}

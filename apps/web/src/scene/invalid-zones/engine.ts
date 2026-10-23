@@ -37,6 +37,7 @@ import {
   type ValidityTolerances,
 } from '@hsw-editor/core';
 import { LruCache } from './lru.ts';
+import { regionEdges } from './regionEdges.ts';
 
 /** Triangle mesh in millimetres, item frame (origin = item pose origin). */
 export interface SolidMesh {
@@ -68,6 +69,8 @@ export interface RegionMesh {
   readonly geometryKey: string;
   readonly positions: Float32Array;
   readonly indices: Uint32Array;
+  /** Outline segments (xyz pairs), computed once with the region so the render thread never has to. */
+  readonly edges: Float32Array;
 }
 
 export interface SolveStats {
@@ -87,6 +90,7 @@ export interface SolveResult {
 interface Region {
   readonly positions: Float32Array;
   readonly indices: Uint32Array;
+  readonly edges: Float32Array;
   readonly volumeMm3: number;
   /** Overlap: thinnest width of the region along the item axes; bounds: how far it reaches past the plane. */
   readonly depthMm: number;
@@ -199,6 +203,7 @@ export class InvalidZoneEngine {
           geometryKey: key,
           positions: region.positions,
           indices: region.indices,
+          edges: region.edges,
         });
       }
     }
@@ -248,6 +253,7 @@ export class InvalidZoneEngine {
         geometryKey: key,
         positions: region.positions,
         indices: region.indices,
+        edges: region.edges,
       });
     }
 
@@ -385,9 +391,13 @@ export class InvalidZoneEngine {
         depthMm = Math.max(depthMm, depth);
       }
       if (positions.length === 0) return null;
-      return {
+      const merged = {
         positions: concat(positions, Float32Array),
         indices: concat(indices, Uint32Array),
+      };
+      return {
+        ...merged,
+        edges: regionEdges(merged.positions, merged.indices),
         volumeMm3,
         depthMm,
       };

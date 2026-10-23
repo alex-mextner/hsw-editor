@@ -4,6 +4,8 @@ import type { RegionMesh } from './engine.ts';
 
 export interface RegionBatch {
   readonly geometry: BufferGeometry;
+  /** Outline segments of every region (line segments, scene units). */
+  readonly edges: BufferGeometry;
   readonly regions: readonly RegionMesh[];
   /** The region a triangle (as reported by raycasting `faceIndex`) belongs to. */
   regionOfTriangle(faceIndex: number): RegionMesh | undefined;
@@ -23,11 +25,19 @@ export function buildRegionBatch(
   if (triangleCount === 0) return null;
   const positions = new Float32Array(vertexCount * 3);
   const indices = new Uint32Array(triangleCount * 3);
+  let edgeFloats = 0;
+  for (const region of regions) edgeFloats += region.edges.length;
+  const edgePositions = new Float32Array(edgeFloats);
+  let edgeOffset = 0;
   const firstTriangle: number[] = [];
   let vertexOffset = 0;
   let triangleOffset = 0;
   for (const region of regions) {
     firstTriangle.push(triangleOffset);
+    for (let i = 0; i < region.edges.length; i += 1) {
+      edgePositions[edgeOffset + i] = (region.edges[i] ?? 0) * scale;
+    }
+    edgeOffset += region.edges.length;
     for (let i = 0; i < region.positions.length; i += 1) {
       positions[vertexOffset * 3 + i] = (region.positions[i] ?? 0) * scale;
     }
@@ -41,8 +51,11 @@ export function buildRegionBatch(
   geometry.setAttribute('position', new BufferAttribute(positions, 3));
   geometry.setIndex(new BufferAttribute(indices, 1));
   geometry.computeBoundingSphere();
+  const edges = new BufferGeometry();
+  edges.setAttribute('position', new BufferAttribute(edgePositions, 3));
   return {
     geometry,
+    edges,
     regions,
     regionOfTriangle(faceIndex) {
       let low = 0;

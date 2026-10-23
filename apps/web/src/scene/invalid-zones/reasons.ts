@@ -1,5 +1,6 @@
-/** Message ids and parameters for the invalid-zone reasons (catalogue entries: `messages.ts`). */
+/** Message ids and parameters for the invalid-zone reasons (catalogue entries: `i18n/catalog/invalidZones.ts`). */
 import type { BoundsSide, InvalidReason } from '@hsw-editor/core';
+import type { RegionMesh } from './engine.ts';
 
 export type InvalidMessageKey =
   | 'invalid.overlap'
@@ -50,4 +51,33 @@ export function reasonsByItem(reasons: readonly InvalidReason[]): Map<string, In
     else grouped.set(reason.itemId, [reason]);
   }
   return grouped;
+}
+
+/** The reasons a region stands for: both sides of an overlap pair, or the one (item, side) of a protrusion. */
+export function regionReasons(
+  region: Pick<RegionMesh, 'key' | 'kind' | 'itemIds'>,
+  reasons: readonly InvalidReason[],
+): InvalidReason[] {
+  return reasons.filter((reason) =>
+    region.kind === 'overlap'
+      ? reason.kind === 'overlap' &&
+        region.itemIds.includes(reason.itemId) &&
+        region.itemIds.includes(reason.otherId)
+      : reason.kind === 'out-of-board' && region.key === `bounds:${reason.itemId}:${reason.side}`,
+  );
+}
+
+export type LegendState =
+  | { readonly kind: 'checking' }
+  | { readonly kind: 'none' }
+  | { readonly kind: 'count'; readonly items: number };
+
+/** What the legend says: still checking while some model is loading (an unchecked item is not a valid one). */
+export function legendState(result: {
+  readonly reasons: readonly InvalidReason[];
+  readonly pending: readonly string[];
+}): LegendState {
+  const items = new Set(result.reasons.map((reason) => reason.itemId)).size;
+  if (items > 0) return { kind: 'count', items };
+  return result.pending.length > 0 ? { kind: 'checking' } : { kind: 'none' };
 }

@@ -28,10 +28,12 @@ export class InvalidZoneClient {
   private inFlight = false;
   private queued: Scene | null = null;
   private applied = 0;
+  private sentAt = 0;
 
   constructor(
     createWorker: () => WorkerPort,
-    private readonly onResult: (result: SolveResult) => void,
+    /** `roundTripMs`: post-to-answer time of the solve just answered; absent for a late re-solve of the same scene. */
+    private readonly onResult: (result: SolveResult, roundTripMs?: number) => void,
     private readonly onError: (message: string) => void = () => undefined,
   ) {
     this.worker = createWorker();
@@ -87,6 +89,7 @@ export class InvalidZoneClient {
     }
     this.seq = seq;
     this.inFlight = true;
+    this.sentAt = performance.now();
   }
 
   private receive(message: FromWorker): void {
@@ -102,8 +105,12 @@ export class InvalidZoneClient {
     }
     // A re-solve after a late solid definition answers the same seq; the newest answer wins.
     if (message.seq >= this.applied) {
+      const first = message.seq > this.applied;
       this.applied = message.seq;
-      this.onResult(message.result);
+      this.onResult(
+        message.result,
+        first && message.seq === this.seq ? performance.now() - this.sentAt : undefined,
+      );
     }
     if (message.seq === this.seq) this.release();
   }

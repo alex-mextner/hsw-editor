@@ -28,6 +28,10 @@ The previous markers were grid-cell footprint tests, not geometry tests:
 - A body overhang, a free-placed holder, a tool, or a tall holder in front of another (bodies grow up to 100 mm in `z`) overlap without sharing a
   cell and are never reported; and the marker was the whole instance (`tint` in the editor's `ItemsLayer.tsx`), never a region.
 
+Measured with `bun apps/web/scripts/compare-footprint-vs-geometry.ts` (3000 random cell-anchored pairs of the 103 seed elements): the old check called
+1586 pairs clean, and **454 of them interpenetrate** (26 by less than 1 mm, the shallowest 0.18 mm; median 6 mm); it also raised 12 false alarms
+(footprint cells shared, bodies apart).
+
 The new check works on the real meshes, so any real interpenetration above the tolerance is found, wherever the cells are.
 
 ## Engine (`apps/web/src/scene/invalid-zones`)
@@ -51,6 +55,22 @@ polygon offset) and a faint see-through pass (`GreaterDepth`) for parts hidden i
 outline marks the region border. The material is fragment-only and uses `gl_FragCoord`, so it works unchanged on `InstancedMesh` and over the
 photo overlay. Region meshes are merged into one geometry (one draw call per pass); hovering a region lists its reasons.
 
+## In the editor
+
+- `WallViewport` builds the scene with `engineScene` (`wallAdapter.ts`: wall items -> engine items, live drag poses included) and `itemSolid`
+  (the bank GLB at full detail, absolute url; tools without a model as their stand-in box), runs `useInvalidZones`, and mounts `<InvalidZones/>`.
+  The whole-instance red tint is gone: only the stripes mark invalid parts. The selection frame still turns red for an item the exact check flags, or
+  that the cell-based check / server warnings flag (so it also works with the zones off or still loading); drag validity (the green/red
+  ghost) is still the cell-based check. The op reducer and saving are unchanged (everything stays advisory). While models are still
+  downloading the legend says "Checking geometry…" instead of "No invalid zones".
+- Top bar: `InvalidZonesToggle` (persisted in `localStorage` `hsw-editor.invalid-zones`, on by default). Viewport: `InvalidZonesLegend` (swatch +
+  "N items have invalid parts" / "No invalid zones"). Inspector: `InvalidReasons` lists "Overlaps <item> by 4.2 mm" / "Protrudes 6.0 mm past the
+  left board edge". Hovering a stripe shows the reasons of that region. Strings: `i18n/catalog/invalidZones.ts` (ru/en).
+- Outlines of the regions are computed in the worker together with the region (three's `EdgesGeometry` on the render thread cost ~58 ms per
+  update with 127 striped items and made drags stutter).
+- The offline PWA precaches `manifold.wasm` (`vite.config.ts` workbox `globPatterns`).
+- `?bench` also records the worker round trip of every solve in `document.documentElement.dataset.zoneSolveMs` (read by the perf proof).
+
 ## Benchmark and choice
 
 200 real bank holders on a 90 x 60 board, one holder dragged across its neighbours (`bun apps/web/scripts/bench-invalid-zones.ts`, exits 1 over budget):
@@ -60,6 +80,10 @@ photo overlay. Region meshes are merged into one geometry (one draw call per pas
 | manifold-3d boolean intersection (chosen) | 1.5-3 ms shallow, up to ~12 ms for a deep/coincident overlap (median 2.7, p95 15 over 1157 random dense pairs) | exact mesh + volume | the only one meeting "any real overlap > 0.05 mm" with exact regions |
 | three-mesh-bvh `intersectsGeometry` | 0.1 ms | boolean only, touching counts | useful only as a cull; no region, no depth |
 | voxel occupancy / SDF (1-2 mm) | 0.25 ms per pair, 5.7 s one-off for 103 models at 1 mm | approximate | cannot represent a 0.1 mm sliver |
+
+In the real editor (200 holders, 127 of them striped, one holder dragged over 120 pointer moves, headless Chromium with software GL; `zones ON` vs
+`zones OFF`, two runs each): frame time p50 16.6 ms in both, p95 28.1-28.3 ms ON vs 29.8-33.3 ms OFF (the editor's own drag cost dominates), max
+35-36.5 ms ON vs 43-47 ms OFF; worker round trip per solve p50 6.2 ms, p95 47 ms, max 73 ms.
 
 Drag step on the warm cache (3 fixture holders / the full 103-element seed): p50 11 / 7.7 ms, p95 15 / 16.9 ms, max 18 / 18.6 ms with ~1.4-1.9
 booleans per step; cold full solve of the 200 items 2-17 ms for a valid layout (about 190 ms with ~50 overlapping pairs). The worker

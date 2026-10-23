@@ -29,6 +29,7 @@ import { sessionStore, submitOps } from '@/wall/session.ts';
 import { ItemWidgets } from '@/widgets/ItemWidgets.tsx';
 import { CompareSection } from '@/widgets/CompareSection.tsx';
 import { ItemModelNotice } from './ModelIssueNotice.tsx';
+import { InvalidReasons } from '@/features/invalid-zones/InvalidReasons.tsx';
 import { WallPanel } from './WallPanel.tsx';
 
 export function itemTitle(
@@ -93,6 +94,7 @@ function ItemPanel({
       </header>
 
       <ItemModelNotice item={item} />
+      <InvalidReasons wall={wall} itemId={item.id} />
       <ItemActions items={[item]} />
       <Placement item={item} wall={wall} />
       <ItemWidgets item={item} />

@@ -76,6 +76,8 @@ describe('synthetic boxes: exactness', () => {
     expect(result.regions).toHaveLength(1);
     expect(result.regions[0]?.itemIds).toEqual(['a', 'b']);
     expect(result.regions[0]?.positions.length).toBeGreaterThan(0);
+    // the overlap of two cubes is a box: 12 outline segments of 2 xyz endpoints
+    expect(result.regions[0]?.edges.length).toBe(12 * 2 * 3);
     engine.dispose();
   });
 

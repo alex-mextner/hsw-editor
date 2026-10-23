@@ -55,6 +55,38 @@ function setup() {
   return { worker, results, client };
 }
 
+describe('InvalidZoneClient solve timing', () => {
+  test('the round trip is reported once for the answer to the current scene, not for a late re-solve of it', () => {
+    const worker = new FakeWorker();
+    const timings: (number | undefined)[] = [];
+    const client = new InvalidZoneClient(
+      () => worker,
+      (_result, ms) => timings.push(ms),
+    );
+    client.update(DEFAULT_BOARD, [item('a', 1)], sources);
+    worker.reply({ type: 'result', seq: 1, result: empty });
+    worker.reply({ type: 'result', seq: 1, result: { ...empty, pending: ['x'] } });
+    expect(typeof timings[0]).toBe('number');
+    expect(timings[0]).toBeGreaterThanOrEqual(0);
+    expect(timings[1]).toBeUndefined();
+  });
+
+  test('a queued scene is timed from when it was actually sent', async () => {
+    const worker = new FakeWorker();
+    const timings: (number | undefined)[] = [];
+    const client = new InvalidZoneClient(
+      () => worker,
+      (_result, ms) => timings.push(ms),
+    );
+    client.update(DEFAULT_BOARD, [item('a', 1)], sources);
+    client.update(DEFAULT_BOARD, [item('a', 2)], sources);
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    worker.reply({ type: 'result', seq: 1, result: empty }); // releases the queued scene now
+    worker.reply({ type: 'result', seq: 2, result: empty });
+    expect(timings[1]).toBeLessThan(25); // not 30 ms+: measured from the second send
+  });
+});
+
 describe('InvalidZoneClient', () => {
   test('defines each solid once and sends the first scene immediately', () => {
     const { worker, client } = setup();

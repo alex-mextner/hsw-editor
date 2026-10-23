@@ -3,7 +3,7 @@ import { ShaderChunk } from 'three';
 import type { RegionMesh } from './engine.ts';
 import { describeReason, formatMm, reasonsByItem } from './reasons.ts';
 import { buildRegionBatch, regionsSignature } from './regionGeometry.ts';
-import { invalidZonesEn, invalidZonesRu } from './messages.ts';
+import { invalidZonesEn, invalidZonesRu } from '@/i18n/catalog/invalidZones.ts';
 import { STRIPE_FRAGMENT, createStripeMaterial } from './stripeMaterial.ts';
 
 const region = (key: string, vertices: number, triangles: number): RegionMesh => ({
@@ -13,6 +13,7 @@ const region = (key: string, vertices: number, triangles: number): RegionMesh =>
   itemIds: ['a', 'b'],
   positions: Float32Array.from({ length: vertices * 3 }, (_, i) => i),
   indices: Uint32Array.from({ length: triangles * 3 }, (_, i) => i % vertices),
+  edges: Float32Array.from({ length: 12 }, (_, i) => i),
 });
 
 describe('buildRegionBatch', () => {
@@ -28,6 +29,9 @@ describe('buildRegionBatch', () => {
     const positions = batch.geometry.getAttribute('position');
     expect(positions.count).toBe(9);
     expect(positions.getX(1)).toBeCloseTo(0.003, 9);
+    // both regions' outlines are merged and scaled too
+    expect(batch.edges.getAttribute('position').count).toBe(8);
+    expect(batch.edges.getAttribute('position').getX(1)).toBeCloseTo(0.003, 9);
     const index = batch.geometry.getIndex();
     expect(index?.count).toBe(15);
     // second region's first index is offset by the first region's 4 vertices

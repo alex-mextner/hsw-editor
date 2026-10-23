@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { CloudOff, Hexagon, Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button.tsx';
+import { InvalidZonesLegend } from '@/features/invalid-zones/InvalidZonesLegend.tsx';
 import { newWallDialogStore } from '@/features/wizard/NewWallDialog.tsx';
 import { useI18n } from '@/i18n/index.ts';
 import { currentWallId } from '@/state/current-wall.ts';
@@ -61,6 +62,7 @@ export function ViewportArea() {
         <WallViewport wall={wall} />
       </Suspense>
       <ViewportToolbar />
+      <InvalidZonesLegend />
       <ViewportHint
         text={
           tool === 'measure'
