@@ -17,6 +17,7 @@ import type {
   WallSummary,
 } from '@hsw-editor/core';
 import { HistoryEntrySchema } from '@hsw-editor/core';
+import sharp from 'sharp';
 import { z } from 'zod';
 import type { HealthPayload } from './handler.ts';
 import { type JobRegistry, registerJob } from './jobs.ts';
@@ -465,6 +466,23 @@ describe('assets', () => {
     expect((await post('/api/walls/pics/photos', {})).status).toBe(415);
     const wall: WallResponse = await (await http(`${base}/api/walls/pics`)).json();
     expect(wall.wall.photos).toHaveLength(1); // rejected uploads leave no trace
+  });
+
+  test('a phone JPEG tagged with EXIF orientation 6 is stored upright', async () => {
+    await createWall('rot');
+    const raw = await sharp({ create: { width: 40, height: 20, channels: 3, background: '#c33' } })
+      .jpeg()
+      .withMetadata({ orientation: 6 })
+      .toBuffer();
+    const form = new FormData();
+    form.set('file', new File([raw], 'IMG_0001.jpeg', { type: 'image/jpeg' }));
+    const response = await http(`${base}/api/walls/rot/photos`, { method: 'POST', body: form });
+    expect(response.status).toBe(201);
+    const uploaded: PhotoUploadResponse = await response.json();
+    expect(uploaded.photo).toMatchObject({ mime: 'image/jpeg', width: 20, height: 40 });
+    const file = await http(`${base}/api/walls/rot/photos/${uploaded.photo.id}/file`);
+    const stored = sharp(new Uint8Array(await file.arrayBuffer()));
+    expect((await stored.metadata()).orientation).toBeUndefined();
   });
 
   test('model upload adds a candidate model ref', async () => {
