@@ -3,7 +3,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ArrowLeftIcon, PlusIcon } from 'lucide-react';
 import type { BankElement, BankIndex } from '@hsw-editor/bank';
 import { IconButton } from '@/components/IconButton.tsx';
-import { isTypingTarget } from '@/commands/registry.ts';
+import { isTypingTarget } from '@/commands/typing.ts';
 import { Button } from '@/components/ui/button.tsx';
 import { useI18n } from '@/i18n/index.ts';
 import { cn } from '@/lib/cn.ts';

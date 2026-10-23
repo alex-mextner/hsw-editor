@@ -10,6 +10,7 @@ import {
   Scan,
   Square,
 } from 'lucide-react';
+import { useShortcutLabel } from '@/commands/app.ts';
 import { IconButton } from '@/components/IconButton.tsx';
 import { Slider } from '@/components/ui/slider.tsx';
 import { useI18n } from '@/i18n/index.ts';
@@ -24,13 +25,21 @@ export function ViewportToolbar() {
   const photos = useStore(sessionStore)?.wall?.photos ?? [];
   const overlayOn = editor.overlay.photoId !== null;
   const firstPhoto = photos[0];
+  const keys = {
+    select: useShortcutLabel('tool.select'),
+    measure: useShortcutLabel('tool.measure'),
+    view: useShortcutLabel('view.toggle'),
+    fit: useShortcutLabel('view.fit'),
+    snap: useShortcutLabel('tool.snap'),
+    overlay: useShortcutLabel('view.overlay'),
+  };
 
   return (
     <div className="pointer-events-none absolute inset-x-2 top-2 z-10 flex flex-wrap items-start gap-2">
       <div className="pointer-events-auto flex items-center gap-0.5 rounded-lg border border-border bg-panel/95 p-0.5 shadow-sm backdrop-blur">
         <IconButton
           label={t('tool.select')}
-          shortcut="V"
+          shortcut={keys.select}
           pressed={editor.tool === 'select'}
           onClick={() => setTool('select')}
         >
@@ -38,7 +47,7 @@ export function ViewportToolbar() {
         </IconButton>
         <IconButton
           label={t('tool.measure')}
-          shortcut="M"
+          shortcut={keys.measure}
           pressed={editor.tool === 'measure'}
           onClick={() => setTool(editor.tool === 'measure' ? 'select' : 'measure')}
         >
@@ -47,18 +56,18 @@ export function ViewportToolbar() {
         <div className="mx-0.5 h-5 w-px bg-border" />
         <IconButton
           label={editor.view === 'front' ? t('view.perspective') : t('view.front')}
-          shortcut="O"
+          shortcut={keys.view}
           pressed={editor.view === 'front'}
           onClick={() => patchEditor({ view: editor.view === 'front' ? 'perspective' : 'front' })}
         >
           {editor.view === 'front' ? <Square /> : <Box />}
         </IconButton>
-        <IconButton label={t('view.fit')} shortcut="F" onClick={fitView}>
+        <IconButton label={t('view.fit')} shortcut={keys.fit} onClick={fitView}>
           <Maximize />
         </IconButton>
         <IconButton
           label={t('tool.snap')}
-          shortcut="S"
+          shortcut={keys.snap}
           pressed={editor.snap}
           onClick={() => patchEditor({ snap: !editor.snap })}
         >
@@ -70,7 +79,7 @@ export function ViewportToolbar() {
         <div className="pointer-events-auto flex items-center gap-1 rounded-lg border border-border bg-panel/95 p-0.5 pr-2 shadow-sm backdrop-blur">
           <IconButton
             label={overlayOn ? t('overlay.hide') : t('overlay.show')}
-            shortcut="P"
+            shortcut={keys.overlay}
             pressed={overlayOn}
             onClick={() =>
               patchEditor({

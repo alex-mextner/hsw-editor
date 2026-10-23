@@ -147,6 +147,14 @@ describe('long titles keep subsequence and typo matching', () => {
   });
 });
 
+describe('typo tolerance on long titles', () => {
+  test('an extra or transposed letter still finds a 29-character title', () => {
+    expect(
+      matchQuery('keybaord', [{ text: 'Customise keyboard shortcuts…', weight: 1 }]),
+    ).not.toBeNull();
+  });
+});
+
 describe('rewritten readings stay tight', () => {
   test('"тема" does not match unrelated titles through scattered letters', () => {
     for (const title of [

@@ -41,7 +41,7 @@ function SheetBody() {
   const { keymap } = useKeymapState();
   const [filter, setFilter] = useState('');
   const groups = useMemo(
-    () => buildCheatSheet(commandRegistry.available(context), keymap, locale, filter),
+    () => buildCheatSheet(commandRegistry.available(context), keymap, locale, filter, context),
     [context, keymap, locale, filter],
   );
 

@@ -356,6 +356,20 @@ describe('edits', () => {
     expect(back.overrides).toEqual({});
   });
 
+  test('two defaults reordered by the user count as the defaults', () => {
+    const tool = defineCommand({
+      id: 'edit.delete',
+      title: { en: 'Delete', ru: 'Удалить' },
+      group: 'edit',
+      keybindings: { all: ['delete', 'backspace'] },
+      mutates: true,
+      handler: noop,
+    });
+    const removed = removeBinding(EMPTY_USER_KEYMAP, tool, platform, 'delete');
+    expect(removed.overrides['edit.delete']).toEqual([{ key: 'backspace' }]);
+    expect(addBinding(removed, tool, platform, 'delete')).toEqual(EMPTY_USER_KEYMAP);
+  });
+
   test('windows redo uses its platform default as the base of an edit', () => {
     const redo = COMMANDS[1] as Command;
     const next = addBinding(EMPTY_USER_KEYMAP, redo, 'windows', 'mod+r');

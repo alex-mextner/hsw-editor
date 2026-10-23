@@ -63,8 +63,10 @@ export function KeyCapture({
   };
   // The window listener outlives renders; it must call the latest save.
   const saveRef = useRef(save);
+  const canSaveRef = useRef(saveText !== null);
   useEffect(() => {
     saveRef.current = save;
+    canSaveRef.current = saveText !== null;
   });
 
   useEffect(() => {
@@ -74,6 +76,22 @@ export function KeyCapture({
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
       if (event.target instanceof Element && event.target.closest(INTERACTIVE) !== null) return;
+      // A chord typed in the text field is a valid candidate too: Enter saves it from the capture box.
+      const plainEnter =
+        event.key === 'Enter' &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        !event.altKey &&
+        !event.shiftKey &&
+        !event.repeat &&
+        !event.isComposing;
+      if (plainEnter && canSaveRef.current && recordingRef.current.strokes.length === 0) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        onKeyHandled();
+        saveRef.current();
+        return;
+      }
       const step = recordingStep(recordingRef.current, event, platform);
       if (step.action === 'ignore') return;
       event.preventDefault();

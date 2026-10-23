@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { useThree } from '@react-three/fiber';
 import { OrbitControls, OrthographicCamera, PerspectiveCamera } from '@react-three/drei';
 import { OrthographicCamera as ThreeOrthographicCamera, Vector3 } from 'three';
-import { isTypingTarget } from '@/commands/registry.ts';
+import { isTypingTarget } from '@/commands/typing.ts';
 import { editorStore } from '@/state/editor.ts';
 import { bindCameraLock, mouseButtonsFor, touchesFor } from './cameraControls.ts';
 import { mm } from './units.ts';

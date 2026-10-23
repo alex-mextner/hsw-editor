@@ -3,6 +3,7 @@ import {
   COMMAND_GROUPS,
   type Command,
   type CommandGroup,
+  type Context,
   compileQuery,
   formatChord,
   formatStroke,
@@ -10,6 +11,7 @@ import {
   type Locale,
   labelText,
   matchQuery,
+  matchesWhen,
   type PendingChord,
   type SearchField,
 } from '@hsw-editor/commands';
@@ -36,6 +38,7 @@ export function buildCheatSheet(
   keymap: Keymap,
   locale: Locale,
   filter: string,
+  context: Context,
 ): readonly CheatGroup[] {
   const compiled = compileQuery(filter);
   const byGroup = new Map<CommandGroup, CheatEntry[]>();
@@ -43,6 +46,8 @@ export function buildCheatSheet(
     const labels: string[] = [];
     for (const binding of keymap.bindings) {
       if (binding.commandId !== command.id) continue;
+      // A binding with its own when-clause (a user override) may be inactive although the command is not.
+      if (!matchesWhen(binding.when, context)) continue;
       const label = formatChord(binding.chord, keymap.platform);
       if (!labels.includes(label)) labels.push(label);
     }

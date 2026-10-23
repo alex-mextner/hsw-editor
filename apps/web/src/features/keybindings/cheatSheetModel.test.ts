@@ -5,6 +5,7 @@ import {
   defineCommand,
   EMPTY_USER_KEYMAP,
   type PendingChord,
+  setCommandBindings,
 } from '@hsw-editor/commands';
 import { buildCheatSheet, pendingChordView } from './cheatSheetModel.ts';
 
@@ -66,8 +67,21 @@ const keymap = buildKeymap(COMMANDS, EMPTY_USER_KEYMAP, 'linux');
 const available = COMMANDS.filter((command) => command.id !== 'edit.delete');
 
 describe('cheat-sheet', () => {
+  test('a binding whose own when-clause is false is not listed', () => {
+    const user = setCommandBindings(EMPTY_USER_KEYMAP, 'help.docs', [
+      { key: 'mod+u', when: 'selection' },
+    ]);
+    const custom = buildKeymap(COMMANDS, user, 'linux');
+    const docs = (selection: boolean) =>
+      buildCheatSheet(available, custom, 'en', '', { selection })
+        .flatMap((group) => group.entries)
+        .some((entry) => entry.id === 'help.docs');
+    expect(docs(false)).toBe(false);
+    expect(docs(true)).toBe(true);
+  });
+
   test('lists only available commands that have a binding, grouped in registry order', () => {
-    const groups = buildCheatSheet(available, keymap, 'en', '');
+    const groups = buildCheatSheet(available, keymap, 'en', '', {});
     expect(groups.map((group) => group.group)).toEqual(['edit', 'view', 'help']);
     expect(groups.flatMap((group) => group.entries.map((entry) => entry.id))).not.toContain(
       'edit.delete',
@@ -78,11 +92,11 @@ describe('cheat-sheet', () => {
   });
 
   test('shows every binding of a command formatted for the platform', () => {
-    const help = buildCheatSheet(available, keymap, 'en', '').find((g) => g.group === 'help');
+    const help = buildCheatSheet(available, keymap, 'en', '', {}).find((g) => g.group === 'help');
     const keys = help?.entries.find((entry) => entry.id === 'help.keys');
     expect(keys?.labels).toEqual(['Ctrl+K Ctrl+S', 'Shift+/']);
     const mac = buildKeymap(COMMANDS, EMPTY_USER_KEYMAP, 'mac');
-    const macEntry = buildCheatSheet(available, mac, 'en', '')
+    const macEntry = buildCheatSheet(available, mac, 'en', '', {})
       .flatMap((group) => group.entries)
       .find((entry) => entry.id === 'edit.undo');
     expect(macEntry?.labels).toEqual(['⌘Z']);
@@ -90,7 +104,7 @@ describe('cheat-sheet', () => {
 
   test('filters in both languages and by key', () => {
     const ids = (filter: string, locale: 'en' | 'ru' = 'en') =>
-      buildCheatSheet(available, keymap, locale, filter).flatMap((group) =>
+      buildCheatSheet(available, keymap, locale, filter, {}).flatMap((group) =>
         group.entries.map((entry) => entry.id),
       );
     expect(ids('отмена')).toEqual(['edit.undo']);
@@ -101,7 +115,7 @@ describe('cheat-sheet', () => {
   });
 
   test('titles follow the locale', () => {
-    const entry = buildCheatSheet(available, keymap, 'ru', '')
+    const entry = buildCheatSheet(available, keymap, 'ru', '', {})
       .flatMap((group) => group.entries)
       .find((candidate) => candidate.id === 'edit.undo');
     expect(entry?.title).toBe('Отменить');

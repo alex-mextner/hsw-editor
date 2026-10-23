@@ -243,7 +243,14 @@ export function reduceFrame(conversation: Conversation, frame: OmpFrame): Conver
       return { ...conversation, working: true, retry: null };
     case 'session_settled':
       // A non-terminal agent_end whose follow-up run was cancelled is only closed by this frame.
-      return { ...conversation, working: false, stream: null, streamId: null, activeTools: new Map(), retry: null };
+      return {
+        ...conversation,
+        working: false,
+        stream: null,
+        streamId: null,
+        activeTools: new Map(),
+        retry: null,
+      };
     case 'agent_end': {
       if (frame.isTerminal === false) return conversation;
       return {

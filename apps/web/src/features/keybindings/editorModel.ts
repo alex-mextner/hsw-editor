@@ -348,9 +348,14 @@ function commit(
   entries: readonly BindingOverride[],
 ): UserKeymap {
   const defaults = defaultKeyTexts(command, platform);
+  // Same keys in any order: re-adding a removed default must not leave a frozen "customised" override.
+  const defaultIds = new Set(defaults.map((key) => chordIdOfText(key, platform)));
   const same =
     entries.length === defaults.length &&
-    entries.every((entry, index) => entry.when === undefined && entry.key === defaults[index]);
+    entries.every(
+      (entry) => entry.when === undefined && defaultIds.has(chordIdOfText(entry.key, platform)),
+    ) &&
+    new Set(entries.map((entry) => chordIdOfText(entry.key, platform))).size === defaultIds.size;
   return same
     ? resetCommandBindings(user, command.id)
     : setCommandBindings(user, command.id, entries);

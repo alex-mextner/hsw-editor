@@ -6,7 +6,7 @@ import { cn } from '@/lib/cn.ts';
 
 interface IconButtonProps {
   readonly label: string;
-  readonly shortcut?: string;
+  readonly shortcut?: string | undefined;
   readonly onClick?: () => void;
   readonly disabled?: boolean;
   readonly pressed?: boolean;

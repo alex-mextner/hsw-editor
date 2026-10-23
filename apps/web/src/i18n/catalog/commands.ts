@@ -56,9 +56,6 @@ export const commandsEn = {
   'palette.gotoRevision': 'Go to revision {rev}',
   'palette.gotoRevisionHint': 'Undo edits until the wall is at that revision',
   'palette.historyEntry': '#{rev} · {what}',
-  'palette.openDocs': 'Open the documentation',
-  'palette.decrease': 'Decrease',
-  'palette.increase': 'Increase',
   'palette.wallItem': 'Item {id}',
   'palette.wallMeta': 'Items: {items} · rev {rev}',
   'palette.toolPreset': 'A tool with typical dimensions',
@@ -99,7 +96,6 @@ export const commandsEn = {
   'help.docsHotkeys': 'Hotkeys documentation',
   'help.docsHotkeysBody':
     'The model behind commands, when-clauses, chords and the palette (docs/hotkeys.md in the repository).',
-  'help.open': 'Open help',
 
   // Cheat-sheet
   'cheat.title': 'Keyboard shortcuts',
@@ -214,14 +210,14 @@ export const commandsEn = {
   'cmd.history.undoToDescription': 'Undo edits until the wall is at the given revision',
   'cmd.settings.reset': 'Reset all settings to defaults',
   'cmd.settings.resetDescription': 'Restore every setting to its default value',
-  'cmd.group.settings': 'Settings',
   'cmd.settings.set': 'Set: {title}',
   'cmd.settings.toggle': 'Toggle: {title}',
   'cmd.unavailable': 'Not available right now',
-  'cmd.ran': 'Done: {title}',
   'cmd.failed': 'Could not run “{title}”: {reason}',
   'cmd.needsWall': 'Open a wall first',
-  'cmd.undoToNothing': 'The wall is already at that revision',
+  'cmd.undoToMoved': 'The wall changed while the history was loading, try again',
+  'cmd.undoToPending': 'Wait until your edits are saved, then try again',
+  'cmd.undoToUnreachable': 'That revision cannot be reached by undo',
 } as const;
 
 export const commandsRu: FeatureRu<typeof commandsEn> = {
@@ -275,9 +271,6 @@ export const commandsRu: FeatureRu<typeof commandsEn> = {
   'palette.gotoRevision': 'Перейти к ревизии {rev}',
   'palette.gotoRevisionHint': 'Откатывать правки, пока стена не вернётся к этой ревизии',
   'palette.historyEntry': '#{rev} · {what}',
-  'palette.openDocs': 'Открыть документацию',
-  'palette.decrease': 'Уменьшить',
-  'palette.increase': 'Увеличить',
   'palette.wallItem': 'Элемент {id}',
   'palette.wallMeta': 'Элементов: {items} · ревизия {rev}',
   'palette.toolPreset': 'Инструмент с типичными размерами',
@@ -316,7 +309,6 @@ export const commandsRu: FeatureRu<typeof commandsEn> = {
   'help.docsHotkeys': 'Документация по горячим клавишам',
   'help.docsHotkeysBody':
     'Как устроены команды, условия, цепочки клавиш и палитра (docs/hotkeys.md в репозитории).',
-  'help.open': 'Открыть справку',
 
   'cheat.title': 'Горячие клавиши',
   'cheat.description': 'Сочетания, которые работают сейчас. Их можно изменить в редакторе клавиш.',
@@ -431,12 +423,12 @@ export const commandsRu: FeatureRu<typeof commandsEn> = {
   'cmd.history.undoToDescription': 'Отменять правки, пока стена не придёт к указанной ревизии',
   'cmd.settings.reset': 'Сбросить все настройки',
   'cmd.settings.resetDescription': 'Вернуть каждой настройке значение по умолчанию',
-  'cmd.group.settings': 'Настройки',
   'cmd.settings.set': 'Установить: {title}',
   'cmd.settings.toggle': 'Переключить: {title}',
   'cmd.unavailable': 'Сейчас недоступно',
-  'cmd.ran': 'Готово: {title}',
   'cmd.failed': 'Не удалось выполнить «{title}»: {reason}',
   'cmd.needsWall': 'Сначала откройте стену',
-  'cmd.undoToNothing': 'Стена уже на этой ревизии',
+  'cmd.undoToMoved': 'Стена изменилась, пока загружалась история, повторите',
+  'cmd.undoToPending': 'Подождите, пока ваши правки сохранятся, и повторите',
+  'cmd.undoToUnreachable': 'К этой ревизии нельзя вернуться отменой',
 };
