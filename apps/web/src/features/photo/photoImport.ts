@@ -61,8 +61,10 @@ export async function importPhotoFile(file: File): Promise<void> {
       );
     });
     // The answer carries the wall that contains the photo; photo mode must not open before the session has it.
-    if (applyUploadedWall(wall)) enterPhotoMode(photoId, { calibrated: false });
-    notify('info', t('photo.imported', { name: file.name }));
+    if (applyUploadedWall(wall)) {
+      enterPhotoMode(photoId, { calibrated: false });
+      notify('info', t('photo.imported', { name: file.name }));
+    }
   } catch (error) {
     notify('error', t('photo.importFailed', { reason: reasonOf(error) }));
   } finally {

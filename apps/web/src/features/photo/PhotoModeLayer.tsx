@@ -35,6 +35,12 @@ function usePhotoIntake(): boolean {
     };
     const drop = (event: DragEvent): void => {
       if (!carriesFiles(event)) return;
+      // Another surface (the agent composer) already took this drop.
+      if (event.defaultPrevented) {
+        depth = 0;
+        setDragging(false);
+        return;
+      }
       event.preventDefault();
       depth = 0;
       setDragging(false);

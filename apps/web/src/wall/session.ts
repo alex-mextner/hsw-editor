@@ -5,6 +5,7 @@ import { api, HUMAN } from '@/api/http.ts';
 import { HistoryEntrySchema, type WallSummary } from '@/api/schemas.ts';
 import { currentWallId } from '@/state/current-wall.ts';
 import { patchEditor, setSelection } from '@/state/editor.ts';
+import { leavePhotoMode } from '@/state/photo.ts';
 import { clearRequests, handleRequestEvent, loadOpenRequests } from '@/widgets/requests.ts';
 import { DEMO } from '@/demo/mode.ts';
 import { DEMO_WALL_ID, demoApi } from '@/demo/demoApi.ts';
@@ -106,6 +107,7 @@ export function closeWall(): void {
   detach = null;
   sync = null;
   patchEditor({ placeAt: null });
+  leavePhotoMode();
   sessionStore.set(null);
   clearRequests();
   setSelection([]);
