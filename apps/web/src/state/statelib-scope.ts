@@ -20,7 +20,21 @@ export function createScope(runtime: Runtime = new Runtime()): Scope {
       const external = toExternalStore(signal);
       return Object.freeze<ValueStore<T>>({
         getSnapshot: () => external.getSnapshot(),
-        subscribe: (notify) => external.subscribe(notify),
+        // state-lib forbids writing state while it delivers notifications (STATE_REENTRANT_WRITE), and the
+        // editor's subscribers write other stores (open the wall, refresh command context). Delivering in
+        // a microtask after the commit lets them write; they read the latest value with get().
+        subscribe: (notify) => {
+          let live = true;
+          const stop = external.subscribe(() => {
+            queueMicrotask(() => {
+              if (live) notify();
+            });
+          });
+          return () => {
+            live = false;
+            stop();
+          };
+        },
         get: () => signal.get(),
         set: (next) => signal.set(next),
       });
