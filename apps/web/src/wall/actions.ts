@@ -12,9 +12,17 @@ import {
   type WallItem,
 } from '@hsw-editor/core';
 import { bankStore } from '@/bank/client.ts';
-import { editorStore, setSelection } from '@/state/editor.ts';
+import { editorStore, patchEditor, setSelection, type Vec2 } from '@/state/editor.ts';
 import { wallPointAt } from '@/scene/viewportBridge.ts';
-import { addItemOp, duplicateOps, findFreeCell, newItem, type BankLookup } from './edits.ts';
+import { clipboardStore } from './clipboard.ts';
+import {
+  addItemOp,
+  duplicateOps,
+  findFreeCell,
+  newItem,
+  pasteOps,
+  type BankLookup,
+} from './edits.ts';
 import type { ToolClass } from '@hsw-editor/bank';
 import { offsetCell } from './footprint.ts';
 import { toolPresetOps } from './toolPresets.ts';
@@ -36,21 +44,45 @@ export function selectedItems(): WallItem[] {
 }
 
 /**
- * Adds `element` on the free cell nearest to the middle of the viewport (or the board centre when the
- * viewport is not mounted). Returns the new item id, or null when the board has no room / no wall is open.
+ * Adds `element` on the free cell nearest to the spot picked with "add element here" (consumed by
+ * this call), else to the middle of the viewport (or the board centre when the viewport is not
+ * mounted). Returns the new item id, or null when the board has no room / no wall is open.
  */
 export function addElementToWall(element: BankElement): string | null {
   const wall = currentWall();
   if (!wall) return null;
-  const middle = viewportMiddle();
-  const target = nearestCell(wall.board, middle.x, middle.y);
+  const spot = editorStore.get().placeAt ?? viewportMiddle();
+  const target = nearestCell(wall.board, spot.x, spot.y);
   const cell = findFreeCell(wall, currentBank(), element, target);
   if (!cell) return null;
   const item = newItem(element, cell, wall.board);
   const result = submitOps([addItemOp(item)], 'add-item');
   if (!result.ok) return null;
+  patchEditor({ placeAt: null });
   setSelection([item.id]);
   return item.id;
+}
+
+/** Remembers the selected holders/tools so Paste can put copies of them on the wall. */
+export function copySelection(): void {
+  const items = selectedItems().filter((item) => item.kind !== 'photo-ref' && item.cell !== undefined);
+  if (items.length > 0) clipboardStore.set(items);
+}
+
+/**
+ * Pastes the copied items with the first one on the cell nearest to `at` (default: the middle of the
+ * viewport); the group slides to the nearest free spot when that one is taken. Returns false when
+ * there is nothing to paste or no room.
+ */
+export function pasteClipboard(at?: Vec2): boolean {
+  const wall = currentWall();
+  const items = clipboardStore.get();
+  if (!wall || items.length === 0) return false;
+  const spot = at ?? viewportMiddle();
+  const ops = pasteOps(wall, currentBank(), items, nearestCell(wall.board, spot.x, spot.y));
+  if (ops.length === 0 || !submitOps(ops, 'paste-items').ok) return false;
+  setSelection(ops.flatMap((op) => (op.type === 'addItem' ? [op.item.id] : [])));
+  return true;
 }
 
 function viewportMiddle(): { x: number; y: number } {

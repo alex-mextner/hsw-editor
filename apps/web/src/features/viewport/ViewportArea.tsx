@@ -20,7 +20,7 @@ const WallViewport = lazy(() =>
 export function ViewportArea() {
   const { t } = useI18n();
   const session = useStore(sessionStore);
-  const tool = useStore(editorStore).tool;
+  const { tool, placeAt } = useStore(editorStore);
 
   if (!session) return <HomeState />;
   if (session.status === 'error' || session.status === 'deleted') {
@@ -61,7 +61,15 @@ export function ViewportArea() {
         <WallViewport wall={wall} />
       </Suspense>
       <ViewportToolbar />
-      <ViewportHint text={tool === 'measure' ? t('hint.measure') : t('hint.select')} />
+      <ViewportHint
+        text={
+          tool === 'measure'
+            ? t('hint.measure')
+            : placeAt === null
+              ? t('hint.select')
+              : t('hint.placeAt')
+        }
+      />
       {wall.items.length === 0 ? <EmptyWallHints /> : null}
       <WidgetHost />
     </>

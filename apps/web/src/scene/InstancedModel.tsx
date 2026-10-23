@@ -13,6 +13,7 @@ import {
   Quaternion,
   Vector3,
 } from 'three';
+import { itemUserData } from './itemHit.ts';
 import { MM } from './units.ts';
 
 /** One placement of a model: pose in wall frame (mm, degrees) plus the tint state. */
@@ -75,6 +76,7 @@ export function InstancedModel({ url, placements, onItemPointerDown }: Instanced
   const refs = useRef<(InstancedMesh | null)[]>([]);
   // Instanced meshes are rebuilt when the capacity changes; placements only update matrices/colours.
   const capacity = Math.max(placements.length, 1);
+  const userData = useMemo(() => itemUserData(placements), [placements]);
 
   useLayoutEffect(() => {
     parts.forEach((part, partIndex) => {
@@ -108,6 +110,7 @@ export function InstancedModel({ url, placements, onItemPointerDown }: Instanced
           }}
           args={[part.geometry, part.material, capacity]}
           frustumCulled={false}
+          userData={userData}
           onPointerDown={(event) => {
             const instance = event.instanceId;
             const placement = instance === undefined ? undefined : placements[instance];

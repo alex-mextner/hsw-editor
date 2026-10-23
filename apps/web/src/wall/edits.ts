@@ -1,5 +1,5 @@
 /** Builders for the ops the editor sends, plus placement search on the honeycomb lattice. */
-import type { BankElement } from '@hsw-editor/bank';
+import type { BankElement, CellOffset } from '@hsw-editor/bank';
 import {
   cellCenter,
   newId,
@@ -102,24 +102,53 @@ export function ringCells(centre: GridCell, ring: number): GridCell[] {
   return cells;
 }
 
-/** Copies of `items` shifted together by the smallest lattice offset where all of them fit. */
-export function duplicateOps(wall: Wall, bank: BankLookup, items: readonly WallItem[]): LeafOp[] {
-  const anchored = items.filter((item) => item.cell !== undefined);
-  const first = anchored[0];
-  if (!first?.cell) return [];
-  const shifts = [{ dCol: 0, dRow2: 0 }];
-  for (let ring = 1; ring <= 12; ring += 1) {
+/** The zero shift followed by every lattice offset within `maxRing` rings, nearest first. */
+function ringShifts(maxRing: number): CellOffset[] {
+  const shifts: CellOffset[] = [{ dCol: 0, dRow2: 0 }];
+  for (let ring = 1; ring <= maxRing; ring += 1) {
     for (const cell of ringCells({ col: 0, row: 0 }, ring)) {
       shifts.push({ dCol: cell.col, dRow2: 2 * cell.row + (cell.col & 1) });
     }
   }
-  for (const shift of shifts.slice(1)) {
+  return shifts;
+}
+
+/** Copies of `items` all land on free cells and nowhere else: none overlaps anything or leaves the board. */
+function copiesFit(wall: Wall, bank: BankLookup, copies: readonly WallItem[]): boolean {
+  const problems = layoutProblems([...wall.items, ...copies], wall.board, bank);
+  return copies.every((copy) => !problems.has(copy.id));
+}
+
+/** Copies of `items` shifted together by the smallest lattice offset where all of them fit. */
+export function duplicateOps(wall: Wall, bank: BankLookup, items: readonly WallItem[]): LeafOp[] {
+  const anchored = items.filter((item) => item.cell !== undefined);
+  if (!anchored[0]?.cell) return [];
+  for (const shift of ringShifts(12).slice(1)) {
     const copies = anchored.map((item) => copyShifted(item, shift, wall.board));
-    const combined = [...wall.items, ...copies];
-    const problems = layoutProblems(combined, wall.board, bank);
-    if (copies.every((copy) => !problems.has(copy.id))) {
-      return copies.map((copy) => addItemOp(copy));
-    }
+    if (copiesFit(wall, bank, copies)) return copies.map((copy) => addItemOp(copy));
+  }
+  return [];
+}
+
+/**
+ * Copies of `items` with the first one on `target` and the rest keeping their layout around it. When
+ * that spot is taken, the whole group moves to the nearest lattice offset where everything fits.
+ */
+export function pasteOps(
+  wall: Wall,
+  bank: BankLookup,
+  items: readonly WallItem[],
+  target: GridCell,
+): LeafOp[] {
+  const anchored = items.filter((item) => item.cell !== undefined);
+  const first = anchored[0]?.cell;
+  if (!first) return [];
+  const halfRows = (cell: GridCell): number => 2 * cell.row + (cell.col & 1);
+  const base = { dCol: target.col - first.col, dRow2: halfRows(target) - halfRows(first) };
+  for (const extra of ringShifts(12)) {
+    const shift = { dCol: base.dCol + extra.dCol, dRow2: base.dRow2 + extra.dRow2 };
+    const copies = anchored.map((item) => copyShifted(item, shift, wall.board));
+    if (copiesFit(wall, bank, copies)) return copies.map((copy) => addItemOp(copy));
   }
   return [];
 }

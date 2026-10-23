@@ -40,6 +40,8 @@ export interface EditorState {
   } | null;
   /** Item whose params/variant are being edited by a widget (highlight in the scene). */
   readonly widgetItemId: string | null;
+  /** Wall point (mm) picked with "add element here": the next element added from the bank goes there. */
+  readonly placeAt: Vec2 | null;
 }
 
 const INITIAL: EditorState = {
@@ -55,6 +57,7 @@ const INITIAL: EditorState = {
   dragValid: true,
   ghost: null,
   widgetItemId: null,
+  placeAt: null,
 };
 
 export const editorStore = createValueStore<EditorState>(INITIAL);

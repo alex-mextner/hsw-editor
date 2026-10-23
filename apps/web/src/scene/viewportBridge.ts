@@ -4,6 +4,8 @@ import type { Vec2 } from '@/state/editor.ts';
 export interface ViewportBridge {
   /** Wall-plane point (mm) under a client position, or null when the ray misses the plane. */
   readonly toWall: (clientX: number, clientY: number) => Vec2 | null;
+  /** Id of the item drawn under a client position (nearest hit, so the board hides items behind it), or null. */
+  readonly itemAt: (clientX: number, clientY: number) => string | null;
   readonly invalidate: () => void;
 }
 
@@ -15,4 +17,8 @@ export function setViewportBridge(bridge: ViewportBridge | null): void {
 
 export function wallPointAt(clientX: number, clientY: number): Vec2 | null {
   return current?.toWall(clientX, clientY) ?? null;
+}
+
+export function itemAtClient(clientX: number, clientY: number): string | null {
+  return current?.itemAt(clientX, clientY) ?? null;
 }

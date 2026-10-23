@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { api, HUMAN } from '@/api/http.ts';
 import { HistoryEntrySchema, type WallSummary } from '@/api/schemas.ts';
 import { currentWallId } from '@/state/current-wall.ts';
-import { setSelection } from '@/state/editor.ts';
+import { patchEditor, setSelection } from '@/state/editor.ts';
 import { clearRequests, handleRequestEvent, loadOpenRequests } from '@/widgets/requests.ts';
 import { WallSync, type SubmitResult, type SyncState } from './sync.ts';
 
@@ -77,6 +77,7 @@ export function closeWall(): void {
   source = null;
   detach = null;
   sync = null;
+  patchEditor({ placeAt: null });
   sessionStore.set(null);
   clearRequests();
   setSelection([]);

@@ -4,13 +4,16 @@ import { editorStore, fitView, patchEditor, setSelection, setTool } from '@/stat
 import { togglePanel } from '@/state/layout.ts';
 import { toggleTheme } from '@/state/theme.ts';
 import {
+  copySelection,
   deleteSelection,
   duplicateSelection,
   nudgeSelection,
+  pasteClipboard,
   rotateSelection,
   selectAll,
   toggleLockSelection,
 } from '@/wall/actions.ts';
+import { clipboardStore } from '@/wall/clipboard.ts';
 import { redoEdit, sessionStore, undoEdit } from '@/wall/session.ts';
 import { paletteOpenStore, registerCommands, type Command } from './registry.ts';
 
@@ -18,6 +21,8 @@ const hasWall = (): boolean => sessionStore.get()?.wall != null;
 const canUndo = (): boolean => sessionStore.get()?.canUndo === true;
 const canRedo = (): boolean => sessionStore.get()?.canRedo === true;
 const hasSelection = (): boolean => editorStore.get().selection.length > 0;
+/** Ctrl+C with text selected somewhere (agent transcript, inspector) is a text copy, not a wall copy. */
+const hasTextSelection = (): boolean => (globalThis.getSelection?.()?.toString() ?? '') !== '';
 
 const COMMANDS: readonly Command[] = [
   {
@@ -84,6 +89,24 @@ const COMMANDS: readonly Command[] = [
     run: toggleLockSelection,
   },
   {
+    id: 'edit.copy',
+    label: 'context.copy',
+    group: 'edit',
+    shortcut: 'Ctrl+C',
+    keys: ['mod+c'],
+    enabled: () => hasSelection() && !hasTextSelection(),
+    run: copySelection,
+  },
+  {
+    id: 'edit.paste',
+    label: 'action.paste',
+    group: 'edit',
+    shortcut: 'Ctrl+V',
+    keys: ['mod+v'],
+    enabled: () => hasWall() && clipboardStore.get().length > 0,
+    run: () => void pasteClipboard(),
+  },
+  {
     id: 'edit.selectAll',
     label: 'action.selectAll',
     group: 'edit',
@@ -98,8 +121,11 @@ const COMMANDS: readonly Command[] = [
     group: 'edit',
     shortcut: 'Esc',
     keys: ['escape'],
-    enabled: hasSelection,
-    run: () => setSelection([]),
+    enabled: () => hasSelection() || editorStore.get().placeAt !== null,
+    run: () => {
+      setSelection([]);
+      patchEditor({ placeAt: null });
+    },
   },
   {
     id: 'edit.nudgeLeft',

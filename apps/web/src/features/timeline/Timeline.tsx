@@ -8,6 +8,7 @@ import { cn } from '@/lib/cn.ts';
 import { useStore } from '@/state/react.ts';
 import { redoEdit, sessionStore, undoEdit } from '@/wall/session.ts';
 import { describeOp } from './describeOp.ts';
+import { horizontalWheelDelta } from './wheelScroll.ts';
 
 const WINDOW = 60;
 
@@ -42,6 +43,22 @@ export function Timeline() {
   useEffect(() => {
     list.current?.scrollTo({ left: list.current.scrollWidth, behavior: 'smooth' });
   }, [entries]);
+
+  // The strip scrolls horizontally, so a plain mouse wheel (vertical deltas) did nothing without Shift.
+  // React's onWheel is passive and cannot cancel the page scroll; a native non-passive listener can.
+  const hasEntries = entries.length > 0;
+  useEffect(() => {
+    const strip = list.current;
+    if (!strip) return;
+    const onWheel = (event: WheelEvent): void => {
+      const delta = horizontalWheelDelta(event, strip);
+      if (delta === null) return;
+      event.preventDefault();
+      strip.scrollLeft += delta;
+    };
+    strip.addEventListener('wheel', onWheel, { passive: false });
+    return () => strip.removeEventListener('wheel', onWheel);
+  }, [hasEntries]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">

@@ -44,7 +44,8 @@ export const shellEn = {
   'overlay.hide': 'Hide photo overlay',
   'overlay.toggle': 'Toggle photo overlay',
   'overlay.opacity': 'Photo opacity',
-  'hint.select': 'Drag to move · R rotate · right mouse orbit · Alt = free move',
+  'hint.select':
+    'Drag to move · drag empty space to orbit · Shift/Space + drag pans · right-click for menu · Alt = free move',
   'hint.measure': 'Click two points to measure a distance on the wall',
 
   'theme.dark': 'Dark theme',
@@ -254,7 +255,8 @@ export const shellRu: FeatureRu<typeof shellEn> = {
   'overlay.hide': 'Скрыть фото',
   'overlay.toggle': 'Показать / скрыть фото',
   'overlay.opacity': 'Прозрачность фото',
-  'hint.select': 'Перетаскивайте · R — поворот · правая кнопка — орбита · Alt — свободно',
+  'hint.select':
+    'Перетаскивайте · фон — орбита · Shift/Пробел — сдвиг · правая кнопка — меню · Alt — свободно',
   'hint.measure': 'Кликните две точки, чтобы измерить расстояние на стене',
 
   'theme.dark': 'Тёмная тема',

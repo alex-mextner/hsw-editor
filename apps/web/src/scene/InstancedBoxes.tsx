@@ -1,8 +1,9 @@
-import { useLayoutEffect, useRef } from 'react';
+import { useLayoutEffect, useMemo, useRef } from 'react';
 import type { ThreeEvent } from '@react-three/fiber';
 import { Color, Euler, type InstancedMesh, Matrix4, Quaternion, Vector3 } from 'three';
 import type { Vec3 } from '@hsw-editor/bank';
 import type { Placement } from './InstancedModel.tsx';
+import { itemUserData } from './itemHit.ts';
 import { MM } from './units.ts';
 
 const DEG = Math.PI / 180;
@@ -32,6 +33,7 @@ export function InstancedBoxes({
 }: InstancedBoxesProps) {
   const ref = useRef<InstancedMesh>(null);
   const capacity = Math.max(placements.length, 1);
+  const userData = useMemo(() => itemUserData(placements), [placements]);
 
   useLayoutEffect(() => {
     const mesh = ref.current;
@@ -60,6 +62,7 @@ export function InstancedBoxes({
       ref={ref}
       args={[undefined, undefined, capacity]}
       frustumCulled={false}
+      userData={userData}
       onPointerDown={(event) => {
         const instance = event.instanceId;
         const placement = instance === undefined ? undefined : placements[instance];
