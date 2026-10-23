@@ -23,6 +23,10 @@ needs an entry here first.
 - Tool tags and class thumbnails: user tools carry normalised `tags` (import draft objects, commit body, `POST`/`PATCH /api/tools`, `hsw-editor tools import --tag`);
   `GET /api/tools` summaries add `tags`, `bankClass`, `fit`, `dimsMm`, `holdingDims`, `thumb`; `GET /api/tools/:id/holding`;
   `GET /api/tools/classes/:id/thumb.webp` (on-demand render, memory + disk cache, ETag/304); class entries add `thumb`, `dimsMm`, `holdingDims`.
+||||||| parent of c789ff4 (vision: server jobs and routes, verb and doctor wiring, docs (Refs #9 #10 #11 #12 #13 #20))
+- Vision (`services/vision`, `apps/server/src/vision`, `hsw-editor vision ...`): photo -> wall proposal (`vision.photo_to_wall`) and photo -> per-object
+  results (`vision.photo_to_objects`, `hsw_vision.objects.photo_to_objects`: masks, crops, upright crops, class top-k, fitted models in mm,
+  per-part colours, CLIP embeddings); the heavy runtime is installed by `hsw-editor vision setup`. See `docs/vision.md`.
 - Wall document schema, invertible op reducer and history (`packages/core`): `Wall`, `WallItem`, `Photo`, `ModelRef`,
   16 ops with `applyOp(wall, op) -> { wall, inverse }`, collision/bounds warnings, `schemaVersion` migration hook.
 - Wall store (`~/.local/share/hsw-editor/walls/<id>`, `HSW_EDITOR_HOME`): atomic `wall.json`, fsynced `history.jsonl`,

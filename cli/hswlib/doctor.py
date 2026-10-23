@@ -258,15 +258,18 @@ def check_gpu(ctx: Context) -> list[Check]:
 
 
 def check_vision(ctx: Context) -> list[Check]:
-    vision = ctx.repo_root / "services/vision"
-    installed = (vision / ".venv").is_dir()
-    served = _get_json(f"{VISION_URL}/health")
-    if served is not None:
-        return [Check("vision sidecar", "ok", f"{VISION_URL} {served.get('name', '')} {served.get('version', '')}".strip())]
-    if installed:
-        return [Check("vision sidecar", "warn", f"installed but not running on {VISION_URL}",
-                      f"start it: cd {vision} && uv run uvicorn hsw_vision.app:app --port {VISION_URL.rsplit(':', 1)[-1]}")]
-    return [Check("vision sidecar", "warn", "not installed: photo -> wall is unavailable", f"cd {vision} && uv sync")]
+    """The vision sidecar (`services/vision`) lives in a venv outside the repo (`hsw-editor vision setup`) and is started
+    by the daemon on the first `vision.*` job, so "installed, not running" is the normal idle state."""
+    import vision_verb  # cli/ is the script directory; stdlib only
+
+    info = vision_verb.probe()
+    if info["running"]:
+        health = info["health"] or {}
+        return [Check("vision sidecar", "ok", f"{info['endpoint']} {health.get('name', '')} {health.get('version', '')}".strip())]
+    if info["installed"]:
+        return [Check("vision sidecar", "warn", f"installed ({info['venv']}), not running: the daemon starts it on the first vision job",
+                      "models: hsw-editor vision doctor")]
+    return [Check("vision sidecar", "warn", "not installed: photo -> wall/objects is unavailable", "hsw-editor vision setup")]
 
 
 def check_draw(ctx: Context) -> list[Check]:

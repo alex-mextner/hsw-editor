@@ -300,6 +300,11 @@ On (re)connect it GETs the server document: namespaces with pending local edits 
 every other namespace adopts the server value, so stale server data never overwrites an unpushed edit. A `409` refetches
 and retries once. Offline (fetch fails) edits stay pending until the next `sync()`.
 
+### Vision jobs and routes
+
+`apps/server/src/vision` registers the jobs `vision.photo_to_wall`, `vision.photo_to_objects`, `vision.calibrate`, `vision.segment` and `vision.fit`
+(inputs and results: [vision.md](vision.md)), plus `GET /api/vision/status` (never starts the sidecar) and `POST /api/vision/stop`.
+
 ## Static app
 
 Everything else is the built web app (`apps/web/dist`): hashed `/assets/*` are `immutable`, `index.html`, `sw.js`
