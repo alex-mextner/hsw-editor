@@ -30,6 +30,7 @@ import {
 import { createHttpTransport, createSettingsClient } from '@hsw-editor/user-settings';
 import { newWallDialogStore } from '@/features/wizard/NewWallDialog.tsx';
 import { notify } from '@/features/notices/notices.ts';
+import { firstPhoto } from '@/features/photo/photoActions.ts';
 import { localeStore, t } from '@/i18n/index.ts';
 import { editorStore } from '@/state/editor.ts';
 import { useStore } from '@/state/react.ts';
@@ -143,6 +144,7 @@ function buildContext(options: { readonly overlays: boolean; readonly live: bool
   return deriveContext({
     selectionCount: editor.selection.length,
     hasWall: session?.wall != null,
+    hasPhoto: firstPhoto(session?.wall) !== undefined,
     canUndo: session?.canUndo === true,
     canRedo: session?.canRedo === true,
     clipboard: clipboardStore.get().length > 0,

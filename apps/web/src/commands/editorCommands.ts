@@ -357,7 +357,7 @@ export function createEditorCommands(actions: EditorActions): readonly Command[]
       title: msg('photo.cmd.calibrate'),
       keywords: ['scale', 'tape', 'ruler', 'калибровка', 'масштаб'],
       group: 'view',
-      when: `hasWall && ${FREE}`,
+      when: `hasPhoto && ${FREE}`,
       mutates: false,
       handler: effect(actions.calibratePhoto),
     }),
