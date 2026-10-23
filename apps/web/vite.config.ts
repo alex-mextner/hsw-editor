@@ -1,13 +1,30 @@
 import { existsSync } from 'node:fs';
+import { ServerResponse } from 'node:http';
 import { fileURLToPath, URL } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
-import { defineConfig, loadEnv } from 'vite';
+import { defineConfig, loadEnv, type ProxyOptions } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
 const stateLibDist = fileURLToPath(
   new URL('../../vendor/state-lib/dist/index.js', import.meta.url),
 );
+
+const DAEMON = 'http://127.0.0.1:8794';
+
+/** Dev proxy that answers 502 (not Vite's bare 500) when the daemon is down, so the client goes offline. */
+function proxyTo(target: string): ProxyOptions {
+  return {
+    target,
+    configure: (proxy) => {
+      proxy.on('error', (_error, _request, response) => {
+        if (response instanceof ServerResponse && !response.headersSent) {
+          response.writeHead(502).end();
+        }
+      });
+    },
+  };
+}
 
 export default defineConfig(({ mode }) => {
   const env = { ...loadEnv(mode, process.cwd(), ''), ...process.env };
@@ -48,9 +65,14 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       host: '127.0.0.1',
-      port: 5194,
+      port: Number.parseInt(env['HSW_WEB_PORT'] ?? '', 10) || 5194,
       strictPort: true,
-      proxy: { '/api': 'http://127.0.0.1:8794', '/bank': 'http://127.0.0.1:8794' },
+      // The daemon serves the API and the bank assets; both are proxied in dev.
+      proxy: {
+        '/api/bank': proxyTo(env['HSW_BANK_TARGET'] ?? env['HSW_API_TARGET'] ?? DAEMON),
+        '/api': proxyTo(env['HSW_API_TARGET'] ?? DAEMON),
+        '/bank': proxyTo(env['HSW_BANK_TARGET'] ?? env['HSW_API_TARGET'] ?? DAEMON),
+      },
     },
     build: { sourcemap: true, target: 'es2022' },
   };
