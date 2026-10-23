@@ -59,6 +59,7 @@ def configure(subs: Any) -> None:
     imp.add_argument("--length-mm", type=float, help="real length of the tool (single mode: the one tool)")
     imp.add_argument("--name", help="name of the tool (single mode)")
     imp.add_argument("--class", dest="class_id", help="force a class (see: tools classes); 'generic' = loft")
+    imp.add_argument("--tag", action="append", default=[], metavar="TAG", help="library tag for every found object (repeatable); the tool is filterable by it in the editor")
     imp.add_argument("--add", action="store_true", help="add every found object to the library; without it the draft is left for review in the editor")
 
     show = verb("show", "show one tool: class, dimensions, colours, files")
@@ -98,7 +99,7 @@ def tools_list(args: argparse.Namespace, api: Api) -> int:
     if not tools:
         print("no custom tools yet: hsw-editor tools import <photo...>")
         return 0
-    rows = [("ID", "CLASS", "LxWxT mm", "CONF", "CREATED", "NAME")]
+    rows = [("ID", "CLASS", "LxWxT mm", "CONF", "CREATED", "TAGS", "NAME")]
     for t in tools:
         d = t["dimensionsMm"]
         name = t["name"].get("en") or t["name"].get("ru") or "-"
@@ -109,6 +110,7 @@ def tools_list(args: argparse.Namespace, api: Api) -> int:
                 f"{d['length']:.0f}x{d['width']:.0f}x{d['thickness']:.0f}",
                 f"{t['confidence']:.2f}",
                 t["createdAt"][:19],
+                ",".join(t["tags"]) or "-",
                 name,
             )
         )
@@ -151,6 +153,7 @@ def tools_show(args: argparse.Namespace, api: Api) -> int:
     d = t["dimensionsMm"]
     print(f"{t['id']}  {t['name'].get('en') or t['name'].get('ru') or ''}")
     print(f"class      {t['classId'] or 'generic loft'}  ({t['fit']['method']}, fit IoU {t['fit']['iou']:.2f}, confidence {t['fit']['confidence']:.2f})")
+    print("tags       " + (", ".join(t["tags"]) or "-"))
     print(f"size       {d['length']:.1f} x {d['width']:.1f} x {d['thickness']:.1f} mm  (dimensions from: {d['source']})")
     if t["classCandidates"]:
         print("candidates " + ", ".join(f"{c['classId']} {c['score']:.2f}" for c in t["classCandidates"]))
@@ -261,13 +264,15 @@ def tools_import(args: argparse.Namespace, api: Api) -> int:
             patch["classId"] = None if args.class_id == "generic" else args.class_id
         if args.name and len(objects) == 1:
             patch["name"] = {"en": args.name, "ru": args.name}
+        if args.tag:
+            patch["tags"] = args.tag
         if args.length_mm and len(objects) == 1:
             patch["dimensionsMm"] = {"length": args.length_mm}
         if patch:
             api.request(
                 "PATCH", f"/api/tools/drafts/{draft['id']}/objects/{o['key']}", patch, timeout=REFIT_TIMEOUT_S
             )
-    if args.add or args.class_id or args.name or args.length_mm:
+    if args.add or args.class_id or args.name or args.length_mm or args.tag:
         draft = api.request("GET", f"/api/tools/drafts/{draft['id']}")["draft"]
         objects = [o for o in draft["objects"] if o["status"] != "discarded"]
 

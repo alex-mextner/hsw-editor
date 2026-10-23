@@ -5,6 +5,7 @@
  * can be rebuilt deterministically from this file alone.
  */
 import { z } from 'zod';
+import { TagsSchema } from './tags.ts';
 
 export const TOOL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$/;
 export const ToolIdSchema = z.string().regex(TOOL_ID_PATTERN);
@@ -41,9 +42,14 @@ export const DimensionSourceSchema = z.enum(['photo', 'user']);
 export const CustomToolSchema = z.strictObject({
   version: z.literal(1),
   id: ToolIdSchema,
-  name: z.strictObject({ en: z.string().max(120).optional(), ru: z.string().max(120).optional() }),
+  name: z.strictObject({
+    en: z.string().max(120).optional(),
+    ru: z.string().max(120).optional(),
+  }),
   createdAt: z.string(),
   updatedAt: z.string(),
+  /** Free-form library tags (normalised); tool.json files written before tags existed read as []. */
+  tags: TagsSchema.default([]),
   /** Built-in class generator the model is built from; null = generic loft of `profile`. */
   classId: z.string().nullable(),
   classCandidates: z
@@ -115,6 +121,8 @@ export const CustomToolPatchSchema = z.strictObject({
     .partial()
     .optional(),
   classId: z.string().nullable().optional(),
+  /** Replaces the tag list. */
+  tags: TagsSchema.optional(),
   params: z.record(z.string(), z.union([z.number(), z.string()])).optional(),
   partColors: z.record(z.string(), hex).optional(),
   /** Real dimensions typed by the user; rescales the fit. */

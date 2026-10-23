@@ -196,6 +196,35 @@ describe('import draft', () => {
     expect(kept[0]?.alsoSeenIn.length).toBe(1);
   });
 
+  test('tags: grouping unions and caps them, commit adds body tags and refuses more than 20', async () => {
+    const draft = await deps.drafts.create({
+      mode: 'multi',
+      calibration: { mmPerPx: 1.2 },
+      photos: [
+        { name: 'a.png', bytes: PNG_1PX },
+        { name: 'b.png', bytes: PNG_1PX },
+      ],
+    });
+    await analyzeDraft(deps, draft.id);
+    const tags = (from: number): string[] => Array.from({ length: 12 }, (_, i) => `t${from + i}`);
+    await patchDraftObject(deps, draft.id, '0:1', { tags: tags(0) });
+    await patchDraftObject(deps, draft.id, '1:1', { tags: tags(6) });
+    const grouped = await groupDraftObjects(deps, draft.id, ['0:1', '1:1']);
+    const primary = grouped.objects.find(
+      (o) => o.status !== 'discarded' && o.alsoSeenIn.length > 0,
+    );
+    expect(primary?.tags.length).toBe(18);
+    await patchDraftObject(deps, draft.id, primary?.key ?? '', { status: 'accepted' });
+    const before = (await deps.tools.list()).length;
+    await expect(
+      commitDraft(deps, draft.id, undefined, new Date(), ['x', 'y', 'z']),
+    ).rejects.toThrow('at most 20');
+    expect((await deps.tools.list()).length).toBe(before);
+    const ok = await commitDraft(deps, draft.id, undefined, new Date(), ['T0', 'extra']);
+    expect(ok.tools[0]?.tags.length).toBe(19);
+    expect(ok.tools[0]?.tags).toContain('extra');
+  });
+
   test('two simultaneous commits add each tool once', async () => {
     const draft = await deps.drafts.create({
       mode: 'multi',

@@ -208,16 +208,21 @@ Owned by `packages/tools` ([tools.md](tools.md)); mounted by `apps/server/src/to
 
 | Method & path | Body / query | Response |
 | --- | --- | --- |
-| `GET /api/tools/classes` | | `{ classes: ToolClassInfo[] }`: id, family, ru/en names, `bankClass`, keywords, parameter `schema` (num: min/max/def/step/unit, choice: options, color) and `presets` |
+| `GET /api/tools/classes` | | `{ classes: ToolClassInfo[] }`: id, family, `familyLabel`, ru/en names, `bankClass`, keywords, parameter `schema` (num: min/max/def/step/unit, choice: options, color), `presets`, `thumb` (URL of the default thumbnail), `dimsMm` `{ x: width, y: length, z: thickness }` and `holdingDims` (`holding.dims`) of the default build (computed once per process) |
 | `GET /api/tools/classes/:id` | | one `ToolClassInfo` (404 `class_not_found`) |
 | `GET /api/tools/classes/:id/model.glb` | `?preset=<id>&p=<json of parameter values>&lod=0\|1` | binary glTF in mm (values are clamped to the schema); holding interface in the scene `extras` |
-| `GET /api/tools/classes/:id/holding` | same query | `{ params, holding, bboxMm }`: axis, hang point, zones, cross-section profile along the axis, max section, `dims` |
-| `GET /api/tools` | | `{ tools: ToolSummary[] }` (the user library, newest first) |
-| `POST /api/tools` | `{ classId, params?, name? }` | `201 { tool }`: a built-in class with chosen parameters saved to the library |
+| `GET /api/tools/classes/:id/thumb.webp` | `?preset=<id>&p=<json>` (default preset when omitted) | 256 px WebP thumbnail, rendered on demand with the software renderer and cached in memory and under `$HSW_EDITOR_HOME/cache/tool-thumbs/<key>.webp` (key = hash of class id + resolved params + the generated GLB bytes, so a generator change invalidates it). `cache-control: public, max-age=0, must-revalidate`, strong `ETag` = the key, `If-None-Match` → `304`. `404 class_not_found`, `400 invalid_request` (unknown preset, bad `p`) |
+| `GET /api/tools/classes/:id/holding` | same query | `{ params, holding, bboxMm, bankClass }`: axis, hang point, zones, cross-section profile along the axis, max section, `dims` |
+| `GET /api/tools/vision` | | `{ available, url, message? }`: pings `${HSW_VISION_URL}/health` (default `http://127.0.0.1:8795`) with a 1.5 s timeout; `available` is true on a 2xx. Never starts the sidecar; `vision` is a reserved tool id; the import wizard uses it for its "vision service not available" state |
+| `GET /api/tools` | | `{ tools: ToolSummary[] }` (the user library, newest first): `id`, `name {en?, ru?}`, `classId` (null = generic loft), `bankClass` (null for a loft), `tags`, `fit { method }`, `dimensionsMm { length, width, thickness, source }`, `dimsMm { x, y, z }`, `holdingDims`, `thumb` (`/api/tools/<id>/thumb.webp`), `confidence`, `createdAt`, `updatedAt`, `triangles`. `holdingDims` come from a rebuild memoised by id + `updatedAt` |
+| `POST /api/tools` | `{ classId, params?, name?, tags? }` | `201 { tool }`: a built-in class with chosen parameters saved to the library |
 | `GET /api/tools/:id` | | `{ tool }` (`CustomTool`, `packages/tools/src/custom/schema.ts`) |
-| `PATCH /api/tools/:id` | `{ name?, classId?, params?, partColors?, dimensionsMm?, notes? }` | `{ tool }`; class or real-dimension edits refit the stored profile, the rest rebuilds directly |
+| `PATCH /api/tools/:id` | `{ name?, classId?, params?, partColors?, dimensionsMm?, notes?, tags? }` (`tags` replaces the list) | `{ tool }`; class or real-dimension edits refit the stored profile, the rest rebuilds directly |
+| `GET /api/tools/:id/holding` | | `{ holding, bboxMm, bankClass }` of the stored tool, rebuilt from `tool.json` (`bankClass` null for a generic loft) |
 | `DELETE /api/tools/:id` | | `{ ok, trashedTo }` (moved to `tools/.trash/`) |
 | `GET /api/tools/:id/model.glb`, `model-lod1.glb`, `thumb.webp`, `source/<file>` | | the files |
+
+**Tags** (`tags: string[]` on a tool, a draft object, `POST /api/tools`, `PATCH`, and the commit body): trimmed, lower-cased, de-duplicated; each 1-40 characters, at most 20 per tool, otherwise `400 invalid_body`; a commit whose object tags plus body tags exceed 20 is `400 invalid` before anything is saved, grouping and merging keep the first 20 (split parts inherit the tags of the object). A free-form `p` thumbnail is rendered but not kept on disk (only default and preset thumbnails are). `tool.json` files without `tags` read as `[]`.
 
 Import (several photos of one tool, or photos with several tools) goes through a **draft** that the user reviews:
 
@@ -227,12 +232,12 @@ Import (several photos of one tool, or photos with several tools) goes through a
 | `POST /api/jobs` | `{ kind: "tools.analyze", input: { draftId } }` | the vision sidecar segments, recognises, profiles and samples colours; every object is fitted and previewed; progress per photo; result `{ draftId, state, objects, needsScale }` |
 | `GET /api/tools/drafts/:id` | | `{ draft }`: photos, objects with `suggestions` (top classes, score), `classId`, `fit` (method, IoU, alternatives), `dimensionsMm`, `needsScale`, preview files, `status` |
 | `GET /api/tools/drafts/:id/files/<relative path>` | | crop, cut-out, mask, overlay, preview GLB / thumbnail (only paths listed in the draft) |
-| `PATCH /api/tools/drafts/:id/objects/:key` | `{ name?, status?: pending\|accepted\|discarded, classId?: string\|null, dimensionsMm?: { length?, width?, thickness? } }` | `{ draft }`; `classId: null` forces the generic loft; class and dimension edits refit |
+| `PATCH /api/tools/drafts/:id/objects/:key` | `{ name?, tags?, status?: pending\|accepted\|discarded, classId?: string\|null, dimensionsMm?: { length?, width?, thickness? } }` | `{ draft }`; `classId: null` forces the generic loft; class and dimension edits refit |
 | `POST /api/tools/drafts/:id/group` | `{ keys: [...] }` | same tool in several photos: the best observation becomes the primary |
 | `POST /api/tools/drafts/:id/merge` | `{ keys: [...] }` | parts of one tool segmented apart (same photo); needs the sidecar edit ops |
 | `POST /api/tools/drafts/:id/split` | `{ key, n: 2..4 } \| { key, linePx }` | one mask covering several tools; needs the sidecar edit ops |
 | `POST /api/tools/drafts/:id/calibration` | `{ mmPerPx }` or `{ pointsPx, distanceMm }` | `{ draft }` back in state `created`: run `tools.analyze` again (tools already in the library stay marked). Refused (409) while the draft is being analysed |
-| `POST /api/tools/drafts/:id/commit` | `{ keys? }` (default: accepted objects) | `201 { tools, skipped: [{ key, reason }], draft }`; objects without a scale, unknown keys and objects already added are skipped with the reason; `409` unless the draft is `ready` (after a recalibration, analyse again first) |
+| `POST /api/tools/drafts/:id/commit` | `{ keys?, tags? }` (default: accepted objects; `tags` are added to the tags of every committed tool) | `201 { tools, skipped: [{ key, reason }], draft }`; objects without a scale, unknown keys and objects already added are skipped with the reason; `409` unless the draft is `ready` (after a recalibration, analyse again first) |
 | `DELETE /api/tools/drafts/:id` | | `{ ok }` |
 
 Errors use the shape above; extra codes: `tool_not_found`, `class_not_found`, `draft_not_found` (404), `unsupported_media_type` (415), `invalid_request` (400, unknown class / preset, impossible edit), `conflict` (409, draft busy or already added), `vision_unavailable` (502: sidecar down, `HSW_VISION_URL`, default `http://127.0.0.1:8795`).

@@ -110,11 +110,40 @@ describe('library and import', () => {
         classId: 'screwdriver',
         params: { shaftLength: 120 },
         name: { en: 'Long driver' },
+        tags: [' Driver ', 'driver', 'Long'],
       }),
     });
     expect(manual.status).toBe(201);
-    const manualId = ((await manual.json()) as { tool: { id: string } }).tool.id;
-    expect(((await getJson('/api/tools')) as { tools: unknown[] }).tools.length).toBe(1);
+    const manualTool = ((await manual.json()) as { tool: { id: string; tags: string[] } }).tool;
+    const manualId = manualTool.id;
+    expect(manualTool.tags).toEqual(['driver', 'long']);
+    const listed = (
+      (await getJson('/api/tools')) as {
+        tools: {
+          id: string;
+          dimsMm: { x: number; y: number; z: number };
+          holdingDims: Record<string, number>;
+        }[];
+      }
+    ).tools;
+    expect(listed.length).toBe(1);
+    expect(listed[0]).toMatchObject({
+      id: manualId,
+      tags: ['driver', 'long'],
+      classId: 'screwdriver',
+      bankClass: 'screwdriver',
+      thumb: `/api/tools/${manualId}/thumb.webp`,
+      fit: { method: 'manual' },
+    });
+    expect(listed[0]?.dimsMm.y).toBeGreaterThan(150);
+    expect(Object.keys(listed[0]?.holdingDims ?? {}).length).toBeGreaterThan(0);
+    const ownHolding = (await getJson(`/api/tools/${manualId}/holding`)) as {
+      holding: { lengthMm: number };
+      bankClass: string | null;
+    };
+    expect(ownHolding.holding.lengthMm).toBeGreaterThan(150);
+    expect(ownHolding.bankClass).toBe('screwdriver');
+    expect((await fetch(`${base}/api/tools/${manualId}/thumb.webp`)).status).toBe(200);
 
     // import: upload -> job -> draft -> commit
     const form = new FormData();
@@ -163,6 +192,7 @@ describe('library and import', () => {
         body: JSON.stringify({
           status: 'accepted',
           name: { en: 'Blue driver' },
+          tags: ['Phillips'],
           dimensionsMm: { length: 210 },
         }),
       },
@@ -171,7 +201,7 @@ describe('library and import', () => {
     const commit = await fetch(`${base}/api/tools/drafts/${draftId}/commit`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: '{}',
+      body: JSON.stringify({ tags: ['Workshop', 'phillips'] }),
     });
     expect(commit.status).toBe(201);
     const committed = (await commit.json()) as { tools: { id: string }[] };
@@ -180,10 +210,15 @@ describe('library and import', () => {
 
     const tool = (
       (await getJson(`/api/tools/${id}`)) as {
-        tool: { name: { en: string }; dimensionsMm: { length: number; source: string } };
+        tool: {
+          name: { en: string };
+          tags: string[];
+          dimensionsMm: { length: number; source: string };
+        };
       }
     ).tool;
     expect(tool.name.en).toBe('Blue driver');
+    expect(tool.tags).toEqual(['phillips', 'workshop']);
     expect(tool.dimensionsMm.source).toBe('user');
     const glb = await fetch(`${base}/api/tools/${id}/model.glb`);
     expect(glb.headers.get('content-type')).toBe('model/gltf-binary');
@@ -191,11 +226,19 @@ describe('library and import', () => {
     const rename = await fetch(`${base}/api/tools/${id}`, {
       method: 'PATCH',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: { ru: 'Синяя отвёртка' }, partColors: { handle: '#c8262b' } }),
+      body: JSON.stringify({
+        name: { ru: 'Синяя отвёртка' },
+        partColors: { handle: '#c8262b' },
+        tags: ['Blue', 'workshop'],
+      }),
     });
     expect(rename.status).toBe(200);
-    expect(((await rename.json()) as { tool: { name: { ru: string } } }).tool.name.ru).toBe(
-      'Синяя отвёртка',
+    const renamed = ((await rename.json()) as { tool: { name: { ru: string }; tags: string[] } })
+      .tool;
+    expect(renamed.name.ru).toBe('Синяя отвёртка');
+    expect(renamed.tags).toEqual(['blue', 'workshop']);
+    expect(((await getJson(`/api/tools/${id}`)) as { tool: { tags: string[] } }).tool.tags).toEqual(
+      ['blue', 'workshop'],
     );
 
     expect((await fetch(`${base}/api/tools/${id}`, { method: 'DELETE' })).status).toBe(200);
@@ -324,5 +367,122 @@ describe('review-found regressions', () => {
     // a broken tool must not become undeletable
     expect((await fetch(`${base}/api/tools/${id}`, { method: 'DELETE' })).status).toBe(200);
     expect(existsSync(join(root, 'home', 'tools', id))).toBe(false);
+  });
+});
+
+describe('tags validation', () => {
+  const post = (body: unknown): Promise<Response> =>
+    fetch(`${base}/api/tools`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+  test('refuses over-long tags and more than 20 tags', async () => {
+    expect((await post({ classId: 'screwdriver', tags: ['x'.repeat(41)] })).status).toBe(400);
+    const many = Array.from({ length: 21 }, (_, i) => `tag${i}`);
+    expect((await post({ classId: 'screwdriver', tags: many })).status).toBe(400);
+  });
+});
+
+describe('class thumbnails', () => {
+  const thumb = (query = ''): Promise<Response> =>
+    fetch(`${base}/api/tools/classes/screwdriver/thumb.webp${query}`);
+
+  test('serves, revalidates with a strong ETag and 304s', async () => {
+    const first = await thumb();
+    expect(first.status).toBe(200);
+    expect(first.headers.get('content-type')).toBe('image/webp');
+    expect(first.headers.get('cache-control')).toBe('public, max-age=0, must-revalidate');
+    const etag = first.headers.get('etag') ?? '';
+    expect(etag).toMatch(/^"[0-9a-f]{32}"$/);
+    const bytes = new Uint8Array(await first.arrayBuffer());
+    expect(bytes.byteLength).toBeGreaterThan(100);
+    const again = await fetch(`${base}/api/tools/classes/screwdriver/thumb.webp`, {
+      headers: { 'if-none-match': etag },
+    });
+    expect(again.status).toBe(304);
+    const weak = await fetch(`${base}/api/tools/classes/screwdriver/thumb.webp`, {
+      headers: { 'if-none-match': `W/${etag}` },
+    });
+    expect(weak.status).toBe(304);
+    expect(readdirSync(join(root, 'home', 'cache', 'tool-thumbs'))).toContain(
+      `${etag.slice(1, -1)}.webp`,
+    );
+  });
+
+  test('a preset change is a different thumbnail; concurrent requests agree', async () => {
+    const [a, b] = await Promise.all([
+      thumb('?preset=hex-octagonal'),
+      thumb('?preset=hex-octagonal'),
+    ]);
+    expect(a.headers.get('etag')).toBe(b.headers.get('etag'));
+    expect(a.headers.get('etag')).not.toBe((await thumb()).headers.get('etag'));
+    const custom = await thumb(`?p=${encodeURIComponent('{"shaftLength":60}')}`);
+    expect(custom.status).toBe(200);
+    // free-form parameters are rendered but never written to the disk cache
+    expect(readdirSync(join(root, 'home', 'cache', 'tool-thumbs'))).not.toContain(
+      `${(custom.headers.get('etag') ?? '').slice(1, -1)}.webp`,
+    );
+  });
+
+  test('unknown class is 404, unknown preset / bad p is 400', async () => {
+    expect((await fetch(`${base}/api/tools/classes/nope/thumb.webp`)).status).toBe(404);
+    expect((await thumb('?preset=nope')).status).toBe(400);
+    expect((await thumb('?p=%7B')).status).toBe(400);
+  });
+
+  test('class entries carry thumb, dimsMm and holdingDims; holding names the bank class', async () => {
+    const list = (await getJson('/api/tools/classes')) as {
+      classes: { id: string; thumb: string; dimsMm: { y: number }; holdingDims: object }[];
+    };
+    const sd = list.classes.find((c) => c.id === 'screwdriver');
+    expect(sd?.thumb).toBe('/api/tools/classes/screwdriver/thumb.webp');
+    expect(sd?.dimsMm.y).toBeGreaterThan(150);
+    expect(sd?.holdingDims).toBeDefined();
+    const holding = (await getJson('/api/tools/classes/screwdriver/holding')) as {
+      bankClass: string;
+    };
+    expect(holding.bankClass).toBe('screwdriver');
+  });
+});
+
+describe('vision status', () => {
+  const saved = process.env['HSW_VISION_URL'];
+  afterAll(() => {
+    if (saved === undefined) delete process.env['HSW_VISION_URL'];
+    else process.env['HSW_VISION_URL'] = saved;
+  });
+
+  test('reports a down sidecar with a message and an up one as available', async () => {
+    const probe = Bun.serve({ port: 0, fetch: () => new Response('x') });
+    const closedPort = probe.port;
+    await probe.stop(true);
+    process.env['HSW_VISION_URL'] = `http://127.0.0.1:${closedPort}`;
+    const down = (await getJson('/api/tools/vision')) as {
+      available: boolean;
+      url: string;
+      message: string;
+    };
+    expect(down.available).toBe(false);
+    expect(down.url).toBe(`http://127.0.0.1:${closedPort}`);
+    expect(down.message.length).toBeGreaterThan(0);
+
+    const up = Bun.serve({
+      port: 0,
+      fetch: (req) =>
+        new URL(req.url).pathname === '/health'
+          ? Response.json({ ok: true })
+          : new Response('no', { status: 404 }),
+    });
+    try {
+      process.env['HSW_VISION_URL'] = `http://127.0.0.1:${up.port}`;
+      expect(await getJson('/api/tools/vision')).toEqual({
+        available: true,
+        url: `http://127.0.0.1:${up.port}`,
+      });
+    } finally {
+      await up.stop(true);
+    }
   });
 });

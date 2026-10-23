@@ -6,6 +6,7 @@ import { generate, getToolClass } from '../registry.ts';
 import type { ToolModel } from '../model.ts';
 import { dimensionsOf, observeModel } from './create.ts';
 import type { CustomTool } from './schema.ts';
+import { normalizeTags } from './tags.ts';
 
 export interface ManualTool {
   tool: Omit<CustomTool, 'model'>;
@@ -18,6 +19,7 @@ export function createManualTool(input: {
   classId: string;
   params?: Readonly<Record<string, number | string>>;
   name?: { en?: string | undefined; ru?: string | undefined };
+  tags?: readonly string[];
   now?: Date;
 }): ManualTool {
   const cls = getToolClass(input.classId);
@@ -28,9 +30,13 @@ export function createManualTool(input: {
     tool: {
       version: 1,
       id: input.id,
-      name: { en: input.name?.en ?? cls.name.en, ru: input.name?.ru ?? cls.name.ru },
+      name: {
+        en: input.name?.en ?? cls.name.en,
+        ru: input.name?.ru ?? cls.name.ru,
+      },
       createdAt: now,
       updatedAt: now,
+      tags: normalizeTags(input.tags ?? []),
       classId: cls.id,
       classCandidates: [],
       params: model.params,
@@ -38,7 +44,14 @@ export function createManualTool(input: {
       colors: [],
       partColors: {},
       dimensionsMm: { ...dimensionsOf(model), source: 'user' },
-      fit: { method: 'manual', iou: 1, confidence: 1, view: 'front', flipped: false, zScale: 1 },
+      fit: {
+        method: 'manual',
+        iou: 1,
+        confidence: 1,
+        view: 'front',
+        flipped: false,
+        zScale: 1,
+      },
       sources: [],
     },
     model,

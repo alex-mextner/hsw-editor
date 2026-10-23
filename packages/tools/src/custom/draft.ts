@@ -6,6 +6,7 @@
  */
 import { z } from 'zod';
 import { ColorSegmentSchema, ObservedProfileSchema, ToolIdSchema } from './schema.ts';
+import { TagsSchema } from './tags.ts';
 
 export const DraftIdSchema = ToolIdSchema;
 
@@ -22,9 +23,15 @@ export const CalibrationInputSchema = z
   })
   .superRefine((c, ctx) => {
     if ((c.pointsPx === undefined) !== (c.distanceMm === undefined)) {
-      ctx.addIssue({ code: 'custom', message: 'pointsPx and distanceMm must be given together' });
+      ctx.addIssue({
+        code: 'custom',
+        message: 'pointsPx and distanceMm must be given together',
+      });
     } else if (c.mmPerPx === undefined && c.pointsPx === undefined) {
-      ctx.addIssue({ code: 'custom', message: 'give mmPerPx, or pointsPx with distanceMm' });
+      ctx.addIssue({
+        code: 'custom',
+        message: 'give mmPerPx, or pointsPx with distanceMm',
+      });
     }
   });
 export type CalibrationInput = z.infer<typeof CalibrationInputSchema>;
@@ -44,7 +51,12 @@ export const DraftObjectSchema = z.strictObject({
   /** Other photos showing the same tool (keys), in addition to this primary observation. */
   alsoSeenIn: z.array(z.string()).max(200),
   status: DraftObjectStatus,
-  name: z.strictObject({ en: z.string().max(120).optional(), ru: z.string().max(120).optional() }),
+  name: z.strictObject({
+    en: z.string().max(120).optional(),
+    ru: z.string().max(120).optional(),
+  }),
+  /** Library tags the committed tool gets (normalised). */
+  tags: TagsSchema.default([]),
   suggestions: z.array(SuggestionSchema).max(10),
   /** Chosen class; null = generic loft; the top suggestion until the user overrides it. */
   classId: z.string().nullable(),
@@ -71,12 +83,20 @@ export const DraftObjectSchema = z.strictObject({
       confidence: z.number(),
       /** Alternatives tried while choosing the class (what the compare widget shows). */
       alternatives: z.array(
-        z.strictObject({ classId: z.string(), iou: z.number(), score: z.number() }),
+        z.strictObject({
+          classId: z.string(),
+          iou: z.number(),
+          score: z.number(),
+        }),
       ),
     })
     .nullable(),
   dimensionsMm: z
-    .strictObject({ length: z.number(), width: z.number(), thickness: z.number() })
+    .strictObject({
+      length: z.number(),
+      width: z.number(),
+      thickness: z.number(),
+    })
     .nullable(),
   needsScale: z.boolean(),
   /** Crop / cut-out of the object, relative to the draft directory. */
@@ -125,6 +145,8 @@ export const DraftObjectPatchSchema = z.strictObject({
     .partial()
     .optional(),
   status: z.enum(['pending', 'accepted', 'discarded']).optional(),
+  /** Replaces the tag list. */
+  tags: TagsSchema.optional(),
   /** Class override (`null` forces the generic loft). */
   classId: z.string().nullable().optional(),
   /** Real dimensions typed by the user; they win over the photo scale. */

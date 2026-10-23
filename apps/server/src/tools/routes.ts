@@ -10,6 +10,8 @@ import {
   DraftObjectPatchSchema,
   FAMILY_LABELS,
   type ParamValue,
+  type ToolModel,
+  TagsSchema,
   ToolInputError,
   applyPatch,
   createManualTool,
@@ -27,6 +29,7 @@ import {
   VisionUnavailableError,
   commitDraft,
   groupDraftObjects,
+  holdingOf,
   mergeDraftObjects,
   patchDraftObject,
   recalibrateDraft,
@@ -34,12 +37,16 @@ import {
   type DraftDeps,
 } from '@hsw-editor/tools/node';
 import { z } from 'zod';
+import { classThumb, thumbKey } from './thumbs.ts';
 
 const MAX_PHOTO_BYTES = 40 * 1024 * 1024;
 const MAX_PHOTOS = 20;
 
 function json(body: unknown, status = 200): Response {
-  return Response.json(body, { status, headers: { 'cache-control': 'no-store' } });
+  return Response.json(body, {
+    status,
+    headers: { 'cache-control': 'no-store' },
+  });
 }
 
 function fail(status: number, code: string, message: string, details?: unknown): Response {
@@ -65,8 +72,12 @@ const ManualToolBody = z.strictObject({
   classId: z.string(),
   params: ParamValues.default({}),
   name: z
-    .strictObject({ en: z.string().max(120).optional(), ru: z.string().max(120).optional() })
+    .strictObject({
+      en: z.string().max(120).optional(),
+      ru: z.string().max(120).optional(),
+    })
     .default({}),
+  tags: TagsSchema.default([]),
 });
 const KeysBody = z.strictObject({ keys: z.array(z.string()).min(2).max(40) });
 const SplitBody = z.union([
@@ -76,7 +87,11 @@ const SplitBody = z.union([
     linePx: z.tuple([z.tuple([z.number(), z.number()]), z.tuple([z.number(), z.number()])]),
   }),
 ]);
-const CommitBody = z.strictObject({ keys: z.array(z.string()).max(200).optional() });
+const CommitBody = z.strictObject({
+  keys: z.array(z.string()).max(200).optional(),
+  /** Added (union) to the tags of every committed tool. */
+  tags: TagsSchema.optional(),
+});
 
 /** Query / form fields that carry JSON: a malformed value is a 400 naming the field, not a body error. */
 function parseJsonField(name: string, raw: string): unknown {
@@ -145,6 +160,33 @@ function classValues(cls: AnyToolClass, q: z.infer<typeof ClassQuery>): Record<s
   return { ...base, ...parsed.data };
 }
 
+const classMetricsMemo = new Map<
+  string,
+  {
+    dimsMm: { x: number; y: number; z: number };
+    holdingDims: Record<string, number>;
+  }
+>();
+
+/** Size and holding dims of the default build of a class, computed on first use. */
+function classMetrics(cls: AnyToolClass): NonNullable<ReturnType<typeof classMetricsMemo.get>> {
+  let m = classMetricsMemo.get(cls.id);
+  if (!m) {
+    const model = generate(cls.id, {}, 0);
+    const b = model.bounds;
+    m = {
+      dimsMm: {
+        x: b.max[0] - b.min[0],
+        y: b.max[1] - b.min[1],
+        z: b.max[2] - b.min[2],
+      },
+      holdingDims: model.holding.dims,
+    };
+    classMetricsMemo.set(cls.id, m);
+  }
+  return m;
+}
+
 function describeClass(cls: AnyToolClass): Record<string, unknown> {
   return {
     id: cls.id,
@@ -155,7 +197,26 @@ function describeClass(cls: AnyToolClass): Record<string, unknown> {
     keywords: cls.keywords,
     schema: cls.schema,
     presets: cls.presets,
+    thumb: `/api/tools/classes/${encodeURIComponent(cls.id)}/thumb.webp`,
+    ...classMetrics(cls),
   };
+}
+
+const VISION_PING_TIMEOUT_MS = 1500;
+
+/** Whether the vision sidecar answers `/health` (never starts it, no auth). */
+async function visionStatus(): Promise<{ available: boolean; url: string; message?: string }> {
+  const url = process.env['HSW_VISION_URL'] ?? 'http://127.0.0.1:8795';
+  try {
+    const res = await fetch(`${url.replace(/\/+$/, '')}/health`, {
+      signal: AbortSignal.timeout(VISION_PING_TIMEOUT_MS),
+    });
+    if (res.ok) return { available: true, url };
+    return { available: false, url, message: `the vision service answered ${res.status}` };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return { available: false, url, message: `the vision service is not reachable: ${reason}` };
+  }
 }
 
 const DRAFT_STATUS = {
@@ -165,7 +226,12 @@ const DRAFT_STATUS = {
   unsupported_media: 415,
   corrupt: 500,
 } as const;
-const STORE_STATUS = { not_found: 404, exists: 409, invalid_id: 400, corrupt: 500 } as const;
+const STORE_STATUS = {
+  not_found: 404,
+  exists: 409,
+  invalid_id: 400,
+  corrupt: 500,
+} as const;
 
 function errorToResponse(error: unknown): Response {
   if (error instanceof RequestShapeError) {
@@ -194,9 +260,13 @@ function errorToResponse(error: unknown): Response {
   throw error;
 }
 
-export type ToolsRoutes = (request: Request, deps: DraftDeps) => Promise<Response | null>;
+export type ToolsRoutes = (
+  request: Request,
+  deps: DraftDeps,
+  home: string,
+) => Promise<Response | null>;
 
-export const handleToolsRequest: ToolsRoutes = async (request, deps) => {
+export const handleToolsRequest: ToolsRoutes = async (request, deps, home) => {
   const url = new URL(request.url);
   const path = url.pathname;
   if (path !== '/api/tools' && !path.startsWith('/api/tools/')) return null;
@@ -206,7 +276,7 @@ export const handleToolsRequest: ToolsRoutes = async (request, deps) => {
       .filter(Boolean)
       .slice(2)
       .map((segment) => decodePathSegment(segment));
-    return await route(request, url, parts, deps);
+    return await route(request, url, parts, deps, home);
   } catch (error) {
     return errorToResponse(error);
   }
@@ -217,12 +287,17 @@ async function route(
   url: URL,
   parts: readonly string[],
   deps: DraftDeps,
+  home: string,
 ): Promise<Response> {
   const method = request.method;
   const [a, b, c] = parts;
 
-  if (a === 'classes') return classRoute(url, method, b, c);
+  if (a === 'classes') return classRoute(request, url, home, b, c);
   if (a === 'drafts') return draftRoute(request, deps, parts.slice(1));
+  if (a === 'vision' && b === undefined) {
+    if (method !== 'GET') return fail(405, 'method_not_allowed', 'GET only');
+    return json(await visionStatus());
+  }
 
   if (a === undefined) {
     if (method === 'GET') return json({ tools: await deps.tools.list() });
@@ -249,6 +324,15 @@ async function route(
   if (method !== 'GET') return fail(405, 'method_not_allowed', 'GET only');
   if (b === 'model.glb') return stored(await deps.tools.file(id, 'glb'));
   if (b === 'model-lod1.glb') return stored(await deps.tools.file(id, 'glbLod1'));
+  if (b === 'holding') {
+    const tool = await deps.tools.get(id);
+    try {
+      return json(holdingOf(tool));
+    } catch (error) {
+      if (error instanceof ToolInputError) throw error;
+      return fail(409, 'conflict', `tool ${id} can no longer be rebuilt: ${String(error)}`);
+    }
+  }
   if (b === 'thumb.webp') return stored(await deps.tools.file(id, 'thumb'));
   if (b === 'source' && c) {
     const path = await deps.tools.sourceFile(id, c);
@@ -263,28 +347,63 @@ function stored(f: { path: string; mime: string }): Response {
   return fileResponse(f.path, f.mime, false);
 }
 
-function classRoute(
+async function classRoute(
+  request: Request,
   url: URL,
-  method: string,
+  home: string,
   classId: string | undefined,
   resource: string | undefined,
-): Response {
-  if (method !== 'GET') return fail(405, 'method_not_allowed', 'GET only');
+): Promise<Response> {
+  if (request.method !== 'GET') return fail(405, 'method_not_allowed', 'GET only');
   if (classId === undefined) return json({ classes: listToolClasses().map(describeClass) });
   if (!hasToolClass(classId)) return fail(404, 'class_not_found', `no tool class ${classId}`);
   const cls = getToolClass(classId);
   if (resource === undefined) return json(describeClass(cls));
-  if (resource !== 'model.glb' && resource !== 'holding') {
+  if (resource !== 'model.glb' && resource !== 'holding' && resource !== 'thumb.webp') {
     return fail(404, 'not_found', 'unknown class resource');
   }
   const q = parseInput(ClassQuery, Object.fromEntries(url.searchParams), 'query');
   const model = generate(cls.id, classValues(cls, q), q.lod === '1' ? 1 : 0);
+  if (resource === 'thumb.webp') return thumbResponse(request, home, model, q.p === undefined);
   if (resource === 'model.glb') {
     return new Response(exportGlb(model), {
-      headers: { 'content-type': 'model/gltf-binary', 'cache-control': 'no-cache' },
+      headers: {
+        'content-type': 'model/gltf-binary',
+        'cache-control': 'no-cache',
+      },
     });
   }
-  return json({ params: model.params, holding: model.holding, bboxMm: model.bounds });
+  return json({
+    params: model.params,
+    holding: model.holding,
+    bboxMm: model.bounds,
+    bankClass: cls.bankClass,
+  });
+}
+
+/** Revalidated on every use (the generator may change); the strong ETag is the content key, so most are 304s. */
+async function thumbResponse(
+  request: Request,
+  home: string,
+  model: ToolModel,
+  persist: boolean,
+): Promise<Response> {
+  const key = thumbKey(model);
+  const headers = {
+    'cache-control': 'public, max-age=0, must-revalidate',
+    etag: `"${key}"`,
+  };
+  const match = request.headers.get('if-none-match');
+  // weak comparison (RFC 9110): `W/"key"` and `*` match too; no render happens for a revalidation
+  if (
+    match !== null &&
+    match.split(',').some((t) => t.trim() === '*' || t.trim().replace(/^W\//, '') === `"${key}"`)
+  ) {
+    return new Response(null, { status: 304, headers });
+  }
+  return new Response(await classThumb(home, model, persist).bytes, {
+    headers: { ...headers, 'content-type': 'image/webp' },
+  });
 }
 
 /** A built-in class with chosen parameters saved to the user library. */
@@ -296,12 +415,16 @@ async function createManual(request: Request, deps: DraftDeps): Promise<Response
   const saved = await deps.tools.exclusive(async () => {
     const id = await deps.tools.freeId(body.name.en ?? body.classId);
     const manual = createManualTool({
+      tags: body.tags,
       id,
       classId: body.classId,
       params: body.params,
       name: body.name,
     });
-    return deps.tools.save(manual.tool, { model: manual.model, modelLod1: manual.modelLod1 });
+    return deps.tools.save(manual.tool, {
+      model: manual.model,
+      modelLod1: manual.modelLod1,
+    });
   });
   return json({ tool: saved }, 201);
 }
@@ -353,7 +476,7 @@ async function draftRoute(
   }
   if (sub === 'commit') {
     const body = await readBody(request, CommitBody);
-    const result = await commitDraft(deps, id, body.keys);
+    const result = await commitDraft(deps, id, body.keys, new Date(), body.tags);
     return json({ ...result, draft: await deps.drafts.get(id) }, 201);
   }
   return fail(404, 'not_found', 'unknown draft resource');
