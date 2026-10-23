@@ -1,7 +1,10 @@
-import { useEffect, useRef, type ComponentRef } from 'react';
+import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { useThree } from '@react-three/fiber';
 import { OrbitControls, OrthographicCamera, PerspectiveCamera } from '@react-three/drei';
-import { MOUSE, OrthographicCamera as ThreeOrthographicCamera, TOUCH, Vector3 } from 'three';
+import { OrthographicCamera as ThreeOrthographicCamera, Vector3 } from 'three';
+import { isTypingTarget } from '@/commands/registry.ts';
+import { editorStore } from '@/state/editor.ts';
+import { bindCameraLock, mouseButtonsFor, touchesFor } from './cameraControls.ts';
 import { mm } from './units.ts';
 
 export type ViewMode = 'perspective' | 'front';
@@ -12,21 +15,56 @@ interface CameraRigProps {
   readonly heightMm: number;
   /** Incremented to re-frame the wall (the "fit" command). */
   readonly fitToken: number;
-  /** Disables orbit/pan while an item is being dragged. */
-  readonly locked: boolean;
+}
+
+/** True while Space is held outside a text field or button: left drag pans instead of orbiting. */
+function useSpacePan(): boolean {
+  const [held, setHeld] = useState(false);
+  useEffect(() => {
+    const press = (event: KeyboardEvent): void => {
+      if (event.code !== 'Space' || isTypingTarget(event.target)) return;
+      // Space on a focused button/menu item activates it; it must not also switch the camera mode.
+      if (event.target instanceof Element && event.target.closest('button, a, [role]')) return;
+      setHeld(true);
+    };
+    const release = (event: KeyboardEvent): void => {
+      if (event.code === 'Space') setHeld(false);
+    };
+    const reset = (): void => setHeld(false);
+    globalThis.addEventListener('keydown', press);
+    globalThis.addEventListener('keyup', release);
+    globalThis.addEventListener('blur', reset);
+    return () => {
+      globalThis.removeEventListener('keydown', press);
+      globalThis.removeEventListener('keyup', release);
+      globalThis.removeEventListener('blur', reset);
+    };
+  }, []);
+  return held;
 }
 
 /**
  * Perspective orbit camera, or an orthographic front view locked to the wall plane (pan + zoom only).
- * Left button is reserved for selection/drag; right button orbits, middle pans, wheel zooms.
+ * Left drag on the background orbits (pans in the front view; Shift or Space switches to pan), middle
+ * drag pans, the wheel zooms, the right button belongs to the context menu. Dragging an item never
+ * moves the camera: the controls are switched off while an item is held (see `bindCameraLock`).
  */
-export function CameraRig({ view, widthMm, heightMm, fitToken, locked }: CameraRigProps) {
+export function CameraRig({ view, widthMm, heightMm, fitToken }: CameraRigProps) {
   const controls = useRef<ComponentRef<typeof OrbitControls>>(null);
   const getState = useThree((state) => state.get);
   const invalidate = useThree((state) => state.invalidate);
   // The active camera object changes when the view mode switches; framing must follow that swap.
   const activeCamera = useThree((state) => state.camera);
   const ortho = view === 'front';
+  const panHeld = useSpacePan();
+  const mouseButtons = useMemo(() => mouseButtonsFor({ ortho, panHeld }), [ortho, panHeld]);
+  const touches = useMemo(() => touchesFor({ ortho }), [ortho]);
+
+  // OrbitControls is re-created when the active camera changes; the lock must follow the new instance.
+  useEffect(() => {
+    const control = controls.current;
+    return control ? bindCameraLock(control, editorStore) : undefined;
+  }, [activeCamera]);
 
   useEffect(() => {
     const control = controls.current;
@@ -77,7 +115,6 @@ export function CameraRig({ view, widthMm, heightMm, fitToken, locked }: CameraR
       <OrbitControls
         ref={controls}
         makeDefault
-        enabled={!locked}
         enableRotate={!ortho}
         enableDamping={false}
         screenSpacePanning
@@ -85,12 +122,8 @@ export function CameraRig({ view, widthMm, heightMm, fitToken, locked }: CameraR
         minDistance={0.15}
         maxDistance={20}
         maxPolarAngle={Math.PI * 0.62}
-        mouseButtons={{
-          LEFT: undefined as unknown as MOUSE,
-          MIDDLE: MOUSE.PAN,
-          RIGHT: ortho ? MOUSE.PAN : MOUSE.ROTATE,
-        }}
-        touches={{ ONE: TOUCH.ROTATE, TWO: TOUCH.DOLLY_PAN }}
+        mouseButtons={mouseButtons}
+        touches={touches}
       />
     </>
   );

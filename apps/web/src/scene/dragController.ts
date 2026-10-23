@@ -3,7 +3,6 @@
  * free) and rotating one item with the rotate handle. Nothing is mutated while dragging; the live
  * pose goes to `editorStore.dragging` and exactly one batch op is submitted on release.
  */
-import type { ThreeEvent } from '@react-three/fiber';
 import {
   applyOp,
   cellCenter,
@@ -106,8 +105,17 @@ function isPlacementValid(wall: Wall, poses: DragOutcome['poses']): boolean {
   return true;
 }
 
+/** The part of an R3F pointer-down the drag handlers read (kept narrow so tests can pass a plain object). */
+export interface PointerPress {
+  readonly nativeEvent: Pick<
+    PointerEvent,
+    'button' | 'clientX' | 'clientY' | 'shiftKey' | 'ctrlKey' | 'metaKey'
+  >;
+  readonly stopPropagation: () => void;
+}
+
 /** Item pointer-down: select, then start a move that only becomes real after a few pixels of travel. */
-export function beginItemDrag(id: string, event: ThreeEvent<PointerEvent>): void {
+export function beginItemDrag(id: string, event: PointerPress): void {
   const native = event.nativeEvent;
   const wall = currentWall();
   if (native.button !== 0 || !wall || editorStore.get().tool !== 'select') return;
@@ -194,7 +202,7 @@ export function beginItemDrag(id: string, event: ThreeEvent<PointerEvent>): void
 }
 
 /** Rotation handle drag: angle of the pointer around the item's centre, snapped to the lattice symmetry. */
-export function beginRotateDrag(itemId: string, event: ThreeEvent<PointerEvent>): void {
+export function beginRotateDrag(itemId: string, event: PointerPress): void {
   const native = event.nativeEvent;
   const wall = currentWall();
   const item = wall?.items.find((candidate) => candidate.id === itemId);

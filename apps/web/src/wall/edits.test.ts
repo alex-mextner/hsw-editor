@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import type { BankElement } from '@hsw-editor/bank';
 import { cellCenter, createEmptyWall, DEFAULT_BOARD, type Wall } from '@hsw-editor/core';
-import { duplicateOps, findFreeCell, newItem, ringCells } from './edits.ts';
+import { duplicateOps, findFreeCell, newItem, pasteOps, ringCells } from './edits.ts';
+import { layoutProblems } from './footprint.ts';
 
 const board = { ...DEFAULT_BOARD, cols: 12, rows: 12 };
 const two = {
@@ -96,5 +97,61 @@ describe('duplicate', () => {
       expect(op.item.id).not.toBe(wall.items[0]?.id);
       expect(op.item.cell).not.toEqual({ col: 5, row: 5 });
     }
+  });
+});
+
+describe('paste', () => {
+  const target = { col: 8, row: 3 };
+
+  test('the first copied item lands exactly on the requested cell', () => {
+    const wall = wallWith([{ col: 2, row: 2 }]);
+    const ops = pasteOps(wall, bank, wall.items, target);
+    expect(ops).toHaveLength(1);
+    const op = ops[0];
+    expect(op?.type).toBe('addItem');
+    if (op?.type === 'addItem') {
+      expect(op.item.cell).toEqual(target);
+      expect(op.item.id).not.toBe(wall.items[0]?.id);
+      expect(op.item.locked).toBe(false);
+    }
+  });
+
+  test('a group keeps its shape around the requested cell, whichever column parity it sits on', () => {
+    for (const origin of [
+      { col: 2, row: 2 },
+      { col: 3, row: 2 },
+    ]) {
+      const wall = wallWith([origin, { col: origin.col + 2, row: origin.row + 1 }]);
+      const ops = pasteOps(wall, bank, wall.items, target);
+      expect(ops).toHaveLength(2);
+      const [a, b] = ops.flatMap((op) => (op.type === 'addItem' ? [op.item] : []));
+      expect(a?.cell).toEqual(target);
+      const originalA = wall.items[0];
+      const originalB = wall.items[1];
+      if (!a || !b || !originalA || !originalB) throw new Error('paste returned no items');
+      expect(b.pose.x - a.pose.x).toBeCloseTo(originalB.pose.x - originalA.pose.x, 6);
+      expect(b.pose.y - a.pose.y).toBeCloseTo(originalB.pose.y - originalA.pose.y, 6);
+    }
+  });
+
+  test('an occupied target pushes the copy to the nearest free cell instead of overlapping', () => {
+    const wall = wallWith([
+      { col: 2, row: 2 },
+      { col: 8, row: 3 },
+    ]);
+    const first = wall.items[0];
+    if (!first) throw new Error('fixture has no items');
+    const ops = pasteOps(wall, bank, [first], target);
+    expect(ops).toHaveLength(1);
+    const op = ops[0];
+    if (op?.type !== 'addItem') throw new Error('expected addItem');
+    expect(op.item.cell).not.toEqual(target);
+    const next = { ...wall, items: [...wall.items, op.item] };
+    expect(layoutProblems(next.items, next.board, bank).has(op.item.id)).toBe(false);
+  });
+
+  test('nothing to paste without a cell-anchored item', () => {
+    const wall = wallWith([]);
+    expect(pasteOps(wall, bank, [], target)).toEqual([]);
   });
 });

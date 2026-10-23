@@ -2,6 +2,7 @@ import { Suspense, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Stats } from '@react-three/drei';
 import type { Wall } from '@hsw-editor/core';
+import { ViewportContextMenu } from '@/features/viewport/ViewportContextMenu.tsx';
 import { bankStore } from '@/bank/client.ts';
 import { editorStore, setSelection } from '@/state/editor.ts';
 import { useStore } from '@/state/react.ts';
@@ -18,6 +19,7 @@ import { GhostItem } from './GhostItem.tsx';
 import { ItemsLayer } from './ItemsLayer.tsx';
 import { measureClick, MeasureOverlay } from './MeasureTool.tsx';
 import { scenePalette } from './palette.ts';
+import { PlacementMarker } from './PlacementMarker.tsx';
 import { PhotoOverlay } from './PhotoOverlay.tsx';
 import { SelectionFrames } from './SelectionFrames.tsx';
 import { boardSizeMm } from '@hsw-editor/core';
@@ -55,7 +57,7 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
   const ghostElement = editor.ghost ? bank.get(editor.ghost.bankId) : undefined;
 
   return (
-    <div
+    <ViewportContextMenu
       className="absolute inset-0"
       onDragOver={(event) => dragOverViewport(event.nativeEvent)}
       onDragLeave={leaveViewport}
@@ -65,8 +67,9 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
         frameloop={bench ? 'always' : 'demand'}
         dpr={[1, 2]}
         gl={{ antialias: true, powerPreference: 'high-performance' }}
-        onPointerMissed={() => {
-          if (editorStore.get().tool === 'select') setSelection([]);
+        onPointerMissed={(event) => {
+          // Only a primary click on the background clears the selection; right-click opens the menu.
+          if (event.button === 0 && editorStore.get().tool === 'select') setSelection([]);
         }}
         aria-label="3D"
       >
@@ -79,7 +82,6 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
           widthMm={size.width}
           heightMm={size.height}
           fitToken={editor.fitToken}
-          locked={editor.holding}
         />
         <BoardMesh board={wall.board} palette={palette} occupied={occupied} />
         <Suspense fallback={null}>
@@ -99,6 +101,7 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
           onItemPointerDown={beginItemDrag}
         />
         <SelectionFrames wall={wall} bank={bank} palette={palette} invalidIds={invalidIds} />
+        <PlacementMarker point={editor.placeAt} color={palette.ghostOk} />
         <DimensionLayer wall={wall} bank={bank} palette={palette} />
         {editor.ghost && ghostElement ? (
           <GhostItem
@@ -127,6 +130,6 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
         {bench ? <FpsProbe /> : null}
         {showStats ? <Stats className="!left-auto !right-2 !top-14" /> : null}
       </Canvas>
-    </div>
+    </ViewportContextMenu>
   );
 }
