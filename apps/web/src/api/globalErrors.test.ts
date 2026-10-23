@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import '@/test/domGlobals.ts';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from 'bun:test';
+import { installDomGlobals, restoreDomGlobals } from '@/test/domGlobals.ts';
 import { installFetch, restoreFetch, settleRequests } from '@/test/fetchStub.ts';
 import {
   CLIENT_ERRORS_ROUTE,
@@ -31,6 +31,9 @@ afterEach(() => {
 function rejection(reason: unknown): Event {
   return Object.assign(new Event('unhandledrejection'), { reason });
 }
+
+beforeAll(installDomGlobals);
+afterAll(restoreDomGlobals);
 
 describe('installGlobalErrorLogging', () => {
   test('logs an uncaught error as kind unhandled', async () => {

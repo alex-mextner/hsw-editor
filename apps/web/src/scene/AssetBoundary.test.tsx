@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test, vi } from 'bun:test';
 import { act, Component, type ReactNode } from 'react';
 import { CLIENT_ERRORS_ROUTE, resetClientErrorThrottle } from '@/api/clientErrors.ts';
-import { mount, type Mounted } from '@/test/dom.tsx';
+import { mount, withDomGlobals, type Mounted } from '@/test/dom.tsx';
 import { installFetch, restoreFetch } from '@/test/fetchStub.ts';
 import { bankElement, bankIndex, readyBankState } from '@/test/fixtures.ts';
 import { clearAssetHealth, getFailure } from '@/bank/assetHealth.ts';
@@ -111,6 +111,8 @@ async function setup(initiallyAvailable: boolean): Promise<Harness> {
 function text(mounted: Mounted, testId: string): string | null {
   return mounted.container.querySelector(`[data-testid="${testId}"]`)?.textContent ?? null;
 }
+
+withDomGlobals();
 
 describe('AssetBoundary', () => {
   test('a model that 404s renders the named placeholder and the page survives', async () => {

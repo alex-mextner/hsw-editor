@@ -1,7 +1,18 @@
 /** Component-test helpers; registers the DOM globals first, then loads react-dom. */
-import './domGlobals.ts';
+import './domInstall.ts';
+import { afterAll, beforeAll } from 'bun:test';
 import { act, type ReactNode } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
+import { installDomGlobals, restoreDomGlobals } from './domGlobals.ts';
+
+// react-dom is loaded; nothing else in the process should see a DOM until a test file asks for it.
+restoreDomGlobals();
+
+/** Call at the top of a DOM test file: the DOM globals exist for that file's tests only. */
+export function withDomGlobals(): void {
+  beforeAll(installDomGlobals);
+  afterAll(restoreDomGlobals);
+}
 
 export interface Mounted {
   readonly container: HTMLElement;

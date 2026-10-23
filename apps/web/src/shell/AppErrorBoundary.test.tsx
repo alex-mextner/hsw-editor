@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { CLIENT_ERRORS_ROUTE, resetClientErrorThrottle } from '@/api/clientErrors.ts';
-import { click, mount, type Mounted } from '@/test/dom.tsx';
+import { click, mount, withDomGlobals, type Mounted } from '@/test/dom.tsx';
 import { installFetch, restoreFetch } from '@/test/fetchStub.ts';
 import { localeStore } from '@/i18n/index.ts';
 import { AppErrorBoundary, crashDetails } from './AppErrorBoundary.tsx';
@@ -31,6 +31,8 @@ afterEach(async () => {
   mounted = null;
   restoreFetch();
 });
+
+withDomGlobals();
 
 describe('AppErrorBoundary', () => {
   test('an error in the tree shows the recover panel instead of a blank page, and is logged as render', async () => {

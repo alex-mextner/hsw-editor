@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { act } from 'react';
 import { localeStore } from '@/i18n/index.ts';
-import { mount, type Mounted } from '@/test/dom.tsx';
+import { mount, withDomGlobals, type Mounted } from '@/test/dom.tsx';
 import { bankElement } from '@/test/fixtures.ts';
 import { glyphModel, GLYPH_SIZE, hashString } from './glyph.ts';
 import { Thumbnail } from './Thumbnail.tsx';
@@ -12,6 +12,8 @@ afterEach(async () => {
   await mounted?.unmount();
   mounted = null;
 });
+
+withDomGlobals();
 
 describe('Thumbnail fallback', () => {
   test('an element with no thumbnail path shows the generated footprint instead of a broken image', async () => {

@@ -4,7 +4,7 @@ import { act } from 'react';
 import { clearAssetHealth, recordFailure } from '@/bank/assetHealth.ts';
 import { bankStore } from '@/bank/client.ts';
 import { localeStore } from '@/i18n/index.ts';
-import { click, mount, type Mounted } from '@/test/dom.tsx';
+import { click, mount, withDomGlobals, type Mounted } from '@/test/dom.tsx';
 import { bankElement, bankIndex, readyBankState } from '@/test/fixtures.ts';
 import { ItemModelNotice, ModelIssueNotice } from './ModelIssueNotice.tsx';
 
@@ -21,6 +21,8 @@ afterEach(async () => {
   mounted = null;
   bankStore.set({ status: 'loading' });
 });
+
+withDomGlobals();
 
 describe('ModelIssueNotice', () => {
   test('a missing element is named, explained, and offers Retry and Report', async () => {
