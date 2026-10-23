@@ -55,6 +55,16 @@ polygon offset) and a faint see-through pass (`GreaterDepth`) for parts hidden i
 outline marks the region border. The material is fragment-only and uses `gl_FragCoord`, so it works unchanged on `InstancedMesh` and over the
 photo overlay. Region meshes are merged into one geometry (one draw call per pass); hovering a region lists its reasons.
 
+**Stripe colour follows the part's own colour (#166).** Red stripes disappear on a red part (red screwdriver handles), so a region whose base
+material is red-ish is striped WHITE (over a dark gap), every other region keeps the red. The base colour is the material colour (times the mean
+vertex colour) of the GLB meshes: `glb.ts` records one `ColourPart` per mesh (its box in the item frame plus sRGB colour) next to the triangle soup,
+and the engine looks up the colour at up to 48 region vertices per involved item (`stripeColourOf`: vertex carried back into the item frame, then
+the part whose box contains it, else the nearest, smaller box winning ties). `chooseStripeColour` (`stripeColour.ts`, unit-tested) turns the
+samples into `RegionMesh.stripe`: white when at least half of the known samples are red-ish (hue 335-360 or 0-30 degrees, saturation >= 0.35,
+value >= 0.2), red otherwise and for items without colour data (stand-in boxes). One colour per GLB mesh (a mesh painted with several colours through vertex colours is judged by their mean). The choice is cached with the region (it depends only on the operands),
+`regionGeometry.ts` writes it as a per-vertex `color` attribute (1 = red, 0 = white) and the stripe material switches diffuse and gap colour on it.
+The photo-mode overlay and the PNG export are drawn by the same canvas, so they inherit it; the viewport legend shows both swatches (red, and white on red).
+
 ## In the editor
 
 - `WallViewport` builds the scene with `engineScene` (`wallAdapter.ts`: wall items -> engine items, live drag poses included) and `itemSolid`

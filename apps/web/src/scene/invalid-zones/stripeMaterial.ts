@@ -6,6 +6,9 @@
  * light UI), so the zone is recognisable by luminance contrast and shape even without colour vision; the red is the
  * second cue. Screen-space stripes keep a constant ~6 px period at any zoom, on any instance, so the material works
  * unchanged on instanced meshes and on a photo overlay (no UVs, no object-space dependency).
+ *
+ * Regions on red-ish material (red screwdriver handles) would lose red stripes: the geometry's `color` attribute
+ * (1 = red, 0 = white, see `regionGeometry.ts`) switches those vertices to WHITE stripes over a dark gap.
  */
 import {
   Color,
@@ -28,6 +31,9 @@ const LOOKS: Record<StripeTheme, StripeLook> = {
   light: { stripe: '#d00f1a', gap: '#14141a' },
 };
 
+/** Gap colour under white stripes (the legend swatch in `InvalidZonesLegend.tsx` mirrors it). */
+const WHITE_STRIPE_GAP = '#14141a';
+
 /** CSS pixels between two stripe centres, measured perpendicular to the stripes. */
 export const STRIPE_PERIOD_PX = 6;
 
@@ -40,6 +46,7 @@ export interface StripeOptions {
 interface StripeUniforms {
   uPeriodPx: { value: number };
   uGapColor: { value: Color };
+  uGapColorOnWhite: { value: Color };
   uStripeAlpha: { value: number };
   uGapAlpha: { value: number };
 }
@@ -54,9 +61,15 @@ export const STRIPE_FRAGMENT = /* glsl */ `
   float stripeTri = abs(fract(stripePhase) - 0.5) * 2.0;
   float stripeAa = max(fwidth(stripeTri) * 0.75, 1e-4);
   float stripeMask = smoothstep(0.5 - stripeAa, 0.5 + stripeAa, stripeTri);
-  vec3 stripeRgb = mix(mix(outgoingLight, uGapColor, 0.6), outgoingLight, stripeMask);
+  vec3 stripeGap = mix(uGapColorOnWhite, uGapColor, vColor.r);
+  vec3 stripeRgb = mix(mix(outgoingLight, stripeGap, 0.6), outgoingLight, stripeMask);
   float stripeA = mix(uGapAlpha, uStripeAlpha, stripeMask);
   gl_FragColor = vec4(stripeRgb, stripeA);
+`;
+
+/** Replaces the diffuse colour of white-striped vertices (vColor.r = 0) before lighting. */
+export const STRIPE_DIFFUSE = /* glsl */ `
+  diffuseColor.rgb = mix(vec3(1.0), diffuse, vColor.r);
 `;
 
 export function createStripeMaterial({ theme, xray }: StripeOptions): StripeMaterial {
@@ -64,12 +77,15 @@ export function createStripeMaterial({ theme, xray }: StripeOptions): StripeMate
   const uniforms: StripeUniforms = {
     uPeriodPx: { value: STRIPE_PERIOD_PX },
     uGapColor: { value: new Color(look.gap) },
+    // White stripes need a dark gap on either theme (the default white gap would swallow them).
+    uGapColorOnWhite: { value: new Color(WHITE_STRIPE_GAP) },
     // The see-through pass is fainter so hidden overlaps hint through the model without hiding it.
     uStripeAlpha: { value: xray ? 0.4 : 0.82 },
     uGapAlpha: { value: xray ? 0.1 : 0.22 },
   };
   const material = new MeshStandardMaterial({
     color: look.stripe,
+    vertexColors: true,
     roughness: 0.55,
     metalness: 0,
     flatShading: true,
@@ -88,8 +104,9 @@ export function createStripeMaterial({ theme, xray }: StripeOptions): StripeMate
     shader.fragmentShader = shader.fragmentShader
       .replace(
         'void main() {',
-        'uniform float uPeriodPx;\nuniform vec3 uGapColor;\nuniform float uStripeAlpha;\nuniform float uGapAlpha;\nvoid main() {',
+        'uniform float uPeriodPx;\nuniform vec3 uGapColor;\nuniform vec3 uGapColorOnWhite;\nuniform float uStripeAlpha;\nuniform float uGapAlpha;\nvoid main() {',
       )
+      .replace('#include <color_fragment>', `#include <color_fragment>\n${STRIPE_DIFFUSE}`)
       .replace('#include <opaque_fragment>', `#include <opaque_fragment>\n${STRIPE_FRAGMENT}`);
   };
   material.customProgramCacheKey = () => `invalid-stripes-${xray ? 'x' : 's'}`;

@@ -10,7 +10,8 @@ export const invalidZonesEn = {
   'invalid.legend.checking': 'Checking geometry…',
   'invalid.legend.count.one': '{count} item has invalid parts',
   'invalid.legend.count.other': '{count} items have invalid parts',
-  'invalid.legend.swatch': 'Red diagonal stripes mark the invalid part',
+  'invalid.legend.swatch':
+    'Red diagonal stripes mark the invalid part; white stripes where the part itself is red',
   'invalid.inspector.title': 'Invalid parts',
   'invalid.overlap': 'Overlaps {other} by {depth} mm',
   'invalid.out.left': 'Protrudes {extent} mm past the left board edge',
@@ -30,7 +31,8 @@ export const invalidZonesRu = {
   'invalid.legend.count.other': 'У {count} элементов есть недопустимые части',
   'invalid.legend.count.few': 'У {count} элементов есть недопустимые части',
   'invalid.legend.count.many': 'У {count} элементов есть недопустимые части',
-  'invalid.legend.swatch': 'Красные диагональные полосы отмечают недопустимую часть',
+  'invalid.legend.swatch':
+    'Красные диагональные полосы отмечают недопустимую часть; белые — там, где сама часть красная',
   'invalid.inspector.title': 'Недопустимые части',
   'invalid.overlap': 'Пересечение с элементом «{other}»: {depth} мм',
   'invalid.out.left': 'Выступает на {extent} мм за левый край доски',

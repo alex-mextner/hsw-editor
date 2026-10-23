@@ -24,6 +24,8 @@ export function buildRegionBatch(
   }
   if (triangleCount === 0) return null;
   const positions = new Float32Array(vertexCount * 3);
+  // Per-vertex stripe colour switch read by the stripe material: 1 = default red, 0 = white (region on red material).
+  const stripeSwitch = new Float32Array(vertexCount * 3);
   const indices = new Uint32Array(triangleCount * 3);
   let edgeFloats = 0;
   for (const region of regions) edgeFloats += region.edges.length;
@@ -41,6 +43,12 @@ export function buildRegionBatch(
     for (let i = 0; i < region.positions.length; i += 1) {
       positions[vertexOffset * 3 + i] = (region.positions[i] ?? 0) * scale;
     }
+    const regionVertices = region.positions.length / 3;
+    stripeSwitch.fill(
+      region.stripe === 'white' ? 0 : 1,
+      vertexOffset * 3,
+      (vertexOffset + regionVertices) * 3,
+    );
     for (let i = 0; i < region.indices.length; i += 1) {
       indices[triangleOffset * 3 + i] = (region.indices[i] ?? 0) + vertexOffset;
     }
@@ -49,6 +57,7 @@ export function buildRegionBatch(
   }
   const geometry = new BufferGeometry();
   geometry.setAttribute('position', new BufferAttribute(positions, 3));
+  geometry.setAttribute('color', new BufferAttribute(stripeSwitch, 3));
   geometry.setIndex(new BufferAttribute(indices, 1));
   geometry.computeBoundingSphere();
   const edges = new BufferGeometry();
