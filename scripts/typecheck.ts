@@ -20,6 +20,7 @@ const projects = [
   'packages/omp-protocol',
   'packages/user-settings',
   'packages/overlay',
+  'packages/tools',
   'apps/server',
   'apps/web',
   // The service worker is compiled with the WebWorker lib (the DOM lib of apps/web clashes with it).
