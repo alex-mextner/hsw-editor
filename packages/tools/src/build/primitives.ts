@@ -312,8 +312,8 @@ export function tube(
         else indices.push(c, base + j, base + s);
       }
     };
-    cap(0, true);
-    cap(n - 1, false);
+    cap(0, false);
+    cap(n - 1, true);
   }
   return ensureOutward({ positions, indices });
 }
