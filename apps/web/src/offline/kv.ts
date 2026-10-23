@@ -17,6 +17,12 @@ export interface KvStore<V> {
    * so a concurrent write between "check" and "delete" is never lost. Resolves whether it deleted.
    */
   deleteIf(key: string, condition: (current: V) => boolean): Promise<boolean>;
+  /**
+   * Atomic read-modify-write of one key (one IndexedDB transaction): `change` sees the stored value (or `undefined`)
+   * and returns the new one, or `undefined` to leave the key untouched. Two writers (page and service worker) can
+   * never overwrite each other's change.
+   */
+  update(key: string, change: (current: V | undefined) => V | undefined): Promise<void>;
   /** Every valid record; unreadable ones are skipped. */
   entries(): Promise<[string, V][]>;
 }
@@ -38,6 +44,11 @@ export function createMemoryStore<V>(parse: Parse<V>): KvStore<V> {
     },
     delete(key) {
       data.delete(key);
+      return Promise.resolve();
+    },
+    update(key, change) {
+      const next = change(read(key));
+      if (next !== undefined) data.set(key, structuredClone(next));
       return Promise.resolve();
     },
     deleteIf(key, condition) {

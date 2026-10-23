@@ -1,7 +1,9 @@
 /**
  * IndexedDB-backed `KvStore`s. One database (`hsw-editor-offline`) holds every offline record so the page and
  * the service worker open the same stores; this module owns the schema (`OFFLINE_STORES`):
- *   - `walls`  wall mirror + queued edits (one record per wall, written atomically)
+ *   - `walls`   wall mirror + queued edits (one record per wall, written atomically)
+ *   - `assets`  registry of service-worker cache entries (size, last use, pinned): `src/pwa/registry.ts`
+ *   - `meta`    small settings the page and the worker share (the media cache byte budget)
  *
  * No dependency: the few needed calls (get/put/delete/delete-if + a full scan) are thin wrappers over raw
  * IndexedDB that reject on a failing transaction instead of hanging. The database handle comes from a
@@ -11,8 +13,8 @@
 import type { KvStore, Parse } from './kv.ts';
 
 export const OFFLINE_DB_NAME = 'hsw-editor-offline';
-export const OFFLINE_DB_VERSION = 1;
-export const OFFLINE_STORES = ['walls'] as const;
+export const OFFLINE_DB_VERSION = 2;
+export const OFFLINE_STORES = ['walls', 'assets', 'meta'] as const;
 export type OfflineStoreName = (typeof OFFLINE_STORES)[number];
 
 export type DbProvider = () => Promise<IDBDatabase>;
@@ -87,6 +89,16 @@ export function idbStore<V>(db: DbProvider, name: OfflineStoreName, parse: Parse
     async delete(key) {
       const { tx, objects } = await store('readwrite');
       objects.delete(key);
+      await done(tx);
+    },
+    async update(key, change) {
+      const { tx, objects } = await store('readwrite');
+      const reading = objects.get(key);
+      reading.onsuccess = () => {
+        const current = reading.result === undefined ? undefined : parse(reading.result);
+        const next = change(current);
+        if (next !== undefined) objects.put(next, key);
+      };
       await done(tx);
     },
     async deleteIf(key, condition) {

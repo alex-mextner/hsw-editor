@@ -210,6 +210,11 @@ export const shellEn = {
   'sync.error': 'Error',
   'sync.rev': 'Saved on disk, revision {rev}',
   'sync.rejected': 'Edit not applied: {reason}',
+  'pwa.updateReady': 'A new version is ready.',
+  'pwa.updateReload': 'Reload now',
+  'pwa.updateLater': 'Later',
+  'pwa.updateFailed': 'Could not save the offline state: {reason}',
+  'pwa.offlineReady': 'Ready to work offline.',
 } as const;
 
 export const shellRu: FeatureRu<typeof shellEn> = {
@@ -433,4 +438,9 @@ export const shellRu: FeatureRu<typeof shellEn> = {
   'sync.error': 'Ошибка',
   'sync.rev': 'Сохранено на диск, ревизия {rev}',
   'sync.rejected': 'Правка не применена: {reason}',
+  'pwa.updateReady': 'Доступна новая версия.',
+  'pwa.updateReload': 'Обновить',
+  'pwa.updateLater': 'Позже',
+  'pwa.updateFailed': 'Не удалось сохранить офлайн-состояние: {reason}',
+  'pwa.offlineReady': 'Готово к работе без сети.',
 };

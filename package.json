@@ -27,9 +27,11 @@
     "bank:adopt": "bun scripts/bank/adopt.ts",
     "bank:schema": "bun scripts/bank/schema.ts",
     "check": "bun run lint && bun run typecheck && bun scripts/bank/schema.ts --check && bun scripts/bank/verify.ts --seed && bun run test && bun run build",
-    "release": "bun scripts/release.ts"
+    "release": "bun scripts/release.ts",
+    "pwa:assets": "bun scripts/gen-pwa-assets.ts"
   },
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
     "@types/bun": "1.4.2",
     "oxfmt": "0.67.0",
     "oxlint": "1.82.0",

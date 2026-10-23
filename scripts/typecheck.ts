@@ -21,6 +21,8 @@ const projects = [
   'packages/overlay',
   'apps/server',
   'apps/web',
+  // The service worker is compiled with the WebWorker lib (the DOM lib of apps/web clashes with it).
+  'apps/web/tsconfig.sw.json',
 ];
 if (existsSync(resolve(root, 'vendor/state-lib/dist/index.d.ts'))) {
   projects.push('apps/web/tsconfig.statelib.json');

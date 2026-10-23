@@ -13,6 +13,7 @@
   "references": [{ "path": "./tsconfig.omp-vendor.json" }],
   "exclude": [
     "src/features/omp/vendor/omp-render",
+    "src/pwa/sw.ts",
     "src/state/statelib.ts",
     "src/state/statelib-scope.ts"
   ]
