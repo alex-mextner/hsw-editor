@@ -278,6 +278,15 @@ describe('recents and frequency', () => {
     expect(commandIds).not.toContain('cmd:view.toggleGrid');
   });
 
+  test('stale recent ids do not crowd real commands out of the recents section', async () => {
+    let usage: UsageRecord = EMPTY_USAGE;
+    usage = recordUse(usage, 'cmd:view.toggleGrid', NOW - 5000);
+    for (let i = 0; i < 8; i += 1) usage = recordUse(usage, `cmd:gone.${i}`, NOW - i);
+    const results = await search('', usage);
+    expect(results.sections[0]?.kind).toBe('recent');
+    expect(results.sections[0]?.items.map((r) => r.item.id)).toEqual(['cmd:view.toggleGrid']);
+  });
+
   test('frequency breaks ties between equally good matches', async () => {
     registry.register(
       defineCommand({

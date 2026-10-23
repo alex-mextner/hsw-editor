@@ -1,4 +1,10 @@
 import { describe, expect, test } from 'bun:test';
+import { createEmptyWall } from '@hsw-editor/core';
+import { createMemoryStore, type KvStore } from '../offline/kv.ts';
+import { newRecord, WallMirror } from '../offline/mirror.ts';
+import { parseWallRecord, type WallRecord } from '../offline/record.ts';
+import { ME } from '../offline/testing.ts';
+import { flushMirrorBeforeApply } from './beforeApply.ts';
 import {
   scheduleUpdateChecks,
   UPDATE_CHECK_INTERVAL_MS,
@@ -222,5 +228,33 @@ describe('scheduleUpdateChecks', () => {
     scheduleUpdateChecks({ checkForUpdate: () => Promise.reject(new Error('offline')) }, e);
     timers[0]?.fn();
     await Promise.resolve();
+  });
+});
+
+describe('beforeApply wired to the wall mirror', () => {
+  test('skipWaiting waits until a pending offline write has landed in the store', async () => {
+    const inner = createMemoryStore<WallRecord>(parseWallRecord);
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+    const slow: KvStore<WallRecord> = {
+      ...inner,
+      set: async (key, value) => {
+        await gate;
+        await inner.set(key, value);
+      },
+    };
+    const mirror = new WallMirror(slow);
+    const record = newRecord(createEmptyWall('w1', 'W'), ME, { canUndo: false, canRedo: false }, 1);
+    const write = mirror.put(record);
+    const { controller, fake } = await started(flushMirrorBeforeApply(() => Promise.resolve(mirror)));
+    fake.waiting();
+    const accepting = controller.accept();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(fake.skipped()).toBe(0);
+    expect(await inner.get('w1')).toBeUndefined();
+    release();
+    await accepting;
+    await write;
+    expect(await inner.get('w1')).toBeDefined();
+    expect(fake.skipped()).toBe(1);
   });
 });

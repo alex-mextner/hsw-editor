@@ -9,12 +9,15 @@ import { z } from 'zod';
 import { bindingsOf, type Keymap } from './keymap.ts';
 import { formatChord } from './keys.ts';
 import { commandPaletteItem, rankPaletteItems } from './palette.ts';
-import type { Command, CommandRegistry } from './registry.ts';
+import { type Command, type CommandRegistry, isAiHidden } from './registry.ts';
 import type { Locale, LocalizedText } from './text.ts';
 import { EMPTY_USAGE } from './usage.ts';
 import type { Context } from './when.ts';
 
 export const APP_COMMAND_TOOL_NAME = 'app_command';
+
+/** Longest search query accepted; a longer one only costs the scorer time without finding more. */
+export const MAX_QUERY_LENGTH = 200;
 
 /**
  * One flat object (not a union): model tool APIs require the root of an input schema to be an
@@ -25,6 +28,7 @@ export const appCommandRequestSchema = z.object({
   group: z.string().optional().describe('op=list: only commands of this group, e.g. edit, view.'),
   query: z
     .string()
+    .max(MAX_QUERY_LENGTH)
     .optional()
     .describe('op=search: words from the command title or what it does, any language.'),
   limit: z.number().int().min(1).max(50).optional().describe('op=search: at most this many hits.'),
@@ -228,7 +232,7 @@ function infoOf(command: Command, keymap: Keymap, registry: CommandRegistry): Ap
 }
 
 function exposed(deps: AppCommandDeps): readonly Command[] {
-  return deps.registry.available(deps.getContext()).filter((command) => command.aiHidden !== true);
+  return deps.registry.available(deps.getContext()).filter((command) => !isAiHidden(command));
 }
 
 export async function executeAppCommand(
@@ -280,7 +284,7 @@ async function runCommand(
   signal: AbortSignal | undefined,
 ): Promise<AppCommandResult> {
   const command = deps.registry.get(id);
-  if (command === undefined || command.aiHidden === true) {
+  if (command === undefined || isAiHidden(command)) {
     return { ok: false, code: 'unknown', message: `unknown command '${id}'` };
   }
   if (!deps.registry.isEnabled(id, deps.getContext())) {
@@ -318,7 +322,7 @@ async function runCommand(
     return cancelled();
   }
   deps.gate.announce(plan, 'running');
-  const outcome = await deps.registry.run(id, args, deps.getContext());
+  const outcome = await deps.registry.runChecked(command, checked, deps.getContext());
   if (!outcome.ok) {
     deps.gate.announce(plan, 'failed');
     return { ok: false, code: outcome.reason, message: outcome.message };

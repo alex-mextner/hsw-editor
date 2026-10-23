@@ -61,9 +61,9 @@ interface CommandBase {
   readonly allowInInput?: boolean;
   /** Holding the key repeats the command (nudge, scrub). Off by default. */
   readonly repeat?: boolean;
-  /** Hidden from the command palette (still bindable). Default listed. */
+  /** Hidden from the command palette (still bindable); also hidden from the AI unless `aiHidden: false`. Default listed. */
   readonly hidden?: boolean;
-  /** Not exposed to the AI `app_command` tool. Default exposed. */
+  /** Not exposed to the AI `app_command` tool. Defaults to {@link hidden}; `false` exposes a hidden command. */
   readonly aiHidden?: boolean;
 }
 
@@ -95,15 +95,42 @@ export interface Command extends CommandBase {
   readonly execute: (rawArgs: unknown) => Promise<RunOutcome>;
 }
 
-export type ArgsCheck =
-  | { readonly ok: true; readonly args: unknown }
-  | { readonly ok: false; readonly message: string };
+/** Arguments that passed validation, with the handler call bound to the parsed value. */
+export interface ValidArgs {
+  readonly ok: true;
+  readonly args: unknown;
+  /** Runs the handler with the already parsed arguments. Never throws. */
+  readonly execute: () => Promise<RunOutcome>;
+}
+
+export type ArgsCheck = ValidArgs | { readonly ok: false; readonly message: string };
+
+function unknownOutcome(id: string): RunOutcome {
+  return { ok: false, reason: 'unknown', message: `unknown command '${id}'` };
+}
+
+/**
+ * Whether the AI `app_command` tool may see and run `command`. A hidden command (palette-hidden:
+ * the per-setting commands, internal actions) is not AI-callable unless it sets `aiHidden: false`.
+ */
+export function isAiHidden(command: Command): boolean {
+  return command.aiHidden ?? command.hidden === true;
+}
 
 const ID_PATTERN = /^[a-zA-Z][\w-]*(\.[\w-]+)+$/;
 
 /** Ids of commands and settings: dotted, at least two segments (`edit.undo`, `appearance.theme`). */
 export function isDottedId(id: string): boolean {
   return ID_PATTERN.test(id);
+}
+
+function whenRefusal(command: Command, context: Context): RunOutcome | undefined {
+  if (matchesWhen(command.when, context)) return undefined;
+  return {
+    ok: false,
+    reason: 'disabled',
+    message: `command '${command.id}' is not available now (when: ${command.when ?? 'always'})`,
+  };
 }
 
 function isEmptyArgs(rawArgs: unknown): boolean {
@@ -149,7 +176,7 @@ export function defineCommand<Schema extends z.ZodType>(
     // Silently dropping arguments would let a caller believe they took effect.
     const validateArgs = (rawArgs: unknown): ArgsCheck =>
       isEmptyArgs(rawArgs)
-        ? { ok: true, args: undefined }
+        ? { ok: true, args: undefined, execute: () => runHandler(run) }
         : { ok: false, message: `command '${spec.id}' takes no arguments` };
     return {
       ...meta,
@@ -158,28 +185,27 @@ export function defineCommand<Schema extends z.ZodType>(
       execute: async (rawArgs) => {
         const checked = validateArgs(rawArgs);
         if (!checked.ok) return { ok: false, reason: 'invalid_args', message: checked.message };
-        return runHandler(run);
+        return checked.execute();
       },
     };
   }
   const schema = spec.args;
   const run = spec.handler;
   const parse = (rawArgs: unknown) => schema.safeParse(rawArgs ?? {});
+  const validateArgs = (rawArgs: unknown): ArgsCheck => {
+    const parsed = parse(rawArgs);
+    if (!parsed.success) return { ok: false, message: z.prettifyError(parsed.error) };
+    const { data } = parsed;
+    return { ok: true, args: data, execute: () => runHandler(() => run(data)) };
+  };
   return {
     ...meta,
     argsSchema: schema,
-    validateArgs: (rawArgs) => {
-      const parsed = parse(rawArgs);
-      return parsed.success
-        ? { ok: true, args: parsed.data }
-        : { ok: false, message: z.prettifyError(parsed.error) };
-    },
+    validateArgs,
     execute: async (rawArgs) => {
-      const parsed = parse(rawArgs);
-      if (!parsed.success) {
-        return { ok: false, reason: 'invalid_args', message: z.prettifyError(parsed.error) };
-      }
-      return runHandler(() => run(parsed.data));
+      const checked = validateArgs(rawArgs);
+      if (!checked.ok) return { ok: false, reason: 'invalid_args', message: checked.message };
+      return checked.execute();
     },
   };
 }
@@ -235,17 +261,17 @@ export class CommandRegistry {
 
   async run(id: string, rawArgs: unknown, context: Context): Promise<RunOutcome> {
     const command = this.commands.get(id);
-    if (command === undefined) {
-      return { ok: false, reason: 'unknown', message: `unknown command '${id}'` };
-    }
-    if (!matchesWhen(command.when, context)) {
-      return {
-        ok: false,
-        reason: 'disabled',
-        message: `command '${id}' is not available now (when: ${command.when ?? 'always'})`,
-      };
-    }
-    return command.execute(rawArgs);
+    if (command === undefined) return unknownOutcome(id);
+    return whenRefusal(command, context) ?? command.execute(rawArgs);
+  }
+
+  /**
+   * Runs arguments `command.validateArgs` already accepted; they are not parsed again. Refuses a
+   * command that was unregistered or replaced since (the handler `checked` carries is the old one).
+   */
+  async runChecked(command: Command, checked: ValidArgs, context: Context): Promise<RunOutcome> {
+    if (this.commands.get(command.id) !== command) return unknownOutcome(command.id);
+    return whenRefusal(command, context) ?? checked.execute();
   }
 
   /** JSON Schema of a command's arguments, for the AI tool listing. */

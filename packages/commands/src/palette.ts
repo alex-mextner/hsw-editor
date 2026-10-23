@@ -293,9 +293,12 @@ function mixedSections(
   if (text === '') {
     // Empty query: what the user used lately, then the commands they are most likely to want.
     const byId = new Map(items.map((item) => [item.id, item] as const));
-    const recent = recentIds(options.usage, options.now, RECENT_ROWS)
+    // Drop ids that are no longer offered before cutting to RECENT_ROWS: stale ones must not
+    // crowd real ones out.
+    const recent = recentIds(options.usage, options.now, Number.POSITIVE_INFINITY)
       .map((id) => byId.get(id))
       .filter((item): item is PaletteItem => item !== undefined)
+      .slice(0, RECENT_ROWS)
       .map((item): RankedItem => ({ item, score: 0, positions: [] }));
     const recentIdSet = new Set(recent.map((entry) => entry.item.id));
     const rest = rankPaletteItems(

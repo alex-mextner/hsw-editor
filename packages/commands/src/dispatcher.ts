@@ -34,6 +34,7 @@ export interface Step {
 
 export interface StepInput {
   readonly strokeId: string;
+  /** The key is Escape: it cancels a chord in progress unless a binding continues with it. */
   readonly escape: boolean;
   /** A text field has focus. */
   readonly typing: boolean;
@@ -69,9 +70,6 @@ function pickWinner(candidates: readonly Binding[]): Binding | undefined {
 export function stepChord(keymap: Keymap, state: ChordState, input: StepInput): Step {
   const current = expireChord(state, input.now, input.timeoutMs);
   const pendingNow = current.typed.length > 0;
-  if (pendingNow && input.escape) {
-    return { state: IDLE_CHORD, result: { kind: 'abort', reason: 'escape' } };
-  }
   const typed = [...current.typed, input.strokeId];
   const candidates = keymap.bindings.filter(
     (binding) =>
@@ -81,9 +79,10 @@ export function stepChord(keymap: Keymap, state: ChordState, input: StepInput): 
       matchesWhen(binding.when, input.context),
   );
   if (candidates.length === 0) {
-    return pendingNow
-      ? { state: IDLE_CHORD, result: { kind: 'abort', reason: 'mismatch' } }
-      : { state: IDLE_CHORD, result: { kind: 'pass' } };
+    if (!pendingNow) return { state: IDLE_CHORD, result: { kind: 'pass' } };
+    // Escape cancels a chord in progress, unless a binding actually continues with it (above).
+    const reason = input.escape ? 'escape' : 'mismatch';
+    return { state: IDLE_CHORD, result: { kind: 'abort', reason } };
   }
   const complete = candidates.filter((binding) => binding.chord.length === typed.length);
   const winner = pickWinner(complete);
@@ -127,8 +126,11 @@ const CONSUMED: KeyOutcome = { consumed: true };
 export class KeyDispatcher {
   private state: ChordState = IDLE_CHORD;
   private pending: PendingChord | null = null;
-  /** Stroke id that ended a chord; its auto-repeats are swallowed until another key arrives. */
-  private settledStroke: string | null = null;
+  /**
+   * The stroke that ended a chord (completed it, broke it, or let it time out); its auto-repeats
+   * are swallowed until another key arrives. `run` is the repeat:true binding that completed on it.
+   */
+  private settled: { readonly strokeId: string; readonly run: Binding | null } | null = null;
   private cancelTimer: (() => void) | undefined;
   private readonly listeners = new Set<(pending: PendingChord | null) => void>();
   private readonly timeoutMs: number;
@@ -158,9 +160,15 @@ export class KeyDispatcher {
     };
   }
 
-  /** Drops a chord in progress (palette opened, focus moved to a field). */
+  /**
+   * Drops a chord in progress (palette opened, focus moved to a field). The key still held stays
+   * swallowed: the dialog this reset belongs to may have been opened by that very chord, and a
+   * repeat of its first key must not start the chord again. A held repeat:true command stops.
+   */
   reset(): void {
+    const held = this.pending?.typed.at(-1) ?? this.settled?.strokeId;
     this.state = IDLE_CHORD;
+    this.settled = held === undefined ? null : { strokeId: held, run: null };
     this.setPending(null);
   }
 
@@ -173,9 +181,21 @@ export class KeyDispatcher {
     const strokeId = eventStrokeId(event, keymap.platform);
     if (strokeId === null) return NOT_CONSUMED;
     // The key that just finished or broke a chord keeps repeating while held; the browser must not
-    // get those repeats (Ctrl+S would open Save Page).
-    if (event.repeat === true && strokeId === this.settledStroke) return CONSUMED;
-    this.settledStroke = null;
+    // get those repeats (Ctrl+S would open Save Page). A repeat:true command keeps firing, but only
+    // while the same binding is still enabled: the context or focus may change during the hold.
+    const { settled } = this;
+    if (event.repeat === true && settled !== null && strokeId === settled.strokeId) {
+      const { run } = settled;
+      if (
+        run !== null &&
+        (!typing || run.allowInInput) &&
+        matchesWhen(run.when, this.options.getContext())
+      ) {
+        this.options.onRun(run);
+      }
+      return CONSUMED;
+    }
+    this.settled = null;
     const step = stepChord(keymap, this.state, {
       strokeId,
       escape: event.key === 'Escape',
@@ -192,14 +212,16 @@ export class KeyDispatcher {
         return NOT_CONSUMED;
       case 'abort':
         this.setPending(null);
-        this.settledStroke = strokeId;
+        this.settled = { strokeId, run: null };
         return CONSUMED;
       case 'pending':
         this.setPending({ typed: step.state.typed, candidates: result.candidates });
         return CONSUMED;
       case 'run':
         this.setPending(null);
-        if (result.binding.chord.length > 1) this.settledStroke = strokeId;
+        if (result.binding.chord.length > 1) {
+          this.settled = { strokeId, run: result.binding.repeat ? result.binding : null };
+        }
         if (event.repeat !== true || result.binding.repeat) this.options.onRun(result.binding);
         return CONSUMED;
     }
@@ -210,8 +232,11 @@ export class KeyDispatcher {
     this.cancelTimer = undefined;
     this.pending = next;
     if (next !== null) {
+      // The pending chord's last stroke may still be held; its auto-repeats must not restart it.
+      const heldStroke = next.typed.at(-1);
       this.cancelTimer = this.setTimer(() => {
         this.cancelTimer = undefined;
+        this.settled = heldStroke === undefined ? null : { strokeId: heldStroke, run: null };
         this.state = IDLE_CHORD;
         this.setPending(null);
       }, this.timeoutMs);

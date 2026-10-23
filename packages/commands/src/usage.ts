@@ -54,13 +54,18 @@ export function recentIds(usage: UsageRecord, now: number, limit: number): reado
     .map((entry) => entry.id);
 }
 
-const usageSchema = z.record(
-  z.string(),
-  z.object({ count: z.number().int().positive(), lastUsed: z.number().nonnegative() }),
-);
+const usageEntrySchema = z.object({
+  count: z.number().int().positive(),
+  lastUsed: z.number().nonnegative(),
+});
 
-/** Tolerant load: anything malformed becomes an empty record. */
+/** Tolerant load: bad entries are dropped one by one; a non-object document becomes an empty record. */
 export function parseUsage(value: unknown): UsageRecord {
-  const parsed = usageSchema.safeParse(value);
-  return parsed.success ? parsed.data : EMPTY_USAGE;
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return EMPTY_USAGE;
+  const entries: [string, UsageEntry][] = [];
+  for (const [id, raw] of Object.entries(value)) {
+    const parsed = usageEntrySchema.safeParse(raw);
+    if (parsed.success) entries.push([id, parsed.data]);
+  }
+  return Object.fromEntries(entries);
 }

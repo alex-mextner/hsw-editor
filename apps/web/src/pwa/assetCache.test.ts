@@ -143,6 +143,7 @@ describe('cache-first (bank files)', () => {
     h.net.respond = () => new Response('{"error":"asset_not_found"}', { status: 404 });
     const again = await handleRuntimeRequest(h.deps, new Request(GLB), r);
     expect(again.status).toBe(200);
+    expect(await again.text()).toBe('x'.repeat(10));
   });
 
   test.each([
@@ -164,6 +165,27 @@ describe('cache-first (bank files)', () => {
     expect(h.storage.stores.get(MEDIA_CACHE)?.entries.size ?? 0).toBe(0);
     expect(await h.registry.all()).toEqual([]);
     expect(h.refused).toEqual([[GLB, why]]);
+  });
+
+  test('a failed registry write rolls the stored copy back, so the cache never holds an unaccounted file', async () => {
+    const h = harness();
+    const r = route(GLB);
+    if (!r) throw new Error('no route');
+    h.registry.record = () => Promise.reject(new Error('idb gone'));
+    await expect(storeResponse(h.deps, new Request(GLB), bytesOf(10), r)).rejects.toThrow(
+      'idb gone',
+    );
+    expect(h.storage.cache(MEDIA_CACHE).entries.size).toBe(0);
+  });
+
+  test('a failed registry write keeps a previously stored copy of the same file', async () => {
+    const h = harness();
+    const r = route(GLB);
+    if (!r) throw new Error('no route');
+    await storeResponse(h.deps, new Request(GLB), bytesOf(10), r);
+    h.registry.record = () => Promise.reject(new Error('idb gone'));
+    await expect(storeResponse(h.deps, new Request(GLB), bytesOf(12), r)).rejects.toThrow();
+    expect(h.storage.cache(MEDIA_CACHE).entries.has(GLB)).toBe(true);
   });
 
   test('offline with nothing cached is a network error, not a fake response', async () => {
@@ -398,6 +420,15 @@ describe('planEviction', () => {
     expect(planEviction([entry('a', 10, 1)], MEDIA_CACHE, 10)).toEqual([]);
   });
 
+  test('when pinned bytes alone exceed the budget nothing is evicted: it could not help', () => {
+    const entries = [
+      entry('pinned', 100, 1, { pinned: true }),
+      entry('a', 10, 2),
+      entry('b', 10, 3),
+    ];
+    expect(planEviction(entries, MEDIA_CACHE, 50)).toEqual([]);
+  });
+
   test('oldest first, only as many as needed', () => {
     const entries = [entry('c', 10, 3), entry('a', 10, 1), entry('b', 10, 2)];
     expect(planEviction(entries, MEDIA_CACHE, 20)).toEqual(['a']);
@@ -412,7 +443,7 @@ describe('planEviction', () => {
       entry('other', 500, 1, { cache: INDEX_CACHE }),
       entry('old', 50, 2),
     ];
-    expect(planEviction(entries, MEDIA_CACHE, 0, new Set(['keep']))).toEqual(['old']);
+    expect(planEviction(entries, MEDIA_CACHE, 150, new Set(['keep']))).toEqual(['old']);
   });
 });
 

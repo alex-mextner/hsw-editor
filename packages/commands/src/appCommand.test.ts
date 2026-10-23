@@ -6,6 +6,7 @@ import {
   APP_COMMAND_TOOL,
   appCommandResultSchema,
   executeAppCommand,
+  MAX_QUERY_LENGTH,
   type PlannedAction,
 } from './appCommand.ts';
 import { buildKeymap, EMPTY_USER_KEYMAP } from './keymap.ts';
@@ -245,6 +246,73 @@ describe('review regressions', () => {
   test('search ranks like the palette: the exact title beats a looser match', async () => {
     const result = await executeAppCommand(h.deps, { op: 'search', query: 'undo' });
     expect(result.ok && result.op === 'search' && result.commands[0]?.id).toBe('edit.undo');
+  });
+
+  test('a hidden command is not AI-callable unless it opts in with aiHidden: false', async () => {
+    h.mode = 'auto';
+    h.deps.registry.register(
+      defineCommand({
+        id: 'x.palettePlumbing',
+        title: { en: 'Plumbing', ru: 'Сантехника' },
+        group: 'app',
+        hidden: true,
+        mutates: false,
+        handler: () => 'plumbed',
+      }),
+      defineCommand({
+        id: 'x.hiddenButAi',
+        title: { en: 'Hidden but AI', ru: 'Скрыто но ИИ' },
+        group: 'app',
+        hidden: true,
+        aiHidden: false,
+        mutates: false,
+        handler: () => 'reachable',
+      }),
+    );
+    const list = await executeAppCommand(h.deps, { op: 'list' });
+    const ids = list.ok && list.op === 'list' ? list.commands.map((c) => c.id) : [];
+    expect(ids).not.toContain('x.palettePlumbing');
+    expect(ids).toContain('x.hiddenButAi');
+    const search = await executeAppCommand(h.deps, { op: 'search', query: 'plumbing' });
+    expect(search.ok && search.op === 'search' && search.commands).toEqual([]);
+    const blocked = await executeAppCommand(h.deps, { op: 'run', id: 'x.palettePlumbing' });
+    expect(blocked.ok === false && blocked.code).toBe('unknown');
+    const allowed = await executeAppCommand(h.deps, { op: 'run', id: 'x.hiddenButAi' });
+    expect(allowed).toEqual({ ok: true, op: 'run', id: 'x.hiddenButAi', value: 'reachable' });
+  });
+
+  test('an over-long search query is refused instead of reaching the scorer', async () => {
+    const ok = await executeAppCommand(h.deps, {
+      op: 'search',
+      query: 'a'.repeat(MAX_QUERY_LENGTH),
+    });
+    expect(ok.ok).toBe(true);
+    const tooLong = await executeAppCommand(h.deps, {
+      op: 'search',
+      query: 'a'.repeat(MAX_QUERY_LENGTH + 1),
+    });
+    expect(tooLong.ok === false && tooLong.code).toBe('invalid_request');
+  });
+
+  test('the arguments the AI sent are parsed once, not again at run time', async () => {
+    h.mode = 'auto';
+    let parses = 0;
+    h.deps.registry.register(
+      defineCommand({
+        id: 'x.counted',
+        title: { en: 'Counted', ru: 'Посчитано' },
+        group: 'app',
+        mutates: false,
+        args: z.object({ n: z.number() }).transform((value) => {
+          parses += 1;
+          return value;
+        }),
+        handler: ({ n }) => n,
+      }),
+    );
+    const result = await executeAppCommand(h.deps, { op: 'run', id: 'x.counted', args: { n: 4 } });
+    expect(result).toEqual({ ok: true, op: 'run', id: 'x.counted', value: 4 });
+    expect(parses).toBe(1);
   });
 
   test('a cancelled request does not run, even in auto mode', async () => {

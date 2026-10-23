@@ -24,9 +24,9 @@ defineCommand({
   mutates: true,                         // changes the wall or settings: the AI asks before running it
   allowInInput: false,                   // keep the binding alive while a text field has focus (needs a modifier)
   repeat: false,                         // holding the key repeats the command
-  hidden: false,                         // hide from the palette (still bindable)
+  hidden: false,                         // hide from the palette (still bindable); also hides it from the AI unless aiHidden is false
                                          // default key strings are validated by defineCommand (a typo throws)
-  aiHidden: false,                       // hide from the AI app_command tool
+  aiHidden: false,                       // hide from the AI app_command tool (default: the value of hidden)
   args: z.object({ … }),                 // optional zod schema; the handler receives the parsed value
   handler: (args) => …,                  // may return a JSON value (the AI reads it) or a promise
 });
@@ -66,7 +66,8 @@ A binding is a **portable chord**: one to four strokes separated by spaces.
   Names: `a`–`z`, `0`–`9`, `f1`–`f24`, `enter escape space tab backspace delete insert home end pageup pagedown up down left right`,
   and `- = [ ] \ ; ' , . / \``. `?` is spelled `shift+/` and is recognised on every layout.
 - A chord such as `mod+e mod+s` waits up to 1.5 s for its next stroke; Escape or a wrong key cancels it
-  (the wrong key is swallowed); the pending chord is shown to the user.
+  (the wrong key is swallowed), unless a binding continues the chord with that key (`mod+e escape`);
+  the pending chord is shown to the user.
 
 Defaults per OS: `keybindings: { all: [...], mac?: [...], windows?: [...], linux?: [...] }`. A platform
 entry replaces `all` for that platform; `[]` means unbound there.
@@ -80,7 +81,7 @@ The dispatcher never touches:
 - **Text fields.** While an input, textarea, select or contenteditable has focus every binding is skipped, except
   commands with `allowInInput` whose chord starts with `mod`, `ctrl` or `meta` and has no `alt` (Option types characters on macOS and AltGr is
   Ctrl+Alt on Windows, so plain typing can never trigger a command). The palette itself uses this.
-- Auto-repeat of a key, unless the command sets `repeat`; while a chord is pending, repeats are swallowed without changing it, and so are the repeats of the key that just finished or broke a chord (Ctrl+S would otherwise open the browser's Save Page).
+- Auto-repeat of a key, unless the command sets `repeat`; while a chord is pending, repeats are swallowed without changing it, and so are the repeats of the key that just finished, broke or timed out a chord (Ctrl+S would otherwise open the browser's Save Page). A `repeat` command bound to a chord keeps firing while its last key is held, for as long as its when-clause holds and, in a text field, `allowInInput` allows it.
 
 When several bindings match the same chord, the winner is: a user binding over a default, then the one with a
 when-clause over one without, then the later registered.
@@ -146,7 +147,8 @@ the answer inline. The AI changes the app through the host tool **`app_command`*
 The tool input is one flat object (`op` plus optional `group`, `query`, `limit`, `id`, `args`) because model tool APIs require an object at the root of the schema. `executeAppCommand` (`appCommand.ts`) is the page-side implementation; it honours the abort signal (before planning and again after approval, result `cancelled`); the bridge types and the answer state live in `aiBridge.ts`. For every run it **announces the plan** (`planned`, `running`, `done` or
 `failed`) so the palette shows what the AI is about to do. Commands with `mutates: true` wait for the user's approval (the arguments are validated first, so the user is never asked to approve a call that cannot run; the prompt receives an `AbortSignal`)
 (`approve` mode, default) or run straight away (`auto` mode); a rejection comes back to the AI as an error. Commands with
-`aiHidden`, and commands whose when-clause is false, are invisible to the AI.
+`aiHidden` (which defaults to the command's `hidden`, so palette-hidden commands are not AI-callable unless they set
+`aiHidden: false`), and commands whose when-clause is false, are invisible to the AI.
 
 The palette talks to omp only through the `PaletteAiBridge` interface (`ask`, `status`, `setAppCommandHandler`). The app's
 implementation is `ompPaletteBridge` (`apps/web/src/features/omp/paletteBridge.ts`): it sends the question as a `prompt` to the

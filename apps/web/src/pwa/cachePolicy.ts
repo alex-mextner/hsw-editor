@@ -137,7 +137,7 @@ export function effectiveBudget(configured: number | undefined, quota: number | 
 /**
  * URLs to evict so the evictable, unpinned entries of `cache` fit in `budgetBytes`: least recently used
  * first. Pinned entries count toward the total (they occupy the space) but are never chosen; if they alone
- * exceed the budget the result simply empties everything evictable.
+ * exceed the budget nothing is evicted: emptying the rest of the cache would not get under it.
  */
 export function planEviction(
   entries: readonly AssetEntry[],
@@ -148,6 +148,11 @@ export function planEviction(
   const inCache = entries.filter((entry) => entry.cache === cache);
   let total = inCache.reduce((sum, entry) => sum + entry.bytes, 0);
   if (total <= budgetBytes) return [];
+  // Entries that can never be chosen: if they alone overflow the budget, evicting the rest frees nothing useful.
+  const immovable = inCache
+    .filter((entry) => entry.pinned || !entry.evictable)
+    .reduce((sum, entry) => sum + entry.bytes, 0);
+  if (immovable > budgetBytes) return [];
   const victims = inCache
     .filter((entry) => entry.evictable && !entry.pinned && !keep.has(entry.url))
     .sort((a, b) => a.lastUsed - b.lastUsed || a.url.localeCompare(b.url));
