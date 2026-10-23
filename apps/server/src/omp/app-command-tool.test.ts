@@ -280,10 +280,47 @@ describe('app_command through the omp session', () => {
       ok: true,
       result: { ok: true, op: 'run', id: 'edit.undo', value: null },
     });
-    expect(page.frames()).toHaveLength(framesAtEnd);
+    // Let the child answer a request sent after the late result: anything the late result triggered
+    // would have reached the page by then.
+    const ping = rpcCommand('get_state');
+    session.handleClientMessage('p1', { t: 'rpc', command: ping });
+    await page.until((p) =>
+      p.frames().some((f) => f.type === 'response' && f.id === ping.id),
+    );
+    expect(
+      page.frames().filter((f) => f.type !== 'response' || f.id === ping.id),
+    ).toHaveLength(framesAtEnd - page.frames().filter((f) => f.type === 'response' && f.id !== ping.id).length + 1);
     expect(
       page.frames().filter((f) => f.type === 'tool_execution_end' && f.toolName === 'app_command'),
     ).toHaveLength(1);
+  });
+
+  test('a child crash during a pending call tells the page to stop', async () => {
+    const session = makeSession();
+    const page = new TestPage('p1');
+    await attach(session, page);
+    session.handleClientMessage('p1', {
+      t: 'rpc',
+      command: rpcCommand('prompt', { message: 'toolcrash:{"op":"run","id":"edit.undo"}' }),
+    });
+    await page.until((p) => uiCalls(p).length > 0);
+    const call = uiCalls(page)[0];
+    if (call === undefined) throw new Error('no ui_call reached the page');
+    await page.until((p) => p.find('ui_cancel') !== undefined);
+    expect(page.find('ui_cancel')).toEqual({ t: 'ui_cancel', id: call.id });
+  });
+
+  test('a restart during a pending call tells the page to stop', async () => {
+    const session = makeSession();
+    const page = new TestPage('p1');
+    await attach(session, page);
+    session.handleClientMessage('p1', {
+      t: 'rpc',
+      command: rpcCommand('prompt', { message: 'tool:app_command:{"op":"run","id":"edit.undo"}' }),
+    });
+    await page.until((p) => uiCalls(p).length > 0);
+    await session.restart();
+    expect(page.find('ui_cancel')).toEqual({ t: 'ui_cancel', id: uiCalls(page)[0]?.id ?? '' });
   });
 
   test('goes to the window that asked, not to one that was merely active later', async () => {

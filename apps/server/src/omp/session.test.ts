@@ -422,3 +422,23 @@ describe('OmpSession with a scripted omp', () => {
     expect(session.hasChild).toBe(false);
   });
 });
+
+describe('prompt client routing', () => {
+  test('a refused prompt from another tab does not take over the approval target', async () => {
+    const session = makeSession();
+    const asker = new TestPage('asker');
+    const other = new TestPage('other');
+    await ready(session, asker);
+    await ready(session, other);
+    const first = rpcCommand('prompt', { message: 'crash' });
+    session.handleClientMessage('asker', { t: 'rpc', command: first });
+    // The child dies mid-turn: until it is back every prompt is refused.
+    while (session.phase === 'ready') await new Promise((resolve) => setTimeout(resolve, 5));
+    const refused = rpcCommand('prompt', { message: 'say hi' });
+    session.handleClientMessage('other', { t: 'rpc', command: refused });
+    const response = responseTo(other, refused.id);
+    expect(response?.success).toBe(false);
+    expect(response && !response.success && response.error).toContain('not ready');
+    expect(session.promptClientId).toBe('asker');
+  });
+});

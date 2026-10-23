@@ -58,6 +58,8 @@ interface ClientRecord {
 interface PendingViewportCall {
   readonly resolve: (result: ViewportResult) => void;
   readonly reject: (error: Error) => void;
+  /** The server gives the call up while the page may still be working on it: tell the page, then reject. */
+  readonly cancel: (error: Error) => void;
   readonly clientId: string;
 }
 
@@ -196,6 +198,11 @@ export class OmpSession {
     });
   }
 
+  /** The page whose latest accepted prompt decides where `app_command` approvals go. */
+  get promptClientId(): string | null {
+    return this.#promptClientId;
+  }
+
   get phase(): OmpPhase {
     return this.#phase;
   }
@@ -288,10 +295,14 @@ export class OmpSession {
     // A ping is the page's timer, not the user: it must not make a background tab the "most active" window.
     if (message.t !== 'ping') record.lastActive = Date.now();
     switch (message.t) {
-      case 'rpc':
-        if (ASKING_COMMANDS.includes(message.command.type)) this.#promptClientId = record.port.id;
-        this.#forwardRpc(record, message.command);
+      case 'rpc': {
+        // Only a command the child accepted makes this page the user's window.
+        const accepted = this.#forwardRpc(record, message.command);
+        if (accepted && ASKING_COMMANDS.includes(message.command.type)) {
+          this.#promptClientId = record.port.id;
+        }
         break;
+      }
       case 'ui_response':
         this.#answerDialog(message.response);
         break;
@@ -795,7 +806,7 @@ export class OmpSession {
 
   // ---- RPC from pages ---------------------------------------------------------------------------
 
-  #forwardRpc(record: ClientRecord, command: OmpRpcCommand): void {
+  #forwardRpc(record: ClientRecord, command: OmpRpcCommand): boolean {
     const child = this.#child;
     const reject = (error: string): void =>
       record.port.send({
@@ -804,15 +815,16 @@ export class OmpSession {
       });
     if (child === null || this.#phase !== 'ready') {
       reject(`omp is not ready (${this.#phase})`);
-      return;
+      return false;
     }
     if (command.type === 'switch_session' && !this.#isInsideSessionDir(command.sessionPath)) {
       reject('session path is outside this wall’s session directory');
-      return;
+      return false;
     }
     const wireId = `${record.port.id}:${command.id}`;
     this.#rpcOrigin.set(wireId, { clientId: record.port.id, id: command.id });
     child.send({ ...command, id: wireId });
+    return true;
   }
 
   #isInsideSessionDir(path: string): boolean {
@@ -964,6 +976,7 @@ export class OmpSession {
         release();
         reject(error);
       },
+      cancel: giveUp,
     });
     target.port.send({ t: 'ui_call', id, call });
     return promise;
@@ -984,7 +997,7 @@ export class OmpSession {
     for (const pending of [...this.#prompts.values()]) pending.resolve({ cancelled: true });
     for (const controller of this.#hostCalls.values()) controller.abort();
     this.#hostCalls.clear();
-    for (const call of [...this.#viewportCalls.values()]) call.reject(new Error(reason));
+    for (const call of [...this.#viewportCalls.values()]) call.cancel(new Error(reason));
     this.#rpcOrigin.clear();
   }
 }
