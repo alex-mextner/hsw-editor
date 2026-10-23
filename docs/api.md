@@ -29,12 +29,12 @@ validated against them. Import `applyOp`, `OpSchema`, `parseWall`, `opJsonSchema
 | 400    | `invalid_json`, `invalid_body`, `invalid_id`       | Malformed JSON / body does not match the schema (`details`: list of issues) |
 | 403    | `forbidden_host`, `forbidden_origin`               | Guard rejected the request                                                 |
 | 404    | `not_found`, `wall_not_found`, `asset_not_found`, `request_not_found`, `unknown_job_kind`, `job_not_found` | Unknown route / wall / file / request / job |
-| 409    | `rev_conflict`                                     | `baseRev` is stale; body also has `wall` (current) and `currentRev`        |
+| 409    | `rev_conflict`                                     | `baseRev` is stale; body also has `wall` (current) and `currentRev` (`PUT /api/settings`: `settings` instead of `wall`) |
 | 409    | `wall_exists`                                      | `POST /api/walls` with an id that is taken                                 |
 | 409    | `nothing_to_undo`, `nothing_to_redo`               | Empty undo/redo stack                                                      |
 | 409    | `undo_conflict`, `redo_conflict`                   | The stored inverse/op no longer applies to the current wall                |
 | 409    | `request_closed`                                   | The input request was already answered or cancelled                        |
-| 413    | `payload_too_large`                                | Upload above the limit (photos 40 MB, models 100 MB)                       |
+| 413    | `payload_too_large`                                | Upload above the limit (photos 40 MB, models 100 MB; settings 256 KiB)     |
 | 415    | `unsupported_media_type`                           | Not a JPEG/PNG/WebP photo, not a binary glTF (`.glb`) model                |
 | 422    | `op_failed`                                        | Op refused by the reducer: `details` = `{ opIndex?, code }` (see below)    |
 | 422    | `invalid_request`                                  | An input request points at an item/photo/model that is not on the wall     |
@@ -168,6 +168,50 @@ Long-running work (vision, drawing). Handlers are registered in-process with `re
 
 `Job = { id, kind, wallId?, state: "queued" | "running" | "succeeded" | "failed" | "cancelled", progress?: { done?, total?, fraction?, message? }, result?, error?, createdAt, startedAt?, finishedAt? }`.
 
+## Settings
+
+Per-user preferences (keymap overrides, palette recents, editor preferences). One JSON document per daemon user,
+stored in `<home>/settings.json` (default `~/.local/share/hsw-editor/settings.json`); the daemon is its single writer.
+The shared contract (zod schemas, limits, `applySettingsPut`) and the offline-first client live in
+`packages/user-settings` (`@hsw-editor/user-settings`); import `createSettingsClient`, `createHttpTransport`,
+`SettingsDocumentSchema`, `SettingsPutBodySchema` instead of re-modelling.
+
+```
+SettingsDocument = { schema: 1, rev: number, updatedAt: ISO string, data: { [namespace]: JsonValue } }
+```
+
+- `data` keys are namespaces (`keymap`, `settings`, `palette`, ...) matching `^[a-z][a-z0-9_-]{0,31}$`; at most 64.
+  Each namespace holds one JSON value nested at most 16 levels deep (a scalar is depth 1). The serialized document is
+  at most 256 KiB.
+- `rev` starts at 0 and is +1 for every PUT that changes the document; a PUT that changes nothing returns the current
+  document and does not bump it. Before the first PUT the daemon serves defaults
+  (`{ schema: 1, rev: 0, updatedAt: "1970-01-01T00:00:00.000Z", data: {} }`) and writes nothing.
+
+`GET /api/settings` -> the `SettingsDocument`.
+
+`PUT /api/settings` body `{ baseRev?: number, data: { [namespace]: JsonValue | null } }` -> the new `SettingsDocument`.
+Merge is per namespace: a listed namespace is replaced wholesale, `null` deletes it, unlisted ones are untouched. With
+`baseRev` the PUT applies only if it equals the current `rev`; otherwise `409 rev_conflict` with
+`{ error, settings: <current document>, currentRev }` and nothing is written. Without `baseRev` it is last-writer-wins.
+Concurrent PUTs are serialized by the daemon.
+
+| Status | `error.code`       | When                                                                              |
+| ------ | ------------------ | --------------------------------------------------------------------------------- |
+| 400    | `invalid_json`     | Body is not JSON                                                                  |
+| 400    | `invalid_body`     | Bad namespace name, value too deep / not JSON, unknown key, more than 64 namespaces (`details`: issues) |
+| 409    | `rev_conflict`     | `baseRev` is stale                                                                |
+| 413    | `payload_too_large`| Body above 256 KiB, or the merged document would exceed it                        |
+
+`GET /api/settings/events` (`text/event-stream`): `settings` event `{ rev }` on connect and after every accepted PUT, plus
+a `heartbeat` every 15 s. A client that sees a `rev` above its own refetches (`client.notifyServerRev(rev)`), so a phone
+and a desktop stay in sync.
+
+Client (`createSettingsClient`): reads come synchronously from a `localStorage` mirror (`hsw-editor:user-settings:v1`),
+writes land in the mirror at once and are pushed debounced and coalesced as pending namespace patches with `baseRev`.
+On (re)connect it GETs the server document: namespaces with pending local edits keep the local value and are pushed,
+every other namespace adopts the server value, so stale server data never overwrites an unpushed edit. A `409` refetches
+and retries once. Offline (fetch fails) edits stay pending until the next `sync()`.
+
 ## Static app
 
 Everything else is the built web app (`apps/web/dist`): hashed `/assets/*` are `immutable`, `index.html`, `sw.js`
@@ -182,6 +226,7 @@ walls/<id>/wall.json        snapshot (atomic write: tmp + fsync + rename)
 walls/<id>/history.jsonl    one JSON entry per rev, appended + fsynced BEFORE wall.json is replaced
 walls/<id>/photos/ models/  uploaded and generated assets (photos/derived/ for drawn views)
 walls/.trash/               deleted walls
+settings.json               per-user settings document (atomic write, mode 0600; a corrupt file is kept as settings.json.corrupt-<ts>)
 server.lock                 pid of the single writer
 ```
 

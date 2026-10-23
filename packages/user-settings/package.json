@@ -1,0 +1,13 @@
+{
+  "name": "@hsw-editor/user-settings",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@hsw-editor/core": "workspace:*",
+    "zod": "^4.3.6"
+  }
+}

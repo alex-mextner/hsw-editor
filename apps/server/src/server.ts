@@ -4,12 +4,14 @@ import type { ServerConfig } from './config.ts';
 import { createHandler } from './handler.ts';
 import { defaultJobRegistry, JobRunner, type JobRegistry } from './jobs.ts';
 import { modules as defaultModules, type ModuleSocketData, type ServerModule } from './modules.ts';
+import { SettingsStore } from './settings.ts';
 import { type StoreHooks, WallStore } from './store/wall-store.ts';
 
 export interface RunningServer {
   readonly server: Server<ModuleSocketData>;
   readonly store: WallStore;
   readonly jobs: JobRunner;
+  readonly settings: SettingsStore;
   readonly url: string;
   stop(): Promise<void>;
 }
@@ -49,7 +51,8 @@ export async function startServer(
       return store.awaitRequest(id, created.id, signal);
     },
   });
-  const handler = createHandler({ config, store, jobs }, modules);
+  const settings = new SettingsStore({ home: config.home });
+  const handler = createHandler({ config, store, jobs, settings }, modules);
   const server = Bun.serve<ModuleSocketData>({
     hostname: config.host,
     port: config.port,
@@ -63,6 +66,7 @@ export async function startServer(
     server,
     store,
     jobs,
+    settings,
     url,
     async stop() {
       await server.stop(true);

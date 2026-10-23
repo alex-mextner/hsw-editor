@@ -13,21 +13,28 @@ async function syncDir(dir: string): Promise<void> {
   }
 }
 
+export interface AtomicWriteOptions {
+  /** Test seam: runs between the temp-file write and the rename, to simulate a crash there. */
+  beforeRename?: () => Promise<void> | void;
+  /** Permissions of the new file (default: umask-derived). */
+  mode?: number;
+}
+
 /**
  * Replaces `path` atomically: write a sibling temp file, fsync it, rename over the target, fsync the
  * directory. A crash at any point leaves either the old or the new content, never a mix.
- * `beforeRename` is a test seam that simulates a crash between the write and the rename.
  */
 export async function atomicWrite(
   path: string,
   data: string | Uint8Array,
-  beforeRename?: () => Promise<void> | void,
+  options: AtomicWriteOptions = {},
 ): Promise<void> {
+  const { beforeRename, mode } = options;
   const dir = dirname(path);
   await mkdir(dir, { recursive: true });
   tmpCounter += 1;
   const tmp = `${path}.tmp-${process.pid}-${tmpCounter}`;
-  const handle = await open(tmp, 'w');
+  const handle = await open(tmp, 'w', mode);
   try {
     await handle.writeFile(data);
     await handle.sync();
