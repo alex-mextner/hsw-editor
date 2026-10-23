@@ -94,9 +94,12 @@ The geometry is pure TypeScript in `packages/overlay` (no web/DOM dependency, in
 of the editor shell and only calls it.
 
 **Status.** Implemented: `packages/overlay` (calibration, rectification, camera recovery, mapping, snapping, wizard state
-machine, EXIF helpers) and `cellAtOffset`/`rotateCellOffset` in `packages/core`. Planned (ticket #30, later PRs): the server
-photo normaliser (HEIC), the 'Photo' mode in `apps/web`, PNG export, the vision 'find tools' button. Below, "Flow" describes
-the target behaviour; sections "Math", "Snapping rules" and "Edge cases" describe what the package does today.
+machine, EXIF helpers), `cellAtOffset`/`rotateCellOffset` in `packages/core`, the server photo normaliser (HEIC/AVIF/EXIF),
+and in `apps/web/src/features/photo` the photo intake (drop / paste / choose with upload progress) and the calibration wizard
+(two points, four corners, detected grid). Planned (ticket #30, later PRs): the camera-matched backdrop, dragging and typed
+sizes on the photo, PNG export, the vision 'find tools' button. Below, "Flow" describes the target behaviour; sections "Math",
+"Snapping rules" and "Edge cases" describe what the package does today. The reference look of the finished overlay is
+`docs/references/user-reference-wall-overlay-2026-10-22.jpg`.
 
 ### Flow
 1. **Add the photo**: drop, paste or choose a file. HEIC/HEIF is converted to JPEG by the server (`POST /api/walls/:id/photos`),

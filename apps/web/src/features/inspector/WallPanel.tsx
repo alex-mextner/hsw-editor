@@ -1,20 +1,21 @@
-import { Eye, EyeOff, TriangleAlert } from 'lucide-react';
+import { Eye, EyeOff, Ruler, TriangleAlert } from 'lucide-react';
 import { boardSizeMm, type Wall } from '@hsw-editor/core';
 import { api } from '@/api/http.ts';
 import { IconButton } from '@/components/IconButton.tsx';
 import { useI18n } from '@/i18n/index.ts';
 import { cn } from '@/lib/cn.ts';
-import { editorStore, patchEditor, setSelection } from '@/state/editor.ts';
+import { setSelection } from '@/state/editor.ts';
 import { useStore } from '@/state/react.ts';
 import { sessionStore } from '@/wall/session.ts';
-import { PhotoCalibrationButton } from '@/widgets/PhotoCalibrationButton.tsx';
+import { showPhoto } from '@/features/photo/photoActions.ts';
+import { leavePhotoMode, photoStore, startCalibration } from '@/state/photo.ts';
 
 /** Inspector content when nothing is selected: wall facts, photos and layout warnings. */
 export function WallPanel({ wall }: { readonly wall: Wall }) {
   const { t, tn } = useI18n();
   const size = boardSizeMm(wall.board);
   const warnings = useStore(sessionStore)?.warnings ?? [];
-  const overlay = useStore(editorStore).overlay;
+  const photoMode = useStore(photoStore);
   const tools = wall.items.filter((item) => item.kind === 'tool').length;
   const holders = wall.items.filter(
     (item) => item.kind === 'holder' || item.kind === 'board-part',
@@ -52,7 +53,7 @@ export function WallPanel({ wall }: { readonly wall: Wall }) {
         ) : (
           <ul className="grid gap-2">
             {wall.photos.map((photo) => {
-              const shown = overlay.photoId === photo.id;
+              const shown = photoMode.photoId === photo.id;
               return (
                 <li
                   key={photo.id}
@@ -77,13 +78,17 @@ export function WallPanel({ wall }: { readonly wall: Wall }) {
                         : t('wallpanel.uncalibrated')}
                     </div>
                   </div>
-                  <PhotoCalibrationButton photoId={photo.id} />
+                  <IconButton
+                    label={t('calibration.open')}
+                    size="icon-xs"
+                    onClick={() => startCalibration(photo.id)}
+                  >
+                    <Ruler />
+                  </IconButton>
                   <IconButton
                     label={shown ? t('overlay.hide') : t('overlay.show')}
                     pressed={shown}
-                    onClick={() =>
-                      patchEditor({ overlay: { ...overlay, photoId: shown ? null : photo.id } })
-                    }
+                    onClick={() => (shown ? leavePhotoMode() : showPhoto(photo))}
                   >
                     {shown ? <Eye /> : <EyeOff />}
                   </IconButton>

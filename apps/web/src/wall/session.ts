@@ -5,6 +5,7 @@ import { api, HUMAN } from '@/api/http.ts';
 import { HistoryEntrySchema, type WallSummary } from '@/api/schemas.ts';
 import { currentWallId } from '@/state/current-wall.ts';
 import { patchEditor, setSelection } from '@/state/editor.ts';
+import { leavePhotoMode } from '@/state/photo.ts';
 import { clearRequests, handleRequestEvent, loadOpenRequests } from '@/widgets/requests.ts';
 import { DEMO } from '@/demo/mode.ts';
 import { DEMO_WALL_ID, demoApi } from '@/demo/demoApi.ts';
@@ -106,6 +107,7 @@ export function closeWall(): void {
   detach = null;
   sync = null;
   patchEditor({ placeAt: null });
+  leavePhotoMode();
   sessionStore.set(null);
   clearRequests();
   setSelection([]);
@@ -114,6 +116,13 @@ export function closeWall(): void {
 export function submitOps(ops: readonly Op[], label?: string): SubmitResult {
   if (!sync) throw new Error('no wall is open');
   return sync.submit(ops, label);
+}
+
+/** Shows the wall an upload answered with (the photo is in it) without waiting for the live event; false when another wall is open now. */
+export function applyUploadedWall(wall: Wall): boolean {
+  if (sync?.wallId !== wall.id) return false;
+  sync.acceptUploaded(wall);
+  return true;
 }
 
 export function undoEdit(): void {

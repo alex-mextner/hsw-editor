@@ -1,5 +1,6 @@
 /** The real `EditorActions`: wires the registry's handlers to the editor's stores and wall actions. */
 import { api } from '@/api/http.ts';
+import { togglePhotoMode } from '@/features/photo/photoActions.ts';
 import { bankStore } from '@/bank/client.ts';
 import { newWallDialogStore } from '@/features/wizard/NewWallDialog.tsx';
 import type { HistoryEntry } from '@hsw-editor/core';
@@ -61,13 +62,6 @@ function focusPanelContents(panel: PanelKey): void {
   });
 }
 
-function toggleOverlay(): void {
-  const first = currentWall()?.photos[0];
-  if (!first) return;
-  const { overlay } = editorStore.get();
-  patchEditor({ overlay: { ...overlay, photoId: overlay.photoId === null ? first.id : null } });
-}
-
 /** The newest slice of a wall's history, ending at its current revision. */
 export function loadUndoWindow(wallId: string, currentRev: number): Promise<HistoryEntry[]> {
   // A little past the window, so edits that landed after `currentRev` are part of the replay too.
@@ -121,7 +115,7 @@ export function createAppActions(deps: AppActionDeps): EditorActions {
     fitView,
     toggleViewMode: () =>
       patchEditor({ view: editorStore.get().view === 'front' ? 'perspective' : 'front' }),
-    toggleOverlay,
+    toggleOverlay: togglePhotoMode,
     togglePanel: (panel) => togglePanel(PANEL_LAYOUT_KEY[panel]),
     focusPanel: (panel) => {
       layoutStore.set({ ...layoutStore.get(), [PANEL_LAYOUT_KEY[panel]]: true });

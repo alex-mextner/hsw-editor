@@ -1,37 +1,21 @@
-import {
-  Box,
-  Eye,
-  EyeOff,
-  Layers,
-  Magnet,
-  Maximize,
-  MousePointer2,
-  Ruler,
-  Scan,
-  Square,
-} from 'lucide-react';
+import { Box, Magnet, Maximize, MousePointer2, Ruler, Scan, Square } from 'lucide-react';
 import { useShortcutLabel } from '@/commands/app.ts';
 import { IconButton } from '@/components/IconButton.tsx';
-import { Slider } from '@/components/ui/slider.tsx';
 import { useI18n } from '@/i18n/index.ts';
 import { editorStore, fitView, patchEditor, setTool } from '@/state/editor.ts';
 import { useStore } from '@/state/react.ts';
-import { sessionStore } from '@/wall/session.ts';
+import { PhotoToolbar } from '@/features/photo/PhotoToolbar.tsx';
 
-/** Floating tool strip over the viewport: select/measure, camera mode, snap, fit and the photo overlay. */
+/** Floating tool strip over the viewport: select/measure, camera mode, snap, fit and the photo controls. */
 export function ViewportToolbar() {
   const { t } = useI18n();
   const editor = useStore(editorStore);
-  const photos = useStore(sessionStore)?.wall?.photos ?? [];
-  const overlayOn = editor.overlay.photoId !== null;
-  const firstPhoto = photos[0];
   const keys = {
     select: useShortcutLabel('tool.select'),
     measure: useShortcutLabel('tool.measure'),
     view: useShortcutLabel('view.toggle'),
     fit: useShortcutLabel('view.fit'),
     snap: useShortcutLabel('tool.snap'),
-    overlay: useShortcutLabel('view.overlay'),
   };
 
   return (
@@ -74,44 +58,7 @@ export function ViewportToolbar() {
           <Magnet />
         </IconButton>
       </div>
-
-      {firstPhoto ? (
-        <div className="pointer-events-auto flex items-center gap-1 rounded-lg border border-border bg-panel/95 p-0.5 pr-2 shadow-sm backdrop-blur">
-          <IconButton
-            label={overlayOn ? t('overlay.hide') : t('overlay.show')}
-            shortcut={keys.overlay}
-            pressed={overlayOn}
-            onClick={() =>
-              patchEditor({
-                overlay: {
-                  ...editor.overlay,
-                  photoId: overlayOn ? null : (editor.overlay.photoId ?? firstPhoto.id),
-                },
-              })
-            }
-          >
-            {overlayOn ? <Eye /> : <EyeOff />}
-          </IconButton>
-          <Layers className="size-3.5 text-muted-foreground" aria-hidden />
-          <Slider
-            className="w-24"
-            min={0}
-            max={1}
-            step={0.05}
-            value={[editor.overlay.opacity]}
-            aria-label={t('overlay.opacity')}
-            disabled={!overlayOn}
-            onValueChange={(value) => {
-              const next = Array.isArray(value) ? value[0] : value;
-              if (typeof next === 'number')
-                patchEditor({ overlay: { ...editor.overlay, opacity: next } });
-            }}
-          />
-          <span className="w-8 text-right font-mono text-[10px] text-muted-foreground">
-            {Math.round(editor.overlay.opacity * 100)}%
-          </span>
-        </div>
-      ) : null}
+      <PhotoToolbar />
     </div>
   );
 }

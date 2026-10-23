@@ -7,6 +7,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu.tsx';
+import { choosePhotoFile } from '@/features/photo/photoImport.ts';
 import { useI18n } from '@/i18n/index.ts';
 import { layoutStore } from '@/state/layout.ts';
 import { useStore } from '@/state/react.ts';
@@ -63,6 +64,9 @@ export function EmptyWallHints() {
             <ImagePlus className="size-4 text-primary" aria-hidden />
             <span className="font-medium">{t('empty.photoStep')}</span>
             <span className="text-muted-foreground">{t('empty.photoHint')}</span>
+            <Button size="xs" variant="outline" onClick={choosePhotoFile}>
+              {t('empty.choosePhoto')}
+            </Button>
           </li>
         </ol>
       </div>

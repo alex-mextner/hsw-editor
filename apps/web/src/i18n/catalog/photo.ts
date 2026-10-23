@@ -1,0 +1,104 @@
+import type { FeatureRu } from '../keys.ts';
+
+/** Photo mode: importing a wall photo, the calibration wizard, the photo backdrop and editing on the photo. */
+export const photoEn = {
+  // ---- import -----------------------------------------------------------------------------------
+  'photo.drop.hint': 'Drop a photo of your wall here',
+  'photo.unsupported': '“{name}” is not a supported image: use JPEG, PNG, WebP, HEIC or AVIF.',
+  'photo.progress.uploading': 'Uploading {name}… {percent}%',
+  'photo.progress.processing': 'Preparing {name} (orientation, HEIC/AVIF conversion)…',
+  // ---- wizard -----------------------------------------------------------------------------------
+  'photo.wizard.tab.corners': 'Four corners',
+  'photo.wizard.reference.length': 'Real length between the two clicks',
+  'photo.wizard.axis': 'Reference direction',
+  'photo.wizard.axis.free': 'Any',
+  'photo.wizard.axis.horizontal': 'Horizontal',
+  'photo.wizard.axis.vertical': 'Vertical',
+  'photo.wizard.corners.intro':
+    'Click the four corners of a rectangle of known size (the board or the wall), starting at the lower left and going clockwise, then type its real size.',
+  'photo.wizard.width': 'Width',
+  'photo.wizard.height': 'Height',
+  'photo.wizard.prompt.reference-start': 'Click one end of the reference (a tape, a ruler).',
+  'photo.wizard.prompt.reference-end': 'Click the other end of the reference.',
+  'photo.wizard.prompt.lower-left': 'Click the lower left corner.',
+  'photo.wizard.prompt.lower-right': 'Click the lower right corner.',
+  'photo.wizard.prompt.upper-right': 'Click the upper right corner.',
+  'photo.wizard.prompt.upper-left': 'Click the upper left corner.',
+  'photo.wizard.prompt.confirm': 'All points are set. Drag a point to fine-tune it, then apply.',
+  'photo.corner.lower-left': 'lower left',
+  'photo.corner.lower-right': 'lower right',
+  'photo.corner.upper-right': 'upper right',
+  'photo.corner.upper-left': 'upper left',
+  'photo.wizard.scale': '1 px = {value} mm',
+  'photo.wizard.scale.per100': '100 px = {value} mm at the centre of the photo',
+  'photo.wizard.clickError':
+    'A 1 px click error changes the scale by about {typical} (at worst {worst}, {mm} mm per metre); 3 px: about {three}.',
+  'photo.wizard.spread': 'The scale varies by {value} between the near and far part of the photo.',
+  'photo.wizard.reprojection': 'Fit error: rms {rms} px, max {max} px ({mm} mm on the wall).',
+  'photo.wizard.undoClick': 'Undo point',
+  'photo.wizard.cancel': 'Back to the editor',
+  'photo.wizard.warn.shortReference':
+    'The reference is short in the photo: a click error weighs heavily. A longer reference is more accurate.',
+  'photo.wizard.warn.singleScale':
+    'Two points give one scale; it is exact only at the reference. If the photo is tilted, use four corners.',
+  'photo.wizard.warn.largeReprojection':
+    'The corners do not fit a flat rectangle well. Check that each point is on the right corner.',
+  'photo.wizard.problem.needClicks': 'Click the points on the photo to see the scale.',
+  'photo.wizard.problem.invalidLength': 'Type a length greater than zero.',
+  'photo.wizard.problem.invalidSize': 'Type a width and a height greater than zero.',
+  'photo.wizard.problem.tooClose': 'The points are too close together.',
+  'photo.wizard.problem.cornerOrder':
+    'The corners are in the wrong order: lower left, lower right, upper right, upper left.',
+  'photo.wizard.problem.degenerate': 'These points do not describe a rectangle.',
+} as const;
+
+export const photoRu: FeatureRu<typeof photoEn> = {
+  'photo.drop.hint': 'Перетащите сюда фото вашей стены',
+  'photo.unsupported':
+    '«{name}» — не поддерживаемое изображение: нужен JPEG, PNG, WebP, HEIC или AVIF.',
+  'photo.progress.uploading': 'Загрузка {name}… {percent}%',
+  'photo.progress.processing': 'Подготовка {name} (ориентация, конвертация HEIC/AVIF)…',
+  'photo.wizard.tab.corners': 'Четыре угла',
+  'photo.wizard.reference.length': 'Реальная длина между двумя точками',
+  'photo.wizard.axis': 'Направление эталона',
+  'photo.wizard.axis.free': 'Любое',
+  'photo.wizard.axis.horizontal': 'Горизонтально',
+  'photo.wizard.axis.vertical': 'Вертикально',
+  'photo.wizard.corners.intro':
+    'Отметьте четыре угла прямоугольника известного размера (панели или стены) — с левого нижнего по часовой стрелке — и введите его реальный размер.',
+  'photo.wizard.width': 'Ширина',
+  'photo.wizard.height': 'Высота',
+  'photo.wizard.prompt.reference-start': 'Нажмите на один конец эталона (рулетки, линейки).',
+  'photo.wizard.prompt.reference-end': 'Нажмите на другой конец эталона.',
+  'photo.wizard.prompt.lower-left': 'Нажмите на левый нижний угол.',
+  'photo.wizard.prompt.lower-right': 'Нажмите на правый нижний угол.',
+  'photo.wizard.prompt.upper-right': 'Нажмите на правый верхний угол.',
+  'photo.wizard.prompt.upper-left': 'Нажмите на левый верхний угол.',
+  'photo.wizard.prompt.confirm':
+    'Все точки поставлены. Перетащите точку для уточнения и нажмите «Применить».',
+  'photo.corner.lower-left': 'левый нижний',
+  'photo.corner.lower-right': 'правый нижний',
+  'photo.corner.upper-right': 'правый верхний',
+  'photo.corner.upper-left': 'левый верхний',
+  'photo.wizard.scale': '1 px = {value} мм',
+  'photo.wizard.scale.per100': '100 px = {value} мм в центре фото',
+  'photo.wizard.clickError':
+    'Ошибка клика в 1 px меняет масштаб примерно на {typical} (в худшем случае на {worst}, {mm} мм на метр); 3 px — около {three}.',
+  'photo.wizard.spread': 'Масштаб различается на {value} между ближней и дальней частью фото.',
+  'photo.wizard.reprojection': 'Ошибка подгонки: СКО {rms} px, макс. {max} px ({mm} мм на стене).',
+  'photo.wizard.undoClick': 'Отменить точку',
+  'photo.wizard.cancel': 'Вернуться в редактор',
+  'photo.wizard.warn.shortReference':
+    'Эталон на фото короткий: ошибка клика сильно влияет. Чем длиннее эталон, тем точнее.',
+  'photo.wizard.warn.singleScale':
+    'Две точки дают один масштаб, точный только на эталоне. Если фото снято под углом, используйте четыре угла.',
+  'photo.wizard.warn.largeReprojection':
+    'Углы плохо ложатся на плоский прямоугольник. Проверьте, что каждая точка стоит на своём углу.',
+  'photo.wizard.problem.needClicks': 'Поставьте точки на фото, чтобы увидеть масштаб.',
+  'photo.wizard.problem.invalidLength': 'Введите длину больше нуля.',
+  'photo.wizard.problem.invalidSize': 'Введите ширину и высоту больше нуля.',
+  'photo.wizard.problem.tooClose': 'Точки слишком близко друг к другу.',
+  'photo.wizard.problem.cornerOrder':
+    'Углы в неверном порядке: левый нижний, правый нижний, правый верхний, левый верхний.',
+  'photo.wizard.problem.degenerate': 'Эти точки не образуют прямоугольник.',
+};

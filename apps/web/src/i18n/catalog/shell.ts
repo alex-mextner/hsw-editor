@@ -118,7 +118,9 @@ export const shellEn = {
   'empty.toolHint': 'Start from a tool preset, then get holder suggestions.',
   'empty.addTool': 'Add a tool',
   'empty.photoStep': 'Import a photo',
-  'empty.photoHint': 'Use the photo button in the top bar to calibrate and overlay a photo.',
+  'empty.photoHint':
+    'Drop, paste or choose a photo of your wall with a 100 cm tape in the frame: the HSW is overlaid on it.',
+  'empty.choosePhoto': 'Choose photo…',
 
   'tooldims.width': 'Width',
   'tooldims.length': 'Length',
@@ -347,7 +349,9 @@ export const shellRu: FeatureRu<typeof shellEn> = {
   'empty.toolHint': 'Начните с заготовки инструмента и получите подсказки по держателям.',
   'empty.addTool': 'Добавить инструмент',
   'empty.photoStep': 'Загрузите фото',
-  'empty.photoHint': 'Кнопка фото в верхней панели: калибровка и наложение снимка на стену.',
+  'empty.photoHint':
+    'Перетащите, вставьте или выберите фото стены с рулеткой 100 см в кадре: HSW наложится на него.',
+  'empty.choosePhoto': 'Выбрать фото…',
 
   'tooldims.width': 'Ширина',
   'tooldims.length': 'Длина',

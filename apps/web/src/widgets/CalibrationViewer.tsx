@@ -3,7 +3,6 @@ import { MaximizeIcon, ZoomInIcon, ZoomOutIcon } from 'lucide-react';
 import { IconButton } from '@/components/IconButton.tsx';
 import { useT } from '@/i18n/index.ts';
 import { cn } from '@/lib/cn.ts';
-import type { Point2 } from './calibrationMath.ts';
 import {
   fitView,
   imageToScreen,
@@ -12,6 +11,7 @@ import {
   scaleLimits,
   screenToImage,
   zoomAt,
+  type Point2,
   type Size,
   type ViewTransform,
 } from './calibrationView.ts';
@@ -28,6 +28,8 @@ interface CalibrationViewerProps {
   readonly markers: readonly Marker[];
   /** Extra points (e.g. the reprojected honeycomb grid), drawn small and not draggable. */
   readonly overlay?: readonly Point2[];
+  /** Closed outlines in photo pixels (e.g. the board as the calibration places it), drawn thin over the photo. */
+  readonly outlines?: readonly (readonly Point2[])[];
   /** A click that was not a drag; omitted = read-only viewer. */
   readonly onPlace?: (point: Point2) => void;
   readonly onMove?: (index: number, point: Point2) => void;
@@ -75,6 +77,7 @@ export function CalibrationViewer({
   image,
   markers,
   overlay,
+  outlines,
   onPlace,
   onMove,
   className,
@@ -258,6 +261,16 @@ export function CalibrationViewer({
       ) : null}
 
       <svg aria-hidden className="pointer-events-none absolute inset-0 size-full overflow-visible">
+        {outlines && view
+          ? outlines.map((outline, index) => (
+              <polygon
+                key={index}
+                points={outline.map((point) => imageToScreen(view, point).join(',')).join(' ')}
+                className="fill-primary/10 stroke-primary"
+                strokeWidth={1.5}
+              />
+            ))
+          : null}
         {overlay && view
           ? overlay.map((point, index) => {
               const [x, y] = imageToScreen(view, point);

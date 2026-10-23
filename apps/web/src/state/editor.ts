@@ -24,7 +24,6 @@ export interface EditorState {
   readonly snap: boolean;
   readonly fitToken: number;
   readonly measure: { readonly a: Vec2 | null; readonly b: Vec2 | null };
-  readonly overlay: { readonly photoId: string | null; readonly opacity: number };
   /** A pointer is down on an item (before or during a drag): the camera must not orbit. */
   readonly holding: boolean;
   /** Live poses of items being dragged, keyed by item id. */
@@ -51,7 +50,6 @@ const INITIAL: EditorState = {
   snap: true,
   fitToken: 0,
   measure: { a: null, b: null },
-  overlay: { photoId: null, opacity: 0.5 },
   holding: false,
   dragging: new Map(),
   dragValid: true,

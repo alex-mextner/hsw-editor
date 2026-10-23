@@ -3,6 +3,7 @@ import { CloudOff, Hexagon, Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button.tsx';
 import { InvalidZonesLegend } from '@/features/invalid-zones/InvalidZonesLegend.tsx';
 import { newWallDialogStore } from '@/features/wizard/NewWallDialog.tsx';
+import { PhotoModeLayer } from '@/features/photo/PhotoModeLayer.tsx';
 import { useI18n } from '@/i18n/index.ts';
 import { currentWallId } from '@/state/current-wall.ts';
 import { editorStore } from '@/state/editor.ts';
@@ -63,6 +64,7 @@ export function ViewportArea() {
       </Suspense>
       <ViewportToolbar />
       <InvalidZonesLegend />
+      <PhotoModeLayer wall={wall} />
       <ViewportHint
         text={
           tool === 'measure'
