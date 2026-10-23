@@ -8,6 +8,7 @@ needs an entry here first.
 
 ### Added
 
+- `@hsw-editor/tools/contract`: browser-safe zod schemas and types of the tool library and import drafts.
 - Wall document schema, invertible op reducer and history (`packages/core`): `Wall`, `WallItem`, `Photo`, `ModelRef`,
   16 ops with `applyOp(wall, op) -> { wall, inverse }`, collision/bounds warnings, `schemaVersion` migration hook.
 - Wall store (`~/.local/share/hsw-editor/walls/<id>`, `HSW_EDITOR_HOME`): atomic `wall.json`, fsynced `history.jsonl`,
