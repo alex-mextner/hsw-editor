@@ -35,6 +35,7 @@ import { patchEditor } from '@/state/editor.ts';
 import { useStore } from '@/state/react.ts';
 import { themeStore, toggleTheme } from '@/state/theme.ts';
 import { redoEdit, sessionStore, undoEdit } from '@/wall/session.ts';
+import { InvalidZonesToggle } from '@/features/invalid-zones/InvalidZonesToggle.tsx';
 import { PresenceBadge } from './PresenceBadge.tsx';
 import { SyncStatus } from './SyncStatus.tsx';
 import { WallSwitcher } from './WallSwitcher.tsx';
@@ -96,6 +97,7 @@ export function TopBar() {
       >
         <Redo2 />
       </IconButton>
+      <InvalidZonesToggle />
 
       <div className="flex-1" />
 

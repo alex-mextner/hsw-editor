@@ -44,7 +44,8 @@ export const MANIFEST = {
  * read by iOS when the app is added to the home screen, and a precache that downloads them on every desktop
  * visit would be pure waste.
  */
-export const PRECACHE_GLOBS = ['**/*.{js,css,html,svg,png,ico,woff2,webmanifest}'];
+// `wasm`: the invalid-zone worker's exact-geometry engine (manifold) must run offline like everything else.
+export const PRECACHE_GLOBS = ['**/*.{js,css,html,svg,png,ico,woff2,webmanifest,wasm}'];
 export const PRECACHE_IGNORES = ['**/*.map', 'icons/splash-*.png'];
 
 export function pwaPluginOptions(): Partial<VitePWAOptions> {

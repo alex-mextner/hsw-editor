@@ -1,11 +1,13 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Stats } from '@react-three/drei';
 import type { Wall } from '@hsw-editor/core';
 import { ViewportContextMenu } from '@/features/viewport/ViewportContextMenu.tsx';
 import { api } from '@/api/http.ts';
 import { bankStore } from '@/bank/client.ts';
-import { useT } from '@/i18n/index.ts';
+import { variantVersion } from '@/bank/models.ts';
+import { itemNamer } from '@/features/invalid-zones/itemNames.ts';
+import { useI18n } from '@/i18n/index.ts';
 import { editorStore, setSelection } from '@/state/editor.ts';
 import { useStore } from '@/state/react.ts';
 import { themeStore } from '@/state/theme.ts';
@@ -28,13 +30,21 @@ import { PhotoOverlay } from './PhotoOverlay.tsx';
 import { SelectionFrames } from './SelectionFrames.tsx';
 import { boardSizeMm } from '@hsw-editor/core';
 import { DimensionLayer } from '@/widgets/DimensionLayer.tsx';
+import { InvalidZones } from './invalid-zones/InvalidZones.tsx';
+import { itemSolid } from './invalid-zones/itemSolid.ts';
+import { describeReason, regionReasons } from './invalid-zones/reasons.ts';
+import { invalidZonesEnabledStore, invalidZonesResultStore } from './invalid-zones/store.ts';
+import { useInvalidZones } from './invalid-zones/useInvalidZones.ts';
+import { engineScene } from './invalid-zones/wallAdapter.ts';
 
 const GEOMETRY_WARNINGS = new Set(['cell_collision', 'out_of_board', 'cell_out_of_board']);
 
 /** The R3F viewport for the open wall. Reads everything from the stores; sends edits through the session. */
 export function WallViewport({ wall }: { readonly wall: Wall }) {
-  const t = useT();
+  const { t, locale } = useI18n();
   const editor = useStore(editorStore);
+  const zonesEnabled = useStore(invalidZonesEnabledStore);
+  const variants = useStore(variantVersion);
   const theme = useStore(themeStore);
   const bankState = useStore(bankStore);
   const session = useStore(sessionStore);
@@ -47,13 +57,48 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
   const bench = new URLSearchParams(globalThis.location?.search).has('bench');
   const showStats = new URLSearchParams(globalThis.location?.search).has('stats');
 
+  // Exact invalid regions (overlaps, protrusions) of the real meshes, solved in a worker. A regenerated variant
+  // arriving (`variants`) changes which solid an item is, so it is part of the scene's identity.
+  const scene = useMemo(
+    () => ({
+      ...engineScene(
+        wall.items,
+        (item) => itemSolid(item, wall, bank, globalThis.location.href),
+        editor.dragging,
+      ),
+      variants,
+    }),
+    [wall, bank, editor.dragging, variants],
+  );
+  const zones = useInvalidZones(
+    zonesEnabled && bankState.status === 'ready',
+    wall.board,
+    scene.items,
+    scene.sources,
+  );
+  useEffect(() => {
+    invalidZonesResultStore.set(zones);
+    return () => invalidZonesResultStore.set(null);
+  }, [zones]);
+  // Item-level verdicts feed only the selection frame (a selected item's outline turns red): the exact regions, plus
+  // the cell-based verdicts and server warnings. Models themselves are never tinted; with the zones off nothing but
+  // the frame of a selected item marks them.
   const invalidIds = useMemo(() => {
-    const ids = new Set<string>(layoutProblems(wall.items, wall.board, bank).keys());
+    const ids = new Set<string>(zones?.reasons.map((reason) => reason.itemId));
+    for (const id of layoutProblems(wall.items, wall.board, bank).keys()) ids.add(id);
     for (const warning of session?.warnings ?? []) {
       if (GEOMETRY_WARNINGS.has(warning.code)) for (const id of warning.itemIds) ids.add(id);
     }
     return ids;
-  }, [wall.items, wall.board, bank, session?.warnings]);
+  }, [zones, wall.items, wall.board, bank, session?.warnings]);
+  const describeRegion = useMemo(() => {
+    const nameOf = itemNamer(wall, bank, locale);
+    return (region: Parameters<typeof regionReasons>[0]): string[] =>
+      regionReasons(region, zones?.reasons ?? []).map((reason) => {
+        const message = describeReason(reason, nameOf);
+        return `${nameOf(reason.itemId)}: ${t(message.key, message.params)}`;
+      });
+  }, [wall, bank, locale, t, zones]);
 
   const occupied = useMemo(
     () => occupiedCells(wall.items, wall.board, bank),
@@ -109,9 +154,9 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
           bank={bank}
           bankReady={bankState.status === 'ready'}
           palette={palette}
-          invalidIds={invalidIds}
           onItemPointerDown={beginItemDrag}
         />
+        <InvalidZones result={zones} theme={theme} describeRegion={describeRegion} />
         <SelectionFrames wall={wall} bank={bank} palette={palette} invalidIds={invalidIds} />
         <PlacementMarker point={editor.placeAt} color={palette.ghostOk} />
         <DimensionLayer wall={wall} bank={bank} palette={palette} />

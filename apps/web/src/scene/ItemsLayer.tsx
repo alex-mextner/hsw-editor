@@ -43,18 +43,10 @@ interface ItemsLayerProps {
   /** The bank index is loaded: only then is an absent element id "missing from the bank". */
   readonly bankReady: boolean;
   readonly palette: ScenePalette;
-  readonly invalidIds: ReadonlySet<string>;
   readonly onItemPointerDown: (id: string, event: ThreeEvent<PointerEvent>) => void;
 }
 
-export function ItemsLayer({
-  wall,
-  bank,
-  bankReady,
-  palette,
-  invalidIds,
-  onItemPointerDown,
-}: ItemsLayerProps) {
+export function ItemsLayer({ wall, bank, bankReady, palette, onItemPointerDown }: ItemsLayerProps) {
   const { t, locale } = useI18n();
   const editor = useStore(editorStore);
   // Re-render when a regenerated model arrives: `resolveModel` reads that cache outside React state.
@@ -73,13 +65,11 @@ export function ItemsLayer({
             ? editor.dragValid
               ? palette.ghostOk
               : palette.ghostBad
-            : invalidIds.has(item.id)
-              ? palette.itemInvalid
-              : selected.has(item.id)
-                ? palette.itemSelected
-                : item.locked
-                  ? palette.itemLocked
-                  : null;
+            : selected.has(item.id)
+              ? palette.itemSelected
+              : item.locked
+                ? palette.itemLocked
+                : null;
           return {
             id: item.id,
             x: live?.x ?? item.pose.x,
