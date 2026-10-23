@@ -12,6 +12,7 @@ import { themeStore } from '@/state/theme.ts';
 import { layoutProblems, occupiedCells } from '@/wall/footprint.ts';
 import { sessionStore } from '@/wall/session.ts';
 import { BoardMesh } from './BoardMesh.tsx';
+import { OmpViewportInstaller } from '@/features/omp/OmpViewportInstaller.tsx';
 import { BridgeInstaller } from './BridgeInstaller.tsx';
 import { CameraRig } from './CameraRig.tsx';
 import { dragOverViewport, dropOnViewport, leaveViewport } from './bankDrop.ts';
@@ -81,6 +82,7 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
         <directionalLight position={[0.8, 1.6, 2.4]} intensity={theme === 'dark' ? 1.6 : 1.3} />
         <directionalLight position={[-1.2, 0.4, 1.2]} intensity={0.5} />
         <BridgeInstaller />
+        <OmpViewportInstaller widthMm={size.width} heightMm={size.height} />
         <CameraRig
           view={editor.view}
           widthMm={size.width}
