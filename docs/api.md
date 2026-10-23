@@ -369,7 +369,7 @@ The job turns the photo's calibration into the board footprint (plus a 30 mm mar
    (`MAX_OUTSIDE_DRIFT`), else only the masked area (feathered) replaces the basic variant (`backend` = the backend id).
    `login_required` / `backend_unavailable` hand over to the next backend; `quota_exhausted` stops the chain.
 
-Result: `{ status: "ok" | "current" | "needs_calibration" | "no_footprint" | "photo_not_found", variantId, method: "basic" | "ai" | null,
+Result: `{ status: "ok" | "current" | "needs_calibration" | "no_footprint" | "photo_not_found" | "stale", variantId, method: "basic" | "ai" | null,
 ai: "done" | "not-asked" | "login_required" | "quota_exhausted" | "unavailable" | "rejected" | "failed" | "disabled", aiMessage? }`.
 A variant whose footprint has not moved materially (1.5 % of the photo's longer side) is reused (`current`). The editor runs the job by itself
 (debounced 1.5 s after the footprint settles) while the setting `autoCleanBackground` is on; the agent tool `wall_clean_background` and the

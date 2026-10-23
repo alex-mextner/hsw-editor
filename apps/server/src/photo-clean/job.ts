@@ -4,7 +4,7 @@
  * `draw` is ready, the model's edit replaces it. The original photo is never touched: a variant is a second photo of
  * the wall (`cleanOf`, `view: 'clean'`), added and replaced with ordinary, undoable ops.
  */
-import { mkdir } from 'node:fs/promises';
+import { mkdir, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { type DrawBackendId, type DrawRequest, type DrawResult } from '@hsw-editor/draw';
 import { type Actor, type Photo, type Wall, newId } from '@hsw-editor/core';
@@ -59,7 +59,14 @@ export type AiState =
   | 'disabled';
 
 export interface PhotoCleanResult {
-  readonly status: 'ok' | 'current' | 'needs_calibration' | 'no_footprint' | 'photo_not_found';
+  /** `stale`: the board moved (or the photo went) while the model worked; the result was dropped. */
+  readonly status:
+    | 'ok'
+    | 'current'
+    | 'needs_calibration'
+    | 'no_footprint'
+    | 'photo_not_found'
+    | 'stale';
   /** The variant photo now shown for the original, when there is one. */
   readonly variantId: string | null;
   readonly method: 'basic' | 'ai' | null;
@@ -90,15 +97,19 @@ function variantOf(wall: Wall, originalId: string): Photo | undefined {
   return wall.photos.find((photo) => photo.cleanOf === originalId);
 }
 
+/**
+ * Stores `pixels` as the cleaned variant of `original` and swaps it in for whichever variant the wall has NOW. The wall
+ * is read again here: the AI step takes seconds to minutes, and meanwhile the user may have undone the basic variant
+ * or moved the board. A result for a footprint that is no longer the board's is dropped (null), its file removed.
+ */
 async function storeVariant(
   ctx: JobContext,
   wallId: string,
-  original: Photo,
-  previous: Photo | undefined,
+  originalId: string,
   pixels: Pixels,
   backend: string,
   footprint: string,
-): Promise<Photo> {
+): Promise<Photo | null> {
   const bytes = await encodeJpeg(pixels);
   const file = await ctx.walls.addAsset(wallId, {
     dir: 'photos/derived',
@@ -106,28 +117,50 @@ async function storeVariant(
     bytes,
     prefix: 'clean',
   });
-  const variant: Photo = {
-    id: newId('p'),
-    file,
-    mime: 'image/jpeg',
-    width: pixels.width,
-    height: pixels.height,
-    name: `${original.name ?? original.id} (clean)`,
-    origin: 'generated',
-    view: 'clean',
-    backend,
-    cleanOf: original.id,
-    cleanFootprint: footprint,
-  };
-  await ctx.walls.apply(wallId, {
-    ops: [
-      ...(previous ? [{ type: 'removePhoto' as const, id: previous.id }] : []),
-      { type: 'addPhoto' as const, photo: variant },
-    ],
-    actor: CLEAN_ACTOR,
-    label: `clean background (${backend})`,
-  });
-  return variant;
+  try {
+    const { wall } = await ctx.walls.get(wallId);
+    const original = wall.photos.find((photo) => photo.id === originalId);
+    if (original === undefined || currentFootprint(wall, original) !== footprint) {
+      await ctx.walls.removeAsset(wallId, file);
+      return null;
+    }
+    const previous = variantOf(wall, originalId);
+    const variant: Photo = {
+      id: newId('p'),
+      file,
+      mime: 'image/jpeg',
+      width: pixels.width,
+      height: pixels.height,
+      name: `${original.name ?? original.id} (clean)`,
+      origin: 'generated',
+      view: 'clean',
+      backend,
+      cleanOf: original.id,
+      cleanFootprint: footprint,
+    };
+    await ctx.walls.apply(wallId, {
+      ops: [
+        ...(previous ? [{ type: 'removePhoto' as const, id: previous.id }] : []),
+        { type: 'addPhoto' as const, photo: variant },
+      ],
+      actor: CLEAN_ACTOR,
+      label: `clean background (${backend})`,
+    });
+    return variant;
+  } catch (error) {
+    await ctx.walls.removeAsset(wallId, file).catch(() => undefined);
+    throw error;
+  }
+}
+
+/** The signature of the board's footprint on `photo` as the wall has it now; null without a usable calibration. */
+function currentFootprint(wall: Wall, photo: Photo): string | null {
+  if (photo.calibration === undefined) return null;
+  const image = { width: photo.width, height: photo.height };
+  const extent = boardExtent(wall.board);
+  const map = photoMapFromCalibration(photo.calibration, image, extent);
+  const polygon = map === null ? null : boardFootprintPx(map, extent, CLEAN_MARGIN_MM);
+  return polygon === null ? null : footprintSignature(polygon, image);
 }
 
 function failureState(code: string): AiState {
@@ -249,12 +282,12 @@ export async function runPhotoClean(
   const signature = footprintSignature(polygon, image);
 
   const existing = variantOf(wall, original.id);
-  const upToDate =
+  // The variant belongs to this footprint (the board may have moved a little since: that does not count).
+  const matches =
     existing !== undefined &&
-    !input.refresh &&
     footprintDrift(existing.cleanFootprint ?? '', polygon, image) <= materialDrift(image);
   const wantsAi = input.method === 'auto';
-  if (upToDate && (!wantsAi || existing.backend !== 'basic')) {
+  if (matches && !input.refresh && (!wantsAi || existing.backend !== 'basic')) {
     return {
       status: 'current',
       variantId: existing.id,
@@ -268,15 +301,16 @@ export async function runPhotoClean(
   const source = await readPixels(join(wallDir, original.file));
   const mask = rasterisePolygon(polygon, source.width, source.height);
 
-  let variant = existing;
-  if (!upToDate) {
+  // An AI variant for this footprint is never traded for the basic one by a refresh: it stays until the model's new
+  // answer replaces it, so a logged-out or out-of-quota backend cannot make the picture worse.
+  let variant: Photo | undefined = matches && existing?.backend !== 'basic' ? existing : undefined;
+  if (variant === undefined) {
     ctx.progress({ fraction: 0.2, message: 'cleaning the wall (basic)…' });
     const filled = fillWall(source.data, source.width, source.height, 3, mask);
-    variant = await storeVariant(
+    const stored = await storeVariant(
       ctx,
       input.wallId,
-      original,
-      existing,
+      original.id,
       {
         width: source.width,
         height: source.height,
@@ -285,33 +319,40 @@ export async function runPhotoClean(
       'basic',
       signature,
     );
+    if (stored === null) return none('stale');
+    variant = stored;
   }
-  if (variant === undefined) return none('no_footprint');
   if (!wantsAi) {
     return { status: 'ok', variantId: variant.id, method: 'basic', ai: 'not-asked' };
   }
 
   ctx.progress({ fraction: 0.5, message: 'asking the image model…' });
-  const outcome = await aiClean(deps, ctx, source, mask, join(ctx.home, 'photo-clean', ctx.id));
-  if (outcome.state === 'done' && outcome.pixels !== undefined && outcome.backend !== undefined) {
-    const upgraded = await storeVariant(
-      ctx,
-      input.wallId,
-      original,
-      variant,
-      outcome.pixels,
-      outcome.backend,
-      signature,
-    );
-    return { status: 'ok', variantId: upgraded.id, method: 'ai', ai: 'done' };
+  const workDir = join(ctx.home, 'photo-clean', ctx.id);
+  try {
+    const outcome = await aiClean(deps, ctx, source, mask, workDir);
+    if (outcome.state === 'done' && outcome.pixels !== undefined && outcome.backend !== undefined) {
+      const upgraded = await storeVariant(
+        ctx,
+        input.wallId,
+        original.id,
+        outcome.pixels,
+        outcome.backend,
+        signature,
+      );
+      if (upgraded === null) return none('stale');
+      return { status: 'ok', variantId: upgraded.id, method: 'ai', ai: 'done' };
+    }
+    return {
+      status: 'ok',
+      variantId: variant.id,
+      method: variant.backend === 'basic' ? 'basic' : 'ai',
+      ai: outcome.state,
+      ...(outcome.message === undefined ? {} : { aiMessage: outcome.message }),
+    };
+  } finally {
+    // The full-size copies and the model's answers are working files; the variant carries what is kept.
+    await rm(workDir, { recursive: true, force: true });
   }
-  return {
-    status: 'ok',
-    variantId: variant.id,
-    method: 'basic',
-    ai: outcome.state,
-    ...(outcome.message === undefined ? {} : { aiMessage: outcome.message }),
-  };
 }
 
 export function registerPhotoCleanJob(

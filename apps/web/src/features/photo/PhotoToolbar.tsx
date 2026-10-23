@@ -49,30 +49,37 @@ const WEB_CONTRAST_LABEL = {
 } as const satisfies Record<WebContrastMode, MessageKey>;
 
 /** Why the AI clean did not replace the basic one, per outcome of the last run: a few words and the full sentence. */
-const AI_NOTE = {
+const AI_NOTE: Partial<Record<AiState, readonly [MessageKey, MessageKey]>> = {
   login_required: ['photo.clean.short.login_required', 'photo.clean.ai.login_required'],
   quota_exhausted: ['photo.clean.short.quota_exhausted', 'photo.clean.ai.quota_exhausted'],
   unavailable: ['photo.clean.short.unavailable', 'photo.clean.ai.unavailable'],
   rejected: ['photo.clean.short.rejected', 'photo.clean.ai.rejected'],
   failed: ['photo.clean.short.failed', 'photo.clean.ai.failed'],
   disabled: ['photo.clean.short.disabled', 'photo.clean.ai.disabled'],
-} as const satisfies Partial<Record<AiState, readonly [MessageKey, MessageKey]>>;
+};
 
 /** The quiet note next to the clean button, and the longer sentence behind it (the tooltip). */
 function cleanNote(
   state: CleanState,
+  photoId: string | null,
   variantBackend: string | null,
-  t: (key: MessageKey) => string,
+  t: (key: MessageKey, params?: Record<string, string | number>) => string,
 ): { readonly text: string | null; readonly detail: string | null } {
   if (state.phase === 'running') return { text: t('photo.clean.running'), detail: null };
+  if (state.phase === 'unavailable') {
+    return { text: t('photo.clean.unavailable'), detail: t('photo.clean.unavailable') };
+  }
+  // A run that was about another photo says nothing about this one.
+  const mine = state.phase !== 'idle' && state.photoId === photoId;
+  if (mine && state.phase === 'failed') {
+    const detail = t('photo.clean.failed', { message: state.message ?? '' });
+    return { text: t('photo.clean.failedShort'), detail };
+  }
   if (variantBackend === null) return { text: null, detail: null };
   if (variantBackend !== 'basic') {
     return { text: t('photo.clean.ai'), detail: t('photo.clean.status.ai') };
   }
-  const why =
-    state.phase === 'done' && state.ai in AI_NOTE
-      ? AI_NOTE[state.ai as keyof typeof AI_NOTE]
-      : null;
+  const why = mine && state.phase === 'done' ? (AI_NOTE[state.ai] ?? null) : null;
   const basic = t('photo.clean.basic');
   return {
     text: why === null ? basic : `${basic} · ${t(why[0])}`,
@@ -93,7 +100,7 @@ export function PhotoToolbar() {
   const tools = useStore(findToolsStore);
   const clean = useStore(cleanStore);
   const variant = wall?.photos.find((entry) => entry.cleanOf === photoId);
-  const note = cleanNote(clean, variant?.backend ?? null, t);
+  const note = cleanNote(clean, photoId, variant?.backend ?? null, t);
   // A grid-detected calibration sits on the real lattice: turning the board would take it off.
   const onLattice = isGridCalibrated(wall, photoId);
 

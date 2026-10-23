@@ -143,6 +143,7 @@ export const photoEn = {
   'photo.clean.ai.failed': 'The image model could not clean the photo; the basic clean stays.',
   'photo.clean.ai.disabled':
     'The AI clean is switched off in the draw settings; the basic clean stays.',
+  'photo.clean.failedShort': 'cleaning failed',
   'photo.clean.failed': 'Cleaning failed: {message}',
   'photo.clean.unavailable': 'The daemon cannot clean backgrounds.',
 } as const;
@@ -287,6 +288,7 @@ export const photoRu: FeatureRu<typeof photoEn> = {
   'photo.clean.ai.rejected': 'Модель изменила остальную часть фото, поэтому её правка отброшена.',
   'photo.clean.ai.failed': 'Модель не смогла очистить фото; остаётся базовая очистка.',
   'photo.clean.ai.disabled': 'Очистка ИИ выключена в настройках draw; остаётся базовая очистка.',
+  'photo.clean.failedShort': 'очистка не удалась',
   'photo.clean.failed': 'Не удалось очистить: {message}',
   'photo.clean.unavailable': 'Демон не умеет очищать фон.',
 };

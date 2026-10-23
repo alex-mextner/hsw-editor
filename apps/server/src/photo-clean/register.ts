@@ -34,5 +34,9 @@ registerPhotoCleanJob({
 
 modules.push({
   name: 'draw',
-  handle: (request) => createDrawRoutes(drawRuntime())(request),
+  // The runtime is only built for a /api/draw request: a bad draw setting must not take the whole API down.
+  handle: (request) =>
+    new URL(request.url).pathname.startsWith('/api/draw/')
+      ? createDrawRoutes(drawRuntime())(request)
+      : null,
 });

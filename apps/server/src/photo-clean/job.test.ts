@@ -1,6 +1,6 @@
 /** The photo.clean job against an in-memory wall and a fake draw backend: real pixels, real sharp, no daemon. */
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { type DrawBackendId, type DrawRequest, type DrawResult } from '@hsw-editor/draw';
@@ -122,7 +122,10 @@ class FakeWalls implements JobWalls {
     return relative;
   }
 
-  async removeAsset(): Promise<void> {}
+  removed: string[] = [];
+  async removeAsset(_wallId: string, relative: string): Promise<void> {
+    this.removed.push(relative);
+  }
   async askUser(): Promise<never> {
     throw new Error('not used');
   }
@@ -131,6 +134,8 @@ class FakeWalls implements JobWalls {
 interface FakeDraw extends CleanDraw {
   readonly calls: { backend: DrawBackendId; request: DrawRequest }[];
   mode: 'good' | 'redraw' | 'login' | 'quota' | 'unavailable-then-good';
+  /** Runs while the "model" works: the user does something to the wall in the meantime. */
+  during?: () => void;
   backends: readonly DrawBackendId[];
 }
 
@@ -145,6 +150,7 @@ function fakeDraw(): FakeDraw {
     },
     async run(request, _signal, backend): Promise<DrawResult> {
       this.calls.push({ backend, request });
+      this.during?.();
       const failure = (
         code: 'login_required' | 'quota_exhausted' | 'backend_unavailable',
       ): DrawResult => ({
@@ -369,6 +375,51 @@ describe('photo.clean', () => {
     expect(moved).toMatchObject({ status: 'ok', method: 'basic' });
     expect(walls.wall.photos.filter((photo) => photo.cleanOf === 'p-1')).toHaveLength(1);
     expect(walls.wall.photos.find((photo) => photo.cleanOf)?.id).not.toBe(first?.id);
+  });
+
+  test('the basic variant undone while the model works: its answer is still stored, no failed removal', async () => {
+    const { run, walls, draw } = await setup();
+    draw.during = () => {
+      const basic = walls.wall.photos.find((photo) => photo.cleanOf);
+      if (basic) walls.wall = applyOp(walls.wall, { type: 'removePhoto', id: basic.id }).wall;
+    };
+    expect(await run()).toMatchObject({ status: 'ok', method: 'ai', ai: 'done' });
+    const variants = walls.wall.photos.filter((photo) => photo.cleanOf === 'p-1');
+    expect(variants.map((photo) => photo.backend)).toEqual(['omp']);
+  });
+
+  test('the board moved while the model worked: the answer is for the old footprint and is dropped', async () => {
+    const { run, walls, draw } = await setup();
+    draw.during = () => walls.setScale(4.5);
+    const result = await run();
+    expect(result.status).toBe('stale');
+    expect(walls.removed).toHaveLength(1);
+    // Only the basic variant (made before the move) is on the wall; nothing was swapped in for the new footprint.
+    expect(
+      walls.wall.photos.filter((photo) => photo.cleanOf === 'p-1').map((p) => p.backend),
+    ).toEqual(['basic']);
+  });
+
+  test('a refresh keeps the AI variant when the model cannot answer, instead of trading it for a basic one', async () => {
+    const { run, walls, draw } = await setup();
+    await run();
+    const ai = walls.wall.photos.find((photo) => photo.cleanOf);
+    expect(ai?.backend).toBe('omp');
+    draw.mode = 'login';
+    const again = await run('auto', true);
+    expect(again).toMatchObject({
+      status: 'ok',
+      method: 'ai',
+      ai: 'login_required',
+      variantId: ai?.id,
+    });
+    expect(walls.wall.photos.find((photo) => photo.cleanOf)?.id).toBe(ai?.id);
+  });
+
+  test('the working files of an AI run are removed afterwards', async () => {
+    const { run } = await setup();
+    await run();
+    expect(existsSync(join(home, 'photo-clean', 'job1'))).toBe(false);
   });
 
   test('asking to clean the variant cleans the photo it came from', async () => {

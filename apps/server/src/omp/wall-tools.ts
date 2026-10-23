@@ -544,7 +544,11 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
             signal,
           );
           if (current.status !== 200) return apiFailure(current.status, current.body);
-          photoId = current.body.wall?.photos.find((photo) => photo.cleanOf === undefined)?.id;
+          const originals =
+            current.body.wall?.photos.filter((photo) => photo.cleanOf === undefined) ?? [];
+          // The first photo that can be cleaned at all, else the first one (the job then says it needs calibrating).
+          photoId = (originals.find((photo) => photo.calibration !== undefined) ?? originals[0])
+            ?.id;
           if (photoId === undefined) return failure('The wall has no photo to clean.');
         }
         const started = await api<{ job?: { id: string } } & ApiErrorReply>(
