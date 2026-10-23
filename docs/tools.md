@@ -129,12 +129,17 @@ every object; progress per photo over the standard job SSE.
 
 ## Recognition (class suggestion)
 
-`custom` import suggests classes from the CLIP crop embedding fused from two sources:
+`custom` import suggests classes from the crop embeddings fused from three sources:
 
 1. the sidecar's text prompts per class (`recognitionCategories()` is written to `tools-prototypes/classes.json` and passed
    as `categories`), corrected by the class bias;
 2. retrieval against **prototype images rendered from our own generators** (`scripts/prototypes.ts`: every class x preset x
-   colour variant x 8 views on the CLIP grey background, embedded by `scripts/py/embed.py` through the same encoder).
+   colour variant x 8 views on the CLIP grey background, embedded by `scripts/py/embed.py` through the same encoder);
+3. the same retrieval with **DINOv2-small** embeddings (`dino-prototypes.f32` next to the CLIP prototypes, written by `embed.py protos`;
+   the sidecar writes `embeddings-dino.npy` next to `embeddings.npy` and the object record's `embedding.dino`). Image-to-image retrieval
+   with DINOv2 is the strongest single signal on the carpet crops. Without the DINOv2 files (model not installed, or an index built
+   with `--no-dino`) the fusion is CLIP-only exactly as before. The index is built at ingestion (`embed.py protos`) and loaded from disk;
+   nothing runs at request time except embedding the crops.
 
 `scripts/eval-recognition.ts` reports top-1 / top-3 / top-5 on the 33 labelled carpet crops (`eval/carpet-labels.json`;
 `--registered-only` drops the 5 crops of things the library has no class for: 4 boxes and a charger).
@@ -148,6 +153,21 @@ CLIP-B/32 via `threed_vision`), default `k = 3`:
 | fused, w = 0.3 | 0.52 / 0.73 / 0.82 | n/a |
 | fused, w = 0.5 (default) | 0.52 / 0.79 / 0.82 | 0.61 / 0.93 / 0.96 |
 | fused, w = 0.7 | 0.55 / 0.73 / 0.82 | 0.64 / 0.86 / 0.96 |
+
+With DINOv2 retrieval added (`bun packages/tools/scripts/eval-recognition.ts <protos> <crops> [--registered-only] --loo`; defaults
+`w = 0.7`, `wd = 0.3`, `dinoTemp = 4`, `k = 3`, chosen by leave-one-out over a (w, wd, dinoTemp) grid):
+
+| method | 33 crops top-1 / top-3 / top-5 | 28 library crops top-1 / top-3 / top-5 |
+| --- | --- | --- |
+| DINOv2 retrieval only | 0.52 / 0.76 / 0.79 | 0.61 / 0.89 / 0.93 |
+| fused CLIP text + CLIP prototypes + DINOv2 (defaults) | **0.70 / 0.79 / 0.82** | **0.82 / 0.93 / 0.96** |
+| same, parameters chosen leave-one-out (not tuned on the crop they score) | 0.64 / 0.79 / n/a | 0.75 / 0.93 / n/a |
+
+Before this: 0.52 / 0.79 / 0.82 on the 33 crops and 0.61 / 0.93 / 0.96 on the 28 (the table above). The ticket target of top-1 >= 0.75
+on the 33 crops is **not reached**: 5 of the 33 crops (4 boxes, a charger) have no class in the library, so 28 / 33 = 0.85 is the ceiling;
+on the 28 crops the library can name, the defaults reach 0.82 (0.75 leave-one-out; the crops are few, the defaults were picked on them,
+so the leave-one-out line is the honest estimate for new photos). Rows 1-2 use the same 33 labelled crops of ONE photo (#486 asks
+for more photos).
 
 The VisionSpike baseline (top-1 0.61 / top-3 0.79 on the 33 crops) used the coarse bank classes, so it is not the same task as
 choosing among 45 fine classes (pliers-combination vs water-pump-pliers vs side-cutters). Against the same 45-class text

@@ -141,6 +141,7 @@ class Calls:
         self.colours = 0
         self.overlay = 0
         self.embed = 0
+        self.embed_dino = 0
 
 
 def fake_calibration(mm_per_px: float = 1.0, method: str = "two-point") -> dict[str, Any]:
@@ -270,6 +271,11 @@ def make_service(
         rows = np.stack([np.resize(np.array([float(m.sum()), float(i + 1)]), 512) for i, m in enumerate(masks)]) if masks else np.zeros((0, 512))
         return (rows / np.maximum(np.linalg.norm(rows, axis=1, keepdims=True), 1e-9)).astype(np.float32) if masks else rows.astype(np.float32)
 
+    def embed_objects_dino(manager: Any, rgb: np.ndarray, masks: list[np.ndarray]) -> np.ndarray:
+        calls.embed_dino += 1
+        rows = np.stack([np.resize(np.array([float(m.sum()), float(i + 2)]), 768) for i, m in enumerate(masks)]) if masks else np.zeros((0, 768))
+        return (rows / np.maximum(np.linalg.norm(rows, axis=1, keepdims=True), 1e-9)).astype(np.float32) if masks else rows.astype(np.float32)
+
     def embed_images(manager: Any, images: list[np.ndarray]) -> np.ndarray:
         rows = np.stack([np.resize(np.array([float(im.mean()), 1.0]), 512) for im in images])
         return (rows / np.linalg.norm(rows, axis=1, keepdims=True)).astype(np.float32)
@@ -290,6 +296,7 @@ def make_service(
         render_overlay=render_overlay,
         axis_and_profile=axis_and_profile,
         embed_objects=embed_objects,
+        embed_objects_dino=embed_objects_dino,
         embed_images=embed_images,
     )
     manager = make_manager(Gpu(None), [])

@@ -66,7 +66,15 @@ export const SidecarObjectSchema = z.looseObject({
       ),
     }),
   ),
-  embedding: Opt(z.looseObject({ file: z.string(), row: z.number().int(), dim: z.number().int() })),
+  embedding: Opt(
+    z.looseObject({
+      file: z.string(),
+      row: z.number().int(),
+      dim: z.number().int(),
+      /** The same object's DINOv2 embedding (`embeddings-dino.npy`), when the model is installed. */
+      dino: Opt(z.looseObject({ file: z.string(), row: z.number().int(), dim: z.number().int() })),
+    }),
+  ),
   confidence: z.number().optional(),
   status: z.string().optional(),
 });

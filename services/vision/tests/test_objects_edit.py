@@ -62,7 +62,8 @@ def test_merge_makes_one_new_object_from_the_union_and_marks_the_sources(tmp_pat
     assert merged["bboxXywh"] == [20, 20, 180, 120]  # the union of the long and the stubby tool
     assert merged["dimensionsMm"]["length"] == pytest.approx(180.0) and merged["fit"]["glb"] == "models/003.glb"
     assert (out / merged["mask"]).is_file() and (out / merged["fit"]["glb"]).is_file() and (out / merged["cropOriented"]).is_file()
-    assert merged["embedding"] == {"file": "embeddings.npy", "row": 2, "dim": 512, "model": "clip-b32"}
+    assert merged["embedding"]["row"] == 2 and merged["embedding"]["dino"]["row"] == 2
+    assert np.load(out / "embeddings-dino.npy").shape == (3, 768)
     assert np.load(out / "embeddings.npy").shape == (3, 512)
     assert {s["id"] for s in reply["sources"]} == {1, 2}
     saved = on_disk(out)
@@ -337,3 +338,29 @@ def test_the_cli_reprofiles_with_a_scale(
     monkeypatch.setattr(VisionService, "create", classmethod(lambda cls, config, **kw: service))
     assert cli.main(["objects", "reprofile", str(out), "--mm-per-px", "2"]) == 0
     assert json.loads(capsys.readouterr().out)["objects"][0]["mmPerPx"] == 2.0
+
+
+def test_an_edit_does_not_add_dino_rows_to_a_result_that_has_none(tmp_path: Path, photo: Path) -> None:
+    service, _ = make_service(tmp_path)
+    _, out = first_run(tmp_path, photo, service, calibrate=SCALE)
+    (out / "embeddings-dino.npy").unlink()  # a run made before the DINO model was installed
+    reply = objects_edit.merge_objects(service, out, [1, 2])
+    assert "dino" not in reply["object"]["embedding"] and not (out / "embeddings-dino.npy").exists()
+    assert np.load(out / "embeddings.npy").shape == (3, 512)
+
+
+def test_a_failed_dino_step_during_an_edit_keeps_the_two_embedding_files_in_step(tmp_path: Path, photo: Path) -> None:
+    service, _ = make_service(tmp_path)
+    _, out = first_run(tmp_path, photo, service, calibrate=SCALE)
+
+    def broken(*_: Any, **__: Any) -> np.ndarray:
+        raise RuntimeError("onnxruntime exploded")
+
+    failing = dataclasses.replace(service, stages=dataclasses.replace(service.stages, embed_objects_dino=broken))
+    first = objects_edit.merge_objects(failing, out, [1, 2])
+    assert "dino" not in first["object"]["embedding"]
+    assert np.load(out / "embeddings.npy").shape[0] == np.load(out / "embeddings-dino.npy").shape[0] == 3
+    # DINOv2 works again: the next edit gets its row, aligned with the CLIP row
+    second = objects_edit.split_object(service, out, 3, n=2)
+    assert [o["embedding"]["dino"]["row"] == o["embedding"]["row"] for o in second["objects"]] == [True, True]
+    assert np.load(out / "embeddings-dino.npy").shape[0] == 5

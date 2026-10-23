@@ -29,7 +29,7 @@ export async function loadPrototypeIndex(
     throw error;
   }
   try {
-    const meta = JSON.parse(metaRaw) as { dim: number; classes: string[] };
+    const meta = JSON.parse(metaRaw) as { dim: number; dinoDim?: number; classes: string[] };
     const missing = expectedClassIds.filter((id) => !meta.classes.includes(id));
     if (missing.length > 0) {
       warn(
@@ -49,6 +49,7 @@ export async function loadPrototypeIndex(
       );
       return null;
     }
+    const dino = await readDinoPrototypes(dir, meta.dinoDim, manifest.length, warn);
     const text = await readFloat32(join(dir, 'text.f32'), meta.dim);
     const protos = await readFloat32(join(dir, 'prototypes.f32'), meta.dim);
     if (
@@ -67,6 +68,7 @@ export async function loadPrototypeIndex(
       text,
       protos,
       protoClassIds: manifest.map((m) => m.classId),
+      ...(dino ?? {}),
     });
   } catch (error) {
     warn(
@@ -74,6 +76,28 @@ export async function loadPrototypeIndex(
     );
     return null;
   }
+}
+
+/** DINOv2 prototypes (`dino-prototypes.f32`, `dinoDim` in meta.json) when present and consistent with the manifest. */
+async function readDinoPrototypes(
+  dir: string,
+  dinoDim: number | undefined,
+  prototypes: number,
+  warn: (message: string) => void,
+): Promise<{ dinoDim: number; dinoProtos: Float32Array } | null> {
+  if (!dinoDim) return null;
+  try {
+    const dinoProtos = await readFloat32(join(dir, 'dino-prototypes.f32'), dinoDim);
+    if (dinoProtos.length === prototypes * dinoDim) return { dinoDim, dinoProtos };
+    warn(
+      `tool prototypes in ${dir}: dino-prototypes.f32 does not match the manifest; DINOv2 retrieval is off`,
+    );
+  } catch (error) {
+    warn(
+      `tool prototypes in ${dir}: dino-prototypes.f32 is unreadable (${String(error)}); DINOv2 retrieval is off`,
+    );
+  }
+  return null;
 }
 
 export interface NpyMatrix {

@@ -21,6 +21,8 @@ needs an entry here first.
   `POST /api/tools/drafts/:id/objects/:key/draw-view` queues the `tools.draw_view` job (cut-out on white as the subject, `packages/draw` prompt and quality gate,
   `DrawBackend`); drawings are kept as `source: 'generated'` candidates (`GET .../drawn`), a pinned backend without login/quota is refused with the literal steps
   (`409 login_required` ...), `auto` ends in `manual_pending` with the prompt and what would automate it. The daemon now mounts `/api/draw/*`.
+- Recognition with DINOv2 retrieval (#11, #60): the sidecar writes `embeddings-dino.npy`, `embed.py protos` builds `dino-prototypes.f32` at ingestion, and the class suggestion fuses text + CLIP prototypes + DINOv2 prototypes:
+  top-1 / top-3 on the 33 labelled carpet crops 0.52 / 0.79 -> 0.70 / 0.79 (0.82 / 0.93 on the 28 crops the library can name; leave-one-out 0.64 / 0.79 and 0.75 / 0.93); target 0.75 on 33 not reached (ceiling 0.85), see docs/tools.md.
 - Invalid-zone stripes turn white where the invalid part itself is red (red screwdriver handles etc., #166): the colour is chosen per region from
   the GLB material colours (`stripeColour.ts`), the legend shows both swatches; photo overlay and PNG export inherit it. See
   [docs/invalid-zones.md](docs/invalid-zones.md#rendering).

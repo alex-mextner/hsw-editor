@@ -9,11 +9,14 @@ from __future__ import annotations
 
 import numpy as np
 
-from hsw_vision.engines import CLIP
+from hsw_vision.engines import CLIP, DINO
 from hsw_vision.manager import ModelManager
 
 MODEL = "clip-b32"
 DIM = 512
+#: DINOv2-small: `[CLS, mean patch token]`, L2-normalised. Image -> image retrieval against rendered class prototypes is its job.
+DINO_MODEL = "dinov2-s"
+DINO_DIM = 768
 
 
 def embed_images(manager: ModelManager, images: list[np.ndarray]) -> np.ndarray:
@@ -28,3 +31,13 @@ def embed_objects(manager: ModelManager, rgb: np.ndarray, masks: list[np.ndarray
     from threed_vision.clip import crop_masked
 
     return embed_images(manager, [crop_masked(rgb, mask)[0] for mask in masks])
+
+
+def embed_objects_dino(manager: ModelManager, rgb: np.ndarray, masks: list[np.ndarray]) -> np.ndarray:
+    """(N, 768) DINOv2 embedding of each mask's masked crop (the same crops `embed_objects` feeds CLIP)."""
+    from threed_vision.clip import crop_masked
+
+    if not masks:
+        return np.zeros((0, DINO_DIM), np.float32)
+    crops = [crop_masked(rgb, mask)[0] for mask in masks]
+    return np.asarray(manager.call(DINO, lambda dino: dino.images(crops)), dtype=np.float32)

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { observeModel } from '../custom/create.ts';
 import { typicalLengthMm } from '../custom/create.ts';
+import { buildPrototypeIndex } from '../recognize/fuse.ts';
 import { generate, presetValues } from '../registry.ts';
 import '../classes/index.ts';
 import {
@@ -385,7 +386,6 @@ describe('import draft', () => {
     expect(typed.objects.find((o) => o.key === hammer?.key)?.dimensionsEstimated).toBe(false);
   });
 
-
   test('an estimated object never outranks a measured one when photos are grouped, and an unsizeable one is reported when committing', async () => {
     vision.pixelIds = new Set([2]);
     vision.unclassifiedIds = new Set([3]);
@@ -418,6 +418,67 @@ describe('import draft', () => {
     } finally {
       vision.pixelIds = new Set();
       vision.unclassifiedIds = new Set();
+    }
+  });
+
+  test('class suggestions fuse the DINOv2 embedding of the object; a broken or missing DINOv2 row leaves the CLIP suggestions', async () => {
+    /** A 2-D little-endian float32 .npy (version 1.0). */
+    const npy = (rows: number[][]): Uint8Array => {
+      const header = `{'descr': '<f4', 'fortran_order': False, 'shape': (${rows.length}, ${rows[0]?.length ?? 0}), }`;
+      const pad = 64 - ((10 + header.length + 1) % 64);
+      const text = new TextEncoder().encode(`${header}${' '.repeat(pad)}\n`);
+      const out = new Uint8Array(10 + text.length + rows.flat().length * 4);
+      out.set([0x93, 0x4e, 0x55, 0x4d, 0x50, 0x59, 1, 0, text.length & 255, text.length >> 8]);
+      out.set(text, 10);
+      new Float32Array(out.buffer, 10 + text.length, rows.flat().length).set(rows.flat());
+      return out;
+    };
+    const unit = (...v: number[]): number[] => v.map((x) => x / Math.hypot(...v));
+    // CLIP space (dim 3) cannot tell screwdriver from hammer; DINOv2 space (dim 2) can
+    const index = buildPrototypeIndex({
+      dim: 3,
+      classIds: ['screwdriver', 'hammer'],
+      text: new Float32Array([...unit(1, 0, 0), ...unit(1, 0, 0)]),
+      protos: new Float32Array([...unit(1, 0.05, 0), ...unit(1, 0, 0.05)]),
+      protoClassIds: ['screwdriver', 'hammer'],
+      dinoDim: 2,
+      dinoProtos: new Float32Array([...unit(1, 0), ...unit(0, 1)]),
+    });
+    const withDino = (row: number, file = 'embeddings-dino.npy') => ({
+      file: 'embeddings.npy',
+      row: 0,
+      dim: 3,
+      dino: { file, row, dim: 2 },
+    });
+    const suggest = async (embedding: SidecarObject['embedding'], dinoRows: number[][] | null) => {
+      const draft = await deps.drafts.create({
+        mode: 'multi',
+        calibration: { mmPerPx: 1.2 },
+        photos: [{ name: 'dino.png', bytes: PNG_1PX }],
+      });
+      const port: VisionPort = {
+        status: async () => ({ available: true }),
+        mergeObjects: (outDir, ids) => vision.mergeObjects(outDir, ids),
+        splitObject: (outDir, id, how) => vision.splitObject(outDir, id, how),
+        addObject: (outDir) => vision.addObject(outDir),
+        photoToObjects: async (req: PhotoObjectsRequest): Promise<SidecarResult> => {
+          const result = await vision.photoToObjects(req);
+          await writeFile(join(req.outDir, 'embeddings.npy'), npy([unit(1, 0.02, 0.02)]));
+          if (dinoRows) await writeFile(join(req.outDir, 'embeddings-dino.npy'), npy(dinoRows));
+          const [first] = result.objects;
+          return { ...result, objects: first ? [{ ...first, class: null, embedding }] : [] };
+        },
+      };
+      const analysed = await analyzeDraft({ ...deps, vision: port, index }, draft.id);
+      return analysed.objects[0]?.suggestions.map((x) => x.classId) ?? [];
+    };
+    expect((await suggest(withDino(0), [unit(0, 1)]))[0]).toBe('hammer');
+    expect((await suggest(withDino(0), [unit(1, 0)]))[0]).toBe('screwdriver');
+    // CLIP-only suggestions (no DINOv2 evidence): the same class order as without the dino reference
+    const clipOnly = await suggest({ file: 'embeddings.npy', row: 0, dim: 3 }, null);
+    expect(clipOnly.length).toBe(2);
+    for (const broken of [withDino(-1), withDino(5), withDino(0, 'missing.npy')]) {
+      expect(await suggest(broken, [unit(0, 1)])).toEqual(clipOnly);
     }
   });
 

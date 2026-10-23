@@ -279,6 +279,30 @@ function toObservation(o: SidecarObject): DraftObject['observation'] {
 /** `DraftObjectSchema` accepts at most this many class suggestions per object. */
 const MAX_SUGGESTIONS = 10;
 
+/** The object's DINOv2 embedding, when the sidecar wrote one and the index has DINOv2 prototypes of the same size. */
+async function dinoRow(
+  outDir: string,
+  o: SidecarObject,
+  index: PrototypeIndex,
+  cache: Map<string, NpyMatrix>,
+): Promise<Float32Array | undefined> {
+  const ref = o.embedding?.dino;
+  if (!ref || !index.dinoProtos) return undefined;
+  try {
+    const file = join(outDir, ref.file);
+    let m = cache.get(file);
+    if (!m) {
+      m = await readNpyFloat32(file);
+      cache.set(file, m);
+    }
+    const end = (ref.row + 1) * m.dim;
+    if (ref.row < 0 || m.dim !== index.dinoDim || end > m.data.length) return undefined;
+    return m.data.subarray(ref.row * m.dim, end);
+  } catch {
+    return undefined; // unreadable: CLIP evidence alone
+  }
+}
+
 async function suggestionsFor(
   deps: DraftDeps,
   outDir: string,
@@ -295,9 +319,10 @@ async function suggestionsFor(
       }
       const end = (o.embedding.row + 1) * m.dim;
       // a truncated file claims rows it does not hold: that is no embedding at all
-      if (m.dim === deps.index.dim && end <= m.data.length) {
+      if (o.embedding.row >= 0 && m.dim === deps.index.dim && end <= m.data.length) {
         const e = m.data.subarray(o.embedding.row * m.dim, end);
-        return suggestClasses(deps.index, e)
+        const dino = await dinoRow(outDir, o, deps.index, cache);
+        return suggestClasses(deps.index, e, {}, dino)
           .filter((s) => Number.isFinite(s.score))
           .slice(0, 5)
           .map((s) => ({ classId: s.classId, score: Math.min(1, Math.max(0, s.score)) }));
