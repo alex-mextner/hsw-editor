@@ -157,8 +157,9 @@ def tools_show(args: argparse.Namespace, api: Api) -> int:
     print(f"size       {d['length']:.1f} x {d['width']:.1f} x {d['thickness']:.1f} mm  (dimensions from: {d['source']})")
     if t["classCandidates"]:
         print("candidates " + ", ".join(f"{c['classId']} {c['score']:.2f}" for c in t["classCandidates"]))
-    if t["partColors"]:
-        print("colours    " + ", ".join(f"{k} {v}" for k, v in t["partColors"].items()))
+    colours = {**t["partColors"], **t.get("userPartColors", {})}
+    if colours:
+        print("colours    " + ", ".join(f"{k} {v}" for k, v in colours.items()))
     print(f"model      {t['model']['triangles']} triangles  files: /api/tools/{t['id']}/model.glb, thumb.webp")
     print(f"sources    {len(t['sources'])} file(s)")
     return 0

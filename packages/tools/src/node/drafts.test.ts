@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
-import { mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, readdir, rename, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { observeModel } from '../custom/create.ts';
@@ -555,6 +555,58 @@ describe('import draft', () => {
     expect(a.tools.length + b.tools.length).toBe(1);
     const ids = (await deps.tools.list()).filter((t) => t.createdAt >= draft.createdAt);
     expect(ids.length).toBe(1);
+  });
+
+  test('a commit whose source photo cannot be copied leaves no tool, and the retry adds it once', async () => {
+    const draft = await deps.drafts.create({
+      mode: 'multi',
+      calibration: null,
+      photos: [{ name: 'gone.png', bytes: PNG_1PX }],
+    });
+    const analysed = await analyzeDraft(deps, draft.id);
+    await patchDraftObject(deps, draft.id, '0:1', { status: 'accepted' });
+    const photo = analysed.photos[0];
+    if (!photo) throw new Error('no photo');
+    const photoPath = join(deps.drafts.dir(draft.id), photo.file);
+    const aside = `${photoPath}.aside`;
+    const before = (await deps.tools.list()).length;
+    await rename(photoPath, aside);
+    await expect(commitDraft(deps, draft.id)).rejects.toThrow();
+    // nothing half-written in the library, and the object is still open
+    expect((await deps.tools.list()).length).toBe(before);
+    expect((await deps.drafts.get(draft.id)).objects.find((o) => o.key === '0:1')?.status).toBe(
+      'accepted',
+    );
+    expect((await readdir(deps.tools.root)).filter((n) => !n.startsWith('.')).length).toBe(before);
+    await rename(aside, photoPath);
+    const retried = await commitDraft(deps, draft.id);
+    expect(retried.tools.length).toBe(1);
+    expect((await deps.tools.list()).length).toBe(before + 1);
+    expect((await commitDraft(deps, draft.id)).tools).toEqual([]);
+    expect((await deps.tools.list()).length).toBe(before + 1);
+  });
+
+  test('a draft that cannot be saved after the tool was written takes the tool back out', async () => {
+    const draft = await deps.drafts.create({
+      mode: 'multi',
+      calibration: null,
+      photos: [{ name: 'a.png', bytes: PNG_1PX }],
+    });
+    await analyzeDraft(deps, draft.id);
+    await patchDraftObject(deps, draft.id, '0:1', { status: 'accepted' });
+    const before = (await deps.tools.list()).length;
+    const realSave = deps.drafts.save.bind(deps.drafts);
+    deps.drafts.save = async () => {
+      throw new Error('disk full');
+    };
+    try {
+      await expect(commitDraft(deps, draft.id)).rejects.toThrow('disk full');
+    } finally {
+      deps.drafts.save = realSave;
+    }
+    expect((await deps.tools.list()).length).toBe(before);
+    expect((await commitDraft(deps, draft.id)).tools.length).toBe(1);
+    expect((await deps.tools.list()).length).toBe(before + 1);
   });
 
   test('a busy draft refuses a second analysis and edits; an invalid draft is never written', async () => {

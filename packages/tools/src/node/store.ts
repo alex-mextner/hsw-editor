@@ -6,7 +6,7 @@
  *
  * Writes are atomic per file (tmp + rename); `tool.json` is written last so a half-written tool is never listed.
  */
-import { mkdir, readdir, readFile, rename, stat } from 'node:fs/promises';
+import { copyFile, link, mkdir, readdir, readFile, rename, rm, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { HoldingInterface, ToolModel } from '../model.ts';
 import { applyPatch } from '../custom/rebuild.ts';
@@ -46,10 +46,10 @@ export interface ToolSummary {
   triangles: number;
 }
 
-export interface SourceFile {
-  name: string;
-  bytes: Uint8Array;
-}
+/** A file kept next to the tool: written from memory, or linked (copied when linking fails) from an existing file. */
+export type SourceFile =
+  | { name: string; bytes: Uint8Array }
+  | { name: string; linkFrom: string };
 
 export interface ToolFiles {
   model: ToolModel;
@@ -174,8 +174,8 @@ export class ToolStore {
 
   /** True when a directory of that name exists, even if its tool.json is unreadable (never hand out its id). */
   async exists(id: string): Promise<boolean> {
-    return readFile(join(this.dir(id), 'tool.json')).then(
-      () => true,
+    return stat(this.dir(id)).then(
+      (s) => s.isDirectory(),
       () => false,
     );
   }
@@ -203,15 +203,10 @@ export class ToolStore {
     sources: readonly SourceFile[] = [],
   ): Promise<CustomTool> {
     const dir = this.dir(tool.id);
-    await mkdir(join(dir, 'source'), { recursive: true });
     for (const s of sources) {
       if (!SAFE_FILE.test(s.name))
         throw new ToolStoreError('invalid_id', `bad source file name: ${s.name}`);
-      await writeAtomic(join(dir, 'source', s.name), s.bytes);
     }
-    await writeAtomic(join(dir, 'model.glb'), exportGlb(files.model, { custom: tool.id }));
-    await writeAtomic(join(dir, 'model-lod1.glb'), exportGlb(files.modelLod1, { custom: tool.id }));
-    await writeAtomic(join(dir, 'thumb.webp'), await renderThumbWebp(files.model));
     const b = files.model.bounds;
     const full: CustomTool = {
       ...tool,
@@ -223,6 +218,7 @@ export class ToolStore {
         bboxMm: { min: [b.min[0], b.min[1], b.min[2]], max: [b.max[0], b.max[1], b.max[2]] },
       },
     };
+    // validate before the first byte reaches the disk: a refused tool leaves nothing behind
     const check = CustomToolSchema.safeParse(full);
     if (!check.success) {
       throw new ToolStoreError(
@@ -230,7 +226,38 @@ export class ToolStore {
         `tool ${tool.id} does not fit the tool schema: ${check.error.issues.map((i) => `${i.path.join('.')}: ${i.message}`).join('; ')}`,
       );
     }
-    await writeAtomic(join(dir, 'tool.json'), `${JSON.stringify(full, null, 2)}\n`);
+    await mkdir(this.root, { recursive: true });
+    // only a directory this call created is removed on failure (never an existing tool or an unrelated file)
+    let created = false;
+    try {
+      await mkdir(dir);
+      created = true;
+    } catch (error) {
+      if (!(error instanceof Error && 'code' in error && error.code === 'EEXIST')) throw error;
+    }
+    try {
+      await mkdir(join(dir, 'source'), { recursive: true });
+      for (const s of sources) {
+        const target = join(dir, 'source', s.name);
+        if ('linkFrom' in s) {
+          // a hard link keeps one copy of a large photo shared by every tool cut from it
+          await link(s.linkFrom, target).catch(() => copyFile(s.linkFrom, target));
+        } else {
+          await writeAtomic(target, s.bytes);
+        }
+      }
+      await writeAtomic(join(dir, 'model.glb'), exportGlb(files.model, { custom: tool.id }));
+      await writeAtomic(
+        join(dir, 'model-lod1.glb'),
+        exportGlb(files.modelLod1, { custom: tool.id }),
+      );
+      await writeAtomic(join(dir, 'thumb.webp'), await renderThumbWebp(files.model));
+      await writeAtomic(join(dir, 'tool.json'), `${JSON.stringify(full, null, 2)}\n`);
+    } catch (error) {
+      // a directory this call created must not survive: a reused id would inherit its stale files
+      if (created) await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+      throw error;
+    }
     return full;
   }
 
@@ -269,6 +296,11 @@ export class ToolStore {
   /** Move to `.trash` (recoverable), serialised with `save`/`update`. */
   remove(id: string): Promise<string> {
     return this.exclusive(() => this.removeLocked(id));
+  }
+
+  /** Delete a tool outright (no trash): undoes a save whose follow-up step failed. Call under `exclusive`. */
+  async purge(id: string): Promise<void> {
+    await rm(this.dir(id), { recursive: true, force: true });
   }
 
   private async removeLocked(id: string): Promise<string> {

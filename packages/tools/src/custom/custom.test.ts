@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { analyzeMesh } from '../mesh.ts';
@@ -170,6 +170,97 @@ describe('tool store', () => {
   });
 });
 
+describe('tool store hardening', () => {
+  const fitted = fitObject({
+    profile: observeModel(generate('screwdriver', {}, 0)),
+    colors: [{ t0: 0, t1: 1, hex: '#c8262b', weight: 1 }],
+    candidates: [{ classId: 'screwdriver', score: 0.8 }],
+    dimensionSource: 'photo',
+  });
+  const docFor = (id: string, nameEn = 'Driver'): Omit<CustomTool, 'model'> => {
+    const now = new Date().toISOString();
+    return {
+      version: 1,
+      id,
+      tags: [],
+      name: { en: nameEn },
+      createdAt: now,
+      updatedAt: now,
+      classId: fitted.classId,
+      classCandidates: [],
+      params: fitted.params,
+      profile: fitted.profile,
+      colors: [],
+      partColors: fitted.partColors,
+      dimensionsMm: fitted.dimensionsMm,
+      fit: fitted.fit,
+      sources: [],
+    };
+  };
+  const withStore = async (
+    work: (store: ToolStore, root: string) => Promise<void>,
+  ): Promise<void> => {
+    const root = await mkdtemp(join(tmpdir(), 'hsw-tools-'));
+    try {
+      await work(new ToolStore(root), root);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  };
+  const brokenSource = {
+    name: 'photo.jpg',
+    get bytes(): Uint8Array {
+      throw new Error('disk full');
+    },
+  };
+
+  test('exists() sees a directory that has no tool.json, so freeId never hands out its name', async () => {
+    await withStore(async (store, root) => {
+      await mkdir(join(root, 'driver', 'source'), { recursive: true });
+      expect(await store.exists('driver')).toBe(true);
+      expect(await store.freeId('Driver')).toBe('driver-2');
+      expect(await store.exists('other')).toBe(false);
+    });
+  });
+
+  test('a tool that does not fit the schema is refused before anything is written', async () => {
+    await withStore(async (store, root) => {
+      await expect(
+        store.save(docFor('driver', 'x'.repeat(200)), fitted, [
+          { name: 'photo.jpg', bytes: new Uint8Array([1]) },
+        ]),
+      ).rejects.toMatchObject({ code: 'corrupt' });
+      expect(await readdir(root)).toEqual([]);
+      await expect(
+        store.save(docFor('driver'), fitted, [{ name: '../evil', bytes: new Uint8Array([1]) }]),
+      ).rejects.toMatchObject({ code: 'invalid_id' });
+      expect(await readdir(root)).toEqual([]);
+    });
+  });
+
+  test('a save that fails half way removes the directory it created, so a reused id inherits nothing', async () => {
+    await withStore(async (store, root) => {
+      await expect(store.save(docFor('driver'), fitted, [brokenSource])).rejects.toThrow(
+        'disk full',
+      );
+      expect(await readdir(root)).toEqual([]);
+      await store.save(docFor('driver'), fitted, []);
+      expect(await readdir(join(root, 'driver', 'source'))).toEqual([]);
+    });
+  });
+
+  test('a failed re-save of an existing tool keeps that tool', async () => {
+    await withStore(async (store, root) => {
+      await store.save(docFor('driver'), fitted, []);
+      await expect(store.save(docFor('driver'), fitted, [brokenSource])).rejects.toThrow(
+        'disk full',
+      );
+      expect((await store.get('driver')).id).toBe('driver');
+      expect(await readdir(root)).toEqual(['driver']);
+    });
+  });
+});
+
 describe('tool patches', () => {
   const profile = {
     lengthMm: 120,
@@ -244,7 +335,9 @@ describe('tool patches', () => {
     expect(typed.tool.dimensionsMm.source).toBe('user');
     // the estimate belongs to a class: a generic shape needs a typed length instead
     expect(() => applyPatch(doc, { classId: null })).toThrow(ToolInputError);
-    expect(applyPatch(doc, { classId: null, dimensionsMm: { length: 120 } }).tool.classId).toBeNull();
+    expect(
+      applyPatch(doc, { classId: null, dimensionsMm: { length: 120 } }).tool.classId,
+    ).toBeNull();
     // a new class plus a typed width: the length still follows the class, and stays an estimate
     const both = applyPatch(doc, { classId: 'hammer', dimensionsMm: { width: 20 } });
     expect(both.tool.dimensionsMm.source).toBe('estimated');
@@ -266,6 +359,92 @@ describe('tool patches', () => {
     expect(after.tool.dimensionsMm.thickness).toBeGreaterThan(35);
     expect(after.tool.dimensionsMm.length).toBeGreaterThan(185);
     expect(after.tool.dimensionsMm.length).toBeLessThan(215);
+  });
+
+  test('user part colours are kept apart from the sampled ones, and a class change re-samples', () => {
+    const twoColors = [
+      { t0: 0, t1: 0.5, hex: '#2455a8', weight: 0.6 },
+      { t0: 0.5, t1: 1, hex: '#b9bcc1', weight: 0.4 },
+    ];
+    const input = {
+      profile: observeModel(generate('screwdriver', {}, 0)),
+      colors: twoColors,
+      candidates: [{ classId: 'screwdriver', score: 0.9 }],
+      dimensionSource: 'photo' as const,
+    };
+    const fitted = fitObject(input);
+    const doc: CustomTool = { ...docOf(fitted), colors: twoColors };
+    expect(doc.userPartColors).toBeUndefined();
+
+    // a user colour goes to userPartColors; the sampled mapping is untouched
+    const edited = applyPatch(doc, { partColors: { handle: '#00ff00' } });
+    expect(edited.tool.partColors).toEqual(fitted.partColors);
+    expect(edited.tool.userPartColors).toEqual({ handle: '#00ff00' });
+    expect(edited.model.parts.find((p) => p.name === 'handle')?.material.color).toBe('#00ff00');
+
+    // a later class change re-samples from the photo colours: nothing of the old fit's sampling survives
+    const asHammer = applyPatch(
+      { ...doc, ...edited.tool, model: doc.model },
+      { classId: 'hammer' },
+    );
+    const freshHammer = fitObject(input, { classId: 'hammer' });
+    expect(asHammer.tool.partColors).toEqual(freshHammer.partColors);
+    expect(asHammer.tool.userPartColors).toEqual({ handle: '#00ff00' });
+  });
+
+  test('colours a tool saved before userPartColors kept in partColors survive refits as user colours', () => {
+    const generic = fitObject({ profile, colors, candidates: [], dimensionSource: 'photo', profileKind: 'lathe_profile' });
+    const legacyGeneric: CustomTool = { ...docOf(generic, 'lathe_profile'), partColors: { body: '#00ff00' } };
+    const renamed = applyPatch(legacyGeneric, { name: { en: 'Bottle' } });
+    expect(renamed.tool.userPartColors).toEqual({ body: '#00ff00' });
+
+    const twoColors = [
+      { t0: 0, t1: 0.5, hex: '#2455a8', weight: 0.6 },
+      { t0: 0.5, t1: 1, hex: '#b9bcc1', weight: 0.4 },
+    ];
+    const fitted = fitObject({
+      profile: observeModel(generate('screwdriver', {}, 0)),
+      colors: twoColors,
+      candidates: [{ classId: 'screwdriver', score: 0.9 }],
+      dimensionSource: 'photo',
+    });
+    const legacyClass: CustomTool = {
+      ...docOf(fitted),
+      colors: twoColors,
+      partColors: { ...fitted.partColors, handle: '#00ff00' },
+    };
+    const resized = applyPatch(legacyClass, { dimensionsMm: { length: 200 } });
+    expect(resized.tool.userPartColors).toEqual({ handle: '#00ff00' });
+    expect(resized.model.parts.find((p) => p.name === 'handle')?.material.color).toBe('#00ff00');
+
+    // a legacy tool with nothing to split is marked migrated, so a params edit cannot change what a later split sees
+    const untouched: CustomTool = { ...docOf(fitted), colors: twoColors, partColors: fitted.partColors };
+    const migrated = applyPatch(untouched, { params: { ...untouched.params } });
+    expect(migrated.tool.userPartColors).toEqual({});
+    const toHammer = applyPatch({ ...untouched, ...migrated.tool, model: untouched.model }, { classId: 'hammer' });
+    expect(toHammer.tool.userPartColors).toEqual({});
+    expect(toHammer.tool.partColors).toEqual(fitObject({ profile: observeModel(generate('screwdriver', {}, 0)), colors: twoColors, candidates: [], dimensionSource: 'photo' }, { classId: 'hammer' }).partColors);
+
+    // a tool saved by the current code is never split: photo colours of a gapped segmentation stay sampled
+    const gapped = [
+      { t0: 0.1, t1: 0.6, hex: '#2455a8', weight: 0.6 },
+      { t0: 0.6, t1: 0.9, hex: '#b9bcc1', weight: 0.4 },
+    ];
+    const current = fitObject({
+      profile: observeModel(generate('screwdriver', {}, 0)),
+      colors: gapped,
+      candidates: [{ classId: 'screwdriver', score: 0.9 }],
+      dimensionSource: 'photo',
+    });
+    const stored: CustomTool = {
+      ...docOf(current),
+      colors: gapped,
+      partColors: current.sampledPartColors,
+      userPartColors: {},
+    };
+    const kept = applyPatch(stored, { name: { en: 'Renamed' } });
+    expect(kept.tool.userPartColors).toEqual({});
+    expect(kept.tool.partColors).toEqual(current.sampledPartColors);
   });
 
   test('manual tools can change class and dimensions, and unknown classes are input errors', () => {

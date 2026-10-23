@@ -55,6 +55,12 @@ export async function startServer(
     ...(options.hooks ? { hooks: options.hooks } : {}),
   });
   await store.init();
+  try {
+    for (const module of modules) await module.init?.(config);
+  } catch (error) {
+    await store.close();
+    throw error;
+  }
   const jobs = new JobRunner(
     options.jobRegistry ?? defaultJobRegistry,
     {

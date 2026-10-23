@@ -6,8 +6,8 @@
  */
 import { generate, hasToolClass } from '../registry.ts';
 import type { ToolModel } from '../model.ts';
-import { recolorModel } from './colors.ts';
-import { type FittedObject, dimensionsOf, fitObject, observeModel, typicalLengthMm } from './create.ts';
+import { colorsFromSegments, recolorModel } from './colors.ts';
+import { type FittedObject, contiguousSegments, dimensionsOf, fitObject, observeModel, typicalLengthMm } from './create.ts';
 import { ToolInputError } from './errors.ts';
 import { scaleMeshZ } from './transform.ts';
 import type { CustomTool, CustomToolPatch } from './schema.ts';
@@ -26,11 +26,17 @@ function withoutModel(tool: CustomTool): ToolDoc {
   return rest;
 }
 
+/** Sampled colours with the user's choices on top. */
+function effectivePartColors(tool: ToolDoc): Record<string, string> {
+  return { ...tool.partColors, ...tool.userPartColors };
+}
+
 function buildClassModel(tool: ToolDoc, lod: 0 | 1): ToolModel {
   if (tool.classId === null) throw new ToolInputError('a generic tool has no class parameters');
   let model = generate(tool.classId, tool.params, lod);
   if (tool.fit.zScale !== 1) model = scaleMeshZ(model, tool.fit.zScale);
-  return Object.keys(tool.partColors).length > 0 ? recolorModel(model, tool.partColors) : model;
+  const colors = effectivePartColors(tool);
+  return Object.keys(colors).length > 0 ? recolorModel(model, colors) : model;
 }
 
 /** Parameters, colours and names only: no fit; the stored dimensions follow the rebuilt model. */
@@ -86,6 +92,7 @@ function refit(tool: ToolDoc, patch: CustomToolPatch): Rebuilt {
     ...(keepThickness ? { thickness: tool.dimensionsMm.thickness } : {}),
     ...wanted,
   };
+  const userColors = { ...tool.userPartColors, ...patch.partColors };
   const fitted: FittedObject = fitObject(
     {
       profile: tool.profile,
@@ -99,7 +106,7 @@ function refit(tool: ToolDoc, patch: CustomToolPatch): Rebuilt {
       classId: patch.classId === undefined ? tool.classId : patch.classId,
       fixed: patch.params ?? {},
       start: tool.params,
-      partColors: { ...tool.partColors, ...patch.partColors },
+      partColors: userColors,
     },
   );
   return {
@@ -109,7 +116,9 @@ function refit(tool: ToolDoc, patch: CustomToolPatch): Rebuilt {
       params: fitted.params,
       profile: fitted.profile,
       fit: fitted.fit,
-      partColors: fitted.partColors,
+      // the fit re-sampled the photo colours for the (possibly new) class; the user's choices stay apart
+      partColors: fitted.sampledPartColors,
+      userPartColors: userColors,
       dimensionsMm: fitted.dimensionsMm,
       ...(Object.keys(wanted).length > 0 ? { userDimensionsMm: wanted } : {}),
     },
@@ -118,7 +127,40 @@ function refit(tool: ToolDoc, patch: CustomToolPatch): Rebuilt {
   };
 }
 
-export function applyPatch(tool: CustomTool, patch: CustomToolPatch): Rebuilt {
+/**
+ * Only tools saved before `userPartColors` existed (the field is absent; every newer save writes it, even empty) kept
+ * the user's colours inside `partColors`, mixed with the sampled ones. Split them: a generic loft has no sampled
+ * colours at all; a class tool's sampled colours are recomputed and whatever differs from them is the user's.
+ */
+function splitLegacyPartColors(tool: CustomTool): CustomTool {
+  if (tool.userPartColors !== undefined || Object.keys(tool.partColors).length === 0) return tool;
+  if (tool.classId === null) {
+    const { partColors, ...rest } = tool;
+    return { ...rest, partColors: {}, userPartColors: partColors };
+  }
+  if (!hasToolClass(tool.classId)) return tool;
+  // the result always carries `userPartColors`, so the split runs once: later edits move the inputs it depends on
+  const model = generate(tool.classId, tool.params, 0);
+  const partNames = new Set(model.parts.map((part) => part.name));
+  const sampled = colorsFromSegments(
+    model,
+    contiguousSegments(tool.colors),
+    tool.fit.flipped,
+  );
+  const user = Object.fromEntries(
+    Object.entries(tool.partColors).filter(
+      // a key of a part this class does not have is a leftover of an earlier class (old class changes merged them in)
+      ([part, hex]) => partNames.has(part) && sampled[part] !== hex,
+    ),
+  );
+  const kept = Object.fromEntries(
+    Object.entries(tool.partColors).filter(([part]) => partNames.has(part) && !(part in user)),
+  );
+  return { ...tool, partColors: kept, userPartColors: user };
+}
+
+export function applyPatch(stored: CustomTool, patch: CustomToolPatch): Rebuilt {
+  const tool = splitLegacyPartColors(stored);
   if (patch.classId && !hasToolClass(patch.classId)) {
     throw new ToolInputError(`unknown tool class: ${patch.classId}`);
   }
@@ -137,7 +179,9 @@ export function applyPatch(tool: CustomTool, patch: CustomToolPatch): Rebuilt {
   const rebuilt = rebuildDirect({
     ...named,
     params: { ...tool.params, ...patch.params },
-    partColors: { ...tool.partColors, ...patch.partColors },
+    ...(patch.partColors === undefined
+      ? {}
+      : { userPartColors: { ...tool.userPartColors, ...patch.partColors } }),
   });
   if (!tool.profile || patch.params === undefined || Object.keys(patch.params).length === 0) {
     return rebuilt;
