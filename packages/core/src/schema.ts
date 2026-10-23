@@ -160,6 +160,13 @@ export const PhotoSchema = z.strictObject({
     .optional(),
   /** Item (object) the photo documents, for per-object extra views. */
   forItemId: IdSchema.optional(),
+  /**
+   * Set on a cleaned variant (`view: 'clean'`): the photo this one was made from. The original is never changed; the
+   * variant shares its calibration, so it has none of its own.
+   */
+  cleanOf: IdSchema.optional(),
+  /** Footprint (photo pixels) the cleaned variant was made for, as `footprintSignature` of `@hsw-editor/overlay`. */
+  cleanFootprint: text(120).optional(),
   calibration: CalibrationSchema.optional(),
 });
 

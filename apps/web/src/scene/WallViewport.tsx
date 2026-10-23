@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import { Stats } from '@react-three/drei';
 import type { Wall } from '@hsw-editor/core';
 import { ViewportContextMenu } from '@/features/viewport/ViewportContextMenu.tsx';
+import { api } from '@/api/http.ts';
 import { bankStore } from '@/bank/client.ts';
 import { variantVersion } from '@/bank/models.ts';
 import { toolAssetsStore } from '@/toolmodels/assets.ts';
@@ -35,7 +36,7 @@ import { PhotoBoard } from './PhotoBoard.tsx';
 import { PhotoCameraRig } from './PhotoCameraRig.tsx';
 import { wallExtent } from './wallExtent.ts';
 import { PhotoFrame } from './PhotoStage.tsx';
-import { photoViewState } from './photoView.ts';
+import { photoViewState, shownPhoto } from './photoView.ts';
 import { SelectionFrames } from './SelectionFrames.tsx';
 import { boardSizeMm } from '@hsw-editor/core';
 import { DimensionLayer } from '@/widgets/DimensionLayer.tsx';
@@ -186,7 +187,12 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
             />
           )}
           {photoView ? (
-            <PhotoBoard board={wall.board} />
+            <PhotoBoard
+              board={wall.board}
+              photoUrl={api.photoUrl(wall.id, shownPhoto(photoView, photoMode.showCleaned).id)}
+              image={photoView.image}
+              calibration={photoView.photo.calibration ?? photoView.calibration}
+            />
           ) : (
             <BoardMesh board={wall.board} palette={palette} occupied={occupied} />
           )}

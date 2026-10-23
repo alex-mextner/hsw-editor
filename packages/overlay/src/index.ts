@@ -9,3 +9,4 @@ export * from './sizes.ts';
 export * from './wizard.ts';
 export * from './photo-camera.ts';
 export * from './exif.ts';
+export * from './clean.ts';

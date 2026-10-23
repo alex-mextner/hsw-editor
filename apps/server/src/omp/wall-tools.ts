@@ -155,6 +155,13 @@ const ViewArgsSchema = z.strictObject({
 });
 const AnalyseHangArgsSchema = z.strictObject({ itemId: z.string().min(1).max(64).optional() });
 const RequestInputArgsSchema = z.strictObject({ request: NewInputRequestSchema });
+const CleanBackgroundArgsSchema = z.strictObject({
+  photoId: z.string().min(1).max(64).optional(),
+  method: z.enum(['auto', 'basic']).default('auto'),
+  refresh: z.boolean().default(false),
+});
+/** How often the cleaning job is looked at while the tool waits for it. */
+const CLEAN_POLL_MS = 1000;
 
 // ---- Tools ----------------------------------------------------------------------------------------------
 
@@ -517,6 +524,70 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
       },
     };
 
+    const cleanBackground: HostTool = {
+      definition: {
+        name: 'wall_clean_background',
+        label: 'Wall: clean background',
+        description:
+          'Clean the photographed wall under the board: the area the board will cover (calibration footprint plus a margin) is replaced by a clean wall surface, in a new "clean" variant of the photo (the original is kept; undo removes it). A basic local fill is made at once; with method auto the image backend of draw then redoes it when one is signed in (otherwise the basic one stays and ai says why). The photo must be calibrated. photoId defaults to the first photo; refresh makes it again even if the board has not moved. Waits for the result.',
+        parameters: jsonSchemaOf(CleanBackgroundArgsSchema),
+      },
+      async execute(args, { signal }) {
+        const parsed = CleanBackgroundArgsSchema.safeParse(args);
+        if (!parsed.success) return failure(formatIssues(parsed.error));
+        let photoId = parsed.data.photoId;
+        if (photoId === undefined) {
+          const current = await api<{ wall?: Wall } & ApiErrorReply>(
+            'GET',
+            wallPath,
+            undefined,
+            signal,
+          );
+          if (current.status !== 200) return apiFailure(current.status, current.body);
+          const originals =
+            current.body.wall?.photos.filter((photo) => photo.cleanOf === undefined) ?? [];
+          // The first photo that can be cleaned at all, else the first one (the job then says it needs calibrating).
+          photoId = (originals.find((photo) => photo.calibration !== undefined) ?? originals[0])
+            ?.id;
+          if (photoId === undefined) return failure('The wall has no photo to clean.');
+        }
+        const started = await api<{ job?: { id: string } } & ApiErrorReply>(
+          'POST',
+          '/api/jobs',
+          {
+            kind: 'photo.clean',
+            wallId: env.wallId,
+            input: {
+              wallId: env.wallId,
+              photoId,
+              method: parsed.data.method,
+              refresh: parsed.data.refresh,
+            },
+          },
+          signal,
+        );
+        const jobId = started.body.job?.id;
+        if (started.status >= 300 || jobId === undefined)
+          return apiFailure(started.status, started.body);
+        for (;;) {
+          const polled = await api<
+            {
+              job?: { state: string; result?: JsonValue; error?: JsonValue };
+            } & ApiErrorReply
+          >('GET', `/api/jobs/${encodeURIComponent(jobId)}`, undefined, signal);
+          const job = polled.body.job;
+          if (polled.status !== 200 || job === undefined)
+            return apiFailure(polled.status, polled.body);
+          if (job.state === 'succeeded') return jsonResult(job.result ?? null);
+          if (job.state === 'failed' || job.state === 'cancelled') {
+            return failure(`Cleaning ${job.state}: ${JSON.stringify(job.error ?? null)}`);
+          }
+          await new Promise((resolve) => setTimeout(resolve, CLEAN_POLL_MS));
+          if (signal?.aborted) return failure('Cancelled.');
+        }
+      },
+    };
+
     const requestInput: HostTool = {
       definition: {
         name: 'wall_request_input',
@@ -640,6 +711,7 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
       wallView,
       requestInput,
       analyseHang,
+      cleanBackground,
     ];
   };
 }

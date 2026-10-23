@@ -34,6 +34,8 @@ history.jsonl — the server is the single writer and direct file edits are lost
   anyone, so use it only right after your own mistaken edit.
 - wall_select: highlight items in the editor so you can say "these ones".
 - wall_view: returns a screenshot of the 3D viewport. Use it to check a layout you just built; do not guess.
+- wall_clean_background: clean the photographed wall under the board (a new "clean" variant of the calibrated photo; the
+  original stays). The editor does it by itself when a photo is calibrated; call it to redo it (refresh) or when the user asks.
 - wall_request_input: open an input widget for the user (kind dimension: numeric fields in mm; variant: pick among
   candidate bank elements; compare: compare reference models; calibration) and wait for the answer. Use it instead of
   guessing when the answer changes the result (tool length, holder size, which of two matching elements). For a plain

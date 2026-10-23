@@ -14,6 +14,8 @@ import {
 
 export interface PhotoView {
   readonly photo: Photo;
+  /** The cleaned variant of `photo` (the wall without what hangs there now), when one has been made. */
+  readonly clean: Photo | null;
   readonly calibration: Calibration;
   readonly image: ImageSize;
   readonly map: PhotoMap;
@@ -44,7 +46,13 @@ export function photoViewState(
   if (map === null) return { status: 'unusable', photo };
   const camera = photoCamera(map, { storedFocalPx: calibration.focalPx });
   if (camera === null) return { status: 'unusable', photo };
-  return { status: 'ready', view: { photo, calibration, image, map, camera } };
+  const clean = wall.photos.find((entry) => entry.cleanOf === photo.id) ?? null;
+  return { status: 'ready', view: { photo, clean, calibration, image, map, camera } };
+}
+
+/** The photo whose pixels the viewport shows: the cleaned variant when it exists and is wanted, else the original. */
+export function shownPhoto(view: Pick<PhotoView, 'photo' | 'clean'>, wantCleaned: boolean): Photo {
+  return wantCleaned && view.clean !== null ? view.clean : view.photo;
 }
 
 export interface Box {

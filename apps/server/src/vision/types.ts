@@ -151,7 +151,10 @@ export const ObjectRecordSchema = z.looseObject({
     .nullable(),
   confidence: z.number(),
   needsView: z.boolean(),
-  needsViews: z.array(z.record(z.string(), z.number())),
+  /** Suggested missing viewpoints; the library adds `direction_object` (a vector) and `reason` (text) to the angles. */
+  needsViews: z.array(
+    z.looseObject({ azimuth_deg: z.number().optional(), elevation_deg: z.number().optional() }),
+  ),
   status: z.enum(['ok', 'needs_confirmation', 'no_scale', 'fit_failed']),
   error: z.string().nullable(),
 });

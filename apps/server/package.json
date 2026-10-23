@@ -12,6 +12,7 @@
     "@hsw-editor/core": "workspace:*",
     "@hsw-editor/draw": "workspace:*",
     "@hsw-editor/omp-protocol": "workspace:*",
+    "@hsw-editor/overlay": "workspace:*",
     "@hsw-editor/physics": "workspace:*",
     "@hsw-editor/tools": "workspace:*",
     "@hsw-editor/user-settings": "workspace:*",

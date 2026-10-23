@@ -996,7 +996,15 @@ function objectsResult(outDir: string, status: 'ok' | 'no_scale' = 'ok'): PhotoT
     embedding: { file: 'embeddings.npy', row: 0, dim: 512 },
     confidence: 0.6,
     needsView: true,
-    needsViews: [{ azimuth_deg: 60, elevation_deg: 30 }],
+    // What the sidecar really sends: the angles plus a direction vector and a reason.
+    needsViews: [
+      {
+        azimuth_deg: 60,
+        elevation_deg: 30,
+        direction_object: [0.5, 0.2, 0.8],
+        reason: 'unseen side',
+      },
+    ],
     status: status === 'ok' ? 'ok' : 'no_scale',
     error: null,
   };

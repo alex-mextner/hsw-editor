@@ -1,7 +1,9 @@
-import { useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Link2, Link2Off } from 'lucide-react';
 import type { BankElement, ParamDef } from '@hsw-editor/bank';
 import type { LeafOp, WallItem } from '@hsw-editor/core';
+import { bankStore } from '@/bank/client.ts';
+import { familyOf } from '@/bank/suggest.ts';
 import { IconButton } from '@/components/IconButton.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group.tsx';
@@ -22,8 +24,10 @@ import {
 import { useDraftPreview } from './draftPreview.ts';
 import { noteKey, rememberSnap, snapNoteStore, snapParam } from './sizeSnap.ts';
 import { DimensionWidgetField, parseField, type StepSize } from './DimensionWidgetField.tsx';
+import { DimensionLadder } from './DimensionLadder.tsx';
 import { DimensionWidgetProvenance } from './DimensionWidgetProvenance.tsx';
 import { toolParamDefs } from './toolDimensions.ts';
+import { AXIS_LABEL_KEY, LADDER_KEYS, hasLadder } from './variantLadder.ts';
 import { formatLength, isLengthUnit, LENGTH_UNITS, unitStore, type LengthUnit } from './units.ts';
 
 export interface DimensionWidgetProps {
@@ -86,18 +90,29 @@ function UnitToggle({ unit }: { readonly unit: LengthUnit }) {
 }
 
 function FixedDimensions({
+  item,
   element,
   unit,
 }: {
+  readonly item: WallItem;
   readonly element: BankElement;
   readonly unit: LengthUnit;
 }) {
   const t = useT();
-  const rows = [
-    { key: 'x', label: t('widgets.dimensions.width'), value: element.dimsMm.x },
-    { key: 'y', label: t('widgets.dimensions.height'), value: element.dimsMm.y },
-    { key: 'z', label: t('widgets.dimensions.depth'), value: element.dimsMm.z },
-  ] as const;
+  const bank = useStore(bankStore);
+  const family = useMemo(
+    () => (bank.status === 'ready' ? familyOf(bank.index, element) : [element]),
+    [bank, element],
+  );
+  // A holder that comes in several fixed sizes takes typed sizes and lands them on the nearest real variant.
+  if (hasLadder(family)) {
+    return <DimensionLadder item={item} element={element} family={family} unit={unit} />;
+  }
+  const rows = LADDER_KEYS.map((key) => ({
+    key,
+    label: t(AXIS_LABEL_KEY[key]),
+    value: element.dimsMm[key],
+  }));
   return (
     <div className="grid gap-1.5">
       <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
@@ -227,7 +242,7 @@ function DimensionForm({
       <DimensionWidgetProvenance item={item} />
 
       {defs.length === 0 && element ? (
-        <FixedDimensions element={element} unit={unit} />
+        <FixedDimensions item={item} element={element} unit={unit} />
       ) : (
         <div className="grid gap-2.5">
           {defs.map((def) => (

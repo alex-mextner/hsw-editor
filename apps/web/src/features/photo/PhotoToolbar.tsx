@@ -1,34 +1,96 @@
 import {
   Columns2,
+  Contrast,
   Download,
-  ScanSearch,
+  Eraser,
   Eye,
   EyeOff,
+  ImageIcon,
   ImageOff,
   ImagePlus,
-  ImageIcon,
   Layers,
   Move,
   RotateCw,
   Ruler,
+  ScanSearch,
+  WandSparkles,
 } from 'lucide-react';
 import { IconButton } from '@/components/IconButton.tsx';
 import { Slider } from '@/components/ui/slider.tsx';
 import { useShortcutLabel } from '@/commands/app.ts';
-import { useI18n } from '@/i18n/index.ts';
+import { useI18n, type MessageKey } from '@/i18n/index.ts';
 import {
   photoStore,
+  type WebContrastMode,
   setOverlayOpacity,
+  cycleWebContrast,
   startCalibration,
   toggleAlign,
+  toggleShowCleaned,
   togglePhotoHidden,
   toggleSplit,
 } from '@/state/photo.ts';
 import { useStore } from '@/state/react.ts';
 import { sessionStore } from '@/wall/session.ts';
-import { exportPhotoPng, findPhotoTools, togglePhotoMode } from './photoActions.ts';
+import {
+  cleanPhotoBackground,
+  exportPhotoPng,
+  findPhotoTools,
+  isGridCalibrated,
+  toggleAutoClean,
+  togglePhotoMode,
+} from './photoActions.ts';
 import { findToolsStore } from './findTools.ts';
 import { choosePhotoFile } from './photoImport.ts';
+import { autoCleanStore, cleanStore, type AiState, type CleanState } from './cleanBackground.ts';
+
+const WEB_CONTRAST_LABEL = {
+  auto: 'photo.webContrast.auto',
+  on: 'photo.webContrast.on',
+  off: 'photo.webContrast.off',
+} as const satisfies Record<WebContrastMode, MessageKey>;
+
+/** Why the AI clean did not replace the basic one, per outcome of the last run: a few words and the full sentence. */
+const AI_NOTE: Partial<Record<AiState, readonly [MessageKey, MessageKey]>> = {
+  login_required: ['photo.clean.short.login_required', 'photo.clean.ai.login_required'],
+  quota_exhausted: ['photo.clean.short.quota_exhausted', 'photo.clean.ai.quota_exhausted'],
+  unavailable: ['photo.clean.short.unavailable', 'photo.clean.ai.unavailable'],
+  rejected: ['photo.clean.short.rejected', 'photo.clean.ai.rejected'],
+  failed: ['photo.clean.short.failed', 'photo.clean.ai.failed'],
+  disabled: ['photo.clean.short.disabled', 'photo.clean.ai.disabled'],
+};
+
+/** The quiet note next to the clean button, and the longer sentence behind it (the tooltip). */
+function cleanNote(
+  state: CleanState,
+  photoId: string | null,
+  variantBackend: string | null,
+  t: (key: MessageKey, params?: Record<string, string | number>) => string,
+): { readonly text: string | null; readonly detail: string | null } {
+  if (state.phase === 'running') return { text: t('photo.clean.running'), detail: null };
+  if (state.phase === 'unavailable') {
+    return { text: t('photo.clean.unavailable'), detail: t('photo.clean.unavailable') };
+  }
+  // A run that was about another photo says nothing about this one.
+  const mine = state.phase !== 'idle' && state.photoId === photoId;
+  if (mine && state.phase === 'failed') {
+    const detail = t('photo.clean.failed', { message: state.message ?? '' });
+    return { text: t('photo.clean.failedShort'), detail };
+  }
+  if (variantBackend === null) return { text: null, detail: null };
+  if (variantBackend !== 'basic') {
+    return { text: t('photo.clean.ai'), detail: t('photo.clean.status.ai') };
+  }
+  const why = mine && state.phase === 'done' ? (AI_NOTE[state.ai] ?? null) : null;
+  const basic = t('photo.clean.basic');
+  return {
+    text: why === null ? basic : `${basic} · ${t(why[0])}`,
+    detail:
+      why === null
+        ? t('photo.clean.status.basic')
+        : `${t('photo.clean.status.basic')} ${t(why[1])}`,
+  };
+}
 
 /** Photo controls of the viewport toolbar: photo mode on/off, import, calibrate, how the photo shows, board drag. */
 export function PhotoToolbar() {
@@ -38,9 +100,15 @@ export function PhotoToolbar() {
   const wall = useStore(sessionStore)?.wall;
   const photoId = photo.photoId;
   const tools = useStore(findToolsStore);
+  const clean = useStore(cleanStore);
+  const autoClean = useStore(autoCleanStore);
+  const variant = wall?.photos.find((entry) => entry.cleanOf === photoId);
+  const note = cleanNote(clean, photoId, variant?.backend ?? null, t);
+  // A grid-detected calibration sits on the real lattice: turning the board would take it off.
+  const onLattice = isGridCalibrated(wall, photoId);
 
   return (
-    <div className="pointer-events-auto flex items-center gap-1 rounded-lg border border-border bg-panel/95 p-0.5 pr-2 shadow-sm backdrop-blur">
+    <div className="pointer-events-auto flex max-w-[calc(100vw-1rem)] flex-wrap items-center gap-1 rounded-lg border border-border bg-panel/95 p-0.5 pr-2 shadow-sm backdrop-blur">
       <IconButton
         label={photoId !== null ? t('overlay.hide') : t('overlay.show')}
         shortcut={overlayKey}
@@ -70,6 +138,44 @@ export function PhotoToolbar() {
           >
             {photo.photoHidden ? <ImageOff /> : <ImageIcon />}
           </IconButton>
+          <IconButton
+            label={t(WEB_CONTRAST_LABEL[photo.webContrast])}
+            pressed={photo.webContrast === 'on'}
+            onClick={cycleWebContrast}
+          >
+            <Contrast />
+          </IconButton>
+          <IconButton
+            label={
+              variant === undefined
+                ? t('photo.clean.make')
+                : photo.showCleaned
+                  ? t('photo.clean.show')
+                  : t('photo.clean.hide')
+            }
+            pressed={variant !== undefined && photo.showCleaned}
+            disabled={photo.calibrating || clean.phase === 'running'}
+            onClick={variant === undefined ? cleanPhotoBackground : toggleShowCleaned}
+          >
+            <Eraser />
+          </IconButton>
+          <IconButton
+            label={autoClean ? t('photo.clean.auto.on') : t('photo.clean.auto.off')}
+            pressed={autoClean}
+            onClick={toggleAutoClean}
+          >
+            <WandSparkles />
+          </IconButton>
+          {note.text === null ? null : (
+            <span
+              data-slot="clean-note"
+              aria-live="polite"
+              title={note.detail ?? undefined}
+              className="text-[10px] text-muted-foreground"
+            >
+              {note.text}
+            </span>
+          )}
           <IconButton label={t('photo.split')} pressed={photo.split !== null} onClick={toggleSplit}>
             <Columns2 />
           </IconButton>
@@ -83,6 +189,7 @@ export function PhotoToolbar() {
           <IconButton
             label={t('photo.rollBoard')}
             pressed={photo.align === 'roll'}
+            disabled={onLattice}
             onClick={() => toggleAlign('roll')}
           >
             <RotateCw />

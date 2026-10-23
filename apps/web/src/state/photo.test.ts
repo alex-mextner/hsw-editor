@@ -4,6 +4,7 @@ import {
   enterPhotoMode,
   finishCalibration,
   leavePhotoMode,
+  nextWebContrastMode,
   patchPhoto,
   photoStore,
   setOverlayOpacity,
@@ -70,5 +71,13 @@ describe('photo mode state', () => {
     expect(photoStore.get()).toMatchObject({ align: 'roll', draft: null });
     toggleAlign('roll');
     expect(photoStore.get().align).toBeNull();
+  });
+});
+
+describe('nextWebContrastMode', () => {
+  test('cycles auto -> on -> off -> auto', () => {
+    expect(nextWebContrastMode('auto')).toBe('on');
+    expect(nextWebContrastMode('on')).toBe('off');
+    expect(nextWebContrastMode('off')).toBe('auto');
   });
 });

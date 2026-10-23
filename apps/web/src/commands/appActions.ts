@@ -3,8 +3,10 @@ import { api } from '@/api/http.ts';
 import {
   calibrateShownPhoto,
   exportPhotoPng,
+  cleanPhotoBackground,
   findPhotoTools,
   togglePhotoHidden,
+  toggleAutoClean,
   togglePhotoMode,
   toggleSplit,
 } from '@/features/photo/photoActions.ts';
@@ -138,6 +140,8 @@ export function createAppActions(deps: AppActionDeps): EditorActions {
     calibratePhoto: calibrateShownPhoto,
     togglePhotoVisible: togglePhotoHidden,
     togglePhotoSplit: toggleSplit,
+    cleanPhotoBackground,
+    toggleAutoClean,
     togglePanel: (panel) => togglePanel(PANEL_LAYOUT_KEY[panel]),
     focusPanel: (panel) => {
       layoutStore.set({ ...layoutStore.get(), [PANEL_LAYOUT_KEY[panel]]: true });

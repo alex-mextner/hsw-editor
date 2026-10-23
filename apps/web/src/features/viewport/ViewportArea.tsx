@@ -8,6 +8,7 @@ import { PhotoModeLayer } from '@/features/photo/PhotoModeLayer.tsx';
 import { useI18n } from '@/i18n/index.ts';
 import { currentWallId } from '@/state/current-wall.ts';
 import { editorStore } from '@/state/editor.ts';
+import { photoStore } from '@/state/photo.ts';
 import { useStore } from '@/state/react.ts';
 import { openWall, sessionStore, wallListStore } from '@/wall/session.ts';
 import { WidgetHost } from '@/widgets/WidgetHost.tsx';
@@ -24,6 +25,7 @@ export function ViewportArea() {
   const { t } = useI18n();
   const session = useStore(sessionStore);
   const { tool, placeAt } = useStore(editorStore);
+  const inPhotoMode = useStore(photoStore).photoId !== null;
 
   if (!session) return <HomeState />;
   if (session.status === 'error' || session.status === 'deleted') {
@@ -76,7 +78,8 @@ export function ViewportArea() {
               : t('hint.placeAt')
         }
       />
-      {wall.items.length === 0 ? <EmptyWallHints /> : null}
+      {/* On a photo the empty-wall card would cover the very wall the user is looking at. */}
+      {wall.items.length === 0 && !inPhotoMode ? <EmptyWallHints /> : null}
       <WidgetHost />
     </>
   );

@@ -105,6 +105,11 @@ linear stack across all actors: it applies the stored inverse of the newest not-
   Stores `models/<id>.glb`, applies `addModelRef` (status `candidate`). `201 { model, rev, wall }`.
 - `GET /api/walls/:id/models/:modelId/file` — the model file.
 - Model references without a file (found online, bank candidates) are plain `addModelRef` / `updateModelRef` ops.
+- A **cleaned variant** of a wall photo is a second `Photo` of the same wall: `view: "clean"`, `origin: "generated"`, `cleanOf: <original id>`,
+  `backend: "basic" | "omp" | "chatgpt-browser"`, `cleanFootprint` (the board footprint it was made for, `1152x1536@12:x,y;x,y;x,y;x,y` (photo size, margin in mm, corner pixels),
+  `footprintSignature` of `@hsw-editor/overlay`). The file lives in `photos/derived/clean-*.jpg` and is served like any photo. It has no
+  calibration of its own (the original's applies), the original is never changed, and a clean is an ordinary `addPhoto` (+ `removePhoto`
+  of the variant it replaces) batch, so undo/redo work. Clients list originals only (`cleanOf` absent).
 
 ## Live events (SSE)
 
@@ -350,6 +355,25 @@ writes land in the mirror at once and are pushed debounced and coalesced as pend
 On (re)connect it GETs the server document: namespaces with pending local edits keep the local value and are pushed,
 every other namespace adopts the server value, so stale server data never overwrites an unpushed edit. A `409` refetches
 and retries once. Offline (fetch fails) edits stay pending until the next `sync()`.
+
+### Photo clean job and draw routes
+
+`apps/server/src/photo-clean` registers the job `photo.clean` (`{ wallId, photoId, method: "auto" | "basic" = "auto", refresh = false }`) and
+mounts `GET|PUT /api/draw/settings`, `GET /api/draw/backends[?probe=1]` and the manual-upload inbox of [draw.md](draw.md).
+The job turns the photo's calibration into the board footprint (plus a 30 mm margin) in photo pixels and cleans that area:
+
+1. **basic** (always, instant, offline): `fillWall` of `@hsw-editor/overlay` - a robust quadratic illumination surface fitted to the wall
+   around the area, the rim deviation relaxed inward, matched grain; the variant is stored at once (`backend: "basic"`).
+2. **AI** (`method: "auto"`): the draw backends in the user's `/api/draw/settings` order (`auto` = `omp`, then `chatgpt-browser`; `manual` is never
+   used here) get the photo and a mask as two refs and an edit prompt; the answer is un-letterboxed, rejected when the unmasked part moved
+   (`MAX_OUTSIDE_DRIFT`), else only the masked area (feathered) replaces the basic variant (`backend` = the backend id).
+   `login_required` / `backend_unavailable` hand over to the next backend; `quota_exhausted` stops the chain.
+
+Result: `{ status: "ok" | "current" | "needs_calibration" | "no_footprint" | "photo_not_found" | "stale", variantId, method: "basic" | "ai" | null,
+ai: "done" | "not-asked" | "login_required" | "quota_exhausted" | "unavailable" | "rejected" | "failed" | "disabled", aiMessage? }`.
+A variant whose footprint has not moved materially (1.5 % of the photo's longer side) is reused (`current`). The editor runs the job by itself
+(debounced 1.5 s after the footprint settles) while the setting `autoCleanBackground` is on; the agent tool `wall_clean_background` and the
+palette command "Clean the wall under the board again" run it on demand. Photos leave the machine only for the AI step.
 
 ### Vision jobs and routes
 

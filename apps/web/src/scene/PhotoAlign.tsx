@@ -1,4 +1,4 @@
-import { useRef, type PointerEvent } from 'react';
+import { useEffect, useRef, type PointerEvent } from 'react';
 import { boardExtent } from '@hsw-editor/overlay';
 import type { Wall } from '@hsw-editor/core';
 import { useStore } from '@/state/react.ts';
@@ -20,6 +20,11 @@ interface Gesture {
 export function PhotoAlign({ wall, view }: { readonly wall: Wall; readonly view: PhotoView }) {
   const { align } = useStore(photoStore);
   const gesture = useRef<Gesture | null>(null);
+  // Turning would take a detector-fitted board off the real lattice: leave roll mode when the calibration becomes one.
+  const rollOnLattice = align === 'roll' && view.calibration.method === 'grid';
+  useEffect(() => {
+    if (rollOnLattice) patchPhoto({ align: null });
+  }, [rollOnLattice]);
   if (align === null) return null;
 
   const photoPx = (event: PointerEvent<HTMLDivElement>): readonly [number, number] => {
@@ -44,11 +49,23 @@ export function PhotoAlign({ wall, view }: { readonly wall: Wall; readonly view:
     const active = gesture.current;
     if (!active || active.pointerId !== event.pointerId) return;
     const [x, y] = photoPx(event);
-    const draft = alignCalibration(active.base, view.image, boardExtent(wall.board), {
-      kind: align,
-      startPx: active.startPx,
-      nowPx: [x, y],
-    });
+    // The detector fitted the real lattice: a move that left it would put the grid between the real cells, so moves
+    // snap to whole cells and turning is refused. Alt moves freely; the calibration is then no longer the detector's.
+    const onLattice = active.base.method === 'grid';
+    if (onLattice && align === 'roll') return;
+    const free = onLattice && event.altKey;
+    const lattice =
+      onLattice && !free
+        ? { colPitchMm: wall.board.colPitchMm, rowPitchMm: wall.board.rowPitchMm }
+        : undefined;
+    const moved = alignCalibration(
+      active.base,
+      view.image,
+      boardExtent(wall.board),
+      { kind: align, startPx: active.startPx, nowPx: [x, y] },
+      lattice,
+    );
+    const draft = moved && free ? { ...moved, method: 'manual' as const } : moved;
     if (draft) patchPhoto({ draft });
   };
 
@@ -58,7 +75,8 @@ export function PhotoAlign({ wall, view }: { readonly wall: Wall; readonly view:
     gesture.current = null;
     const { draft } = photoStore.get();
     patchPhoto({ draft: null });
-    if (commit && draft) {
+    // A snapped drag shorter than half a cell lands on the stored calibration: nothing to record.
+    if (commit && draft && JSON.stringify(draft) !== JSON.stringify(view.photo.calibration)) {
       submitOps(
         [{ type: 'setCalibration', photoId: view.photo.id, calibration: draft }],
         'align-board',
