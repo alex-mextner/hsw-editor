@@ -10,6 +10,7 @@ import { bankStore } from '@/bank/client.ts';
 import { createValueStore } from '#state-backend';
 import { patchEditor, setSelection, type AttachPreview, type Vec2 } from '@/state/editor.ts';
 import { planToolDrag, toolBox, toolBoxCentre, type ToolDragPlan } from '@/wall/attach.ts';
+import { seatAfterDrop } from '@/physics/postStep.ts';
 import { sessionStore, submitOps } from '@/wall/session.ts';
 import { presetDims, toolDraftOps, type Dims3 } from '@/wall/toolPresets.ts';
 import { cancelSnap } from './snapAnimation.ts';
@@ -172,5 +173,9 @@ export function dropTool(event: DragEvent): void {
     [...planned.setup, placed],
     resolution.kind === 'attach' ? 'add-and-hang' : 'add-tool',
   ).ok;
-  if (ok) setSelection([planned.item.id]);
+  if (!ok) return;
+  setSelection([planned.item.id]);
+  // Hung on the nearest holder at once; the physics then seats it (or picks a clearly better holder in reach).
+  if (resolution.kind === 'attach')
+    seatAfterDrop(planned.item.id, { x: planned.item.pose.x, y: planned.item.pose.y });
 }

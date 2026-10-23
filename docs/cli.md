@@ -29,6 +29,7 @@ Need the running daemon; if it is down the command exits 3 and prints `hsw-edito
 | `wall apply <id> <file\|-> [--base-rev N] [--actor KIND[:NAME]] [--label L]` | apply ops from a file or stdin as one atomic, undoable step. The JSON is one op, an array of ops, or `{"ops": [...], "baseRev": N}` |
 | `wall undo <id>` / `wall redo <id>` `[--base-rev N] [--actor ..]` | step through the shared history |
 | `wall export <id> [-o FILE] [--wall-only]` | wall + full history as JSON |
+| `wall physics <id> [--item ID]` | how the tools hang on their holders (stability score, swing / tip / levitating / overload problems, removal ergonomics) as a table plus one sentence per problem; `--item` judges one tool. See [physics.md](physics.md) |
 | `wall delete <id>` | move to `walls/.trash/` (recoverable) |
 
 All wall verbs accept `--json` and then print the daemon's JSON response unchanged. `--actor` is `human`, `agent` or `cli`

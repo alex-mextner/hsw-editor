@@ -31,6 +31,7 @@ import { ItemWidgets } from '@/widgets/ItemWidgets.tsx';
 import { CompareSection } from '@/widgets/CompareSection.tsx';
 import { ItemModelNotice } from './ModelIssueNotice.tsx';
 import { InvalidReasons } from '@/features/invalid-zones/InvalidReasons.tsx';
+import { ToolPhysicsSection } from '@/features/physics/ToolPhysicsSection.tsx';
 import { WallPanel } from './WallPanel.tsx';
 
 export function itemTitle(
@@ -96,6 +97,7 @@ function ItemPanel({
 
       <ItemModelNotice item={item} />
       <InvalidReasons wall={wall} itemId={item.id} />
+      {item.kind === 'tool' ? <ToolPhysicsSection wall={wall} itemId={item.id} /> : null}
       <ItemActions items={[item]} />
       <Placement item={item} wall={wall} />
       <ItemWidgets item={item} />

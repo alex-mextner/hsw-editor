@@ -142,3 +142,34 @@ export function compatibility(
     entryIndex: null,
   };
 }
+
+/** How a tool really hangs on a holder and how easily it comes off, as the physics measured it (both 0..1). */
+export interface PhysicsRating {
+  stability: number;
+  /** Null when the removal was not analysed. */
+  convenience: number | null;
+}
+
+/** Hang stability and removal convenience as one rating: stability counts twice as much as convenience. */
+export function physicsRating(physics: PhysicsRating): number {
+  return roundTo((2 * physics.stability + (physics.convenience ?? physics.stability)) / 3, 2);
+}
+
+/** Weight of the dimensional fit in the final order of holder suggestions: the rest is the physics rating. */
+export const FIT_WEIGHT = 0.3;
+
+/** Sort key from a fit score and a physics rating (both 0..1). */
+export function foldFitAndRating(fit: number, rating: number): number {
+  return roundTo(FIT_WEIGHT * fit + (1 - FIT_WEIGHT) * rating, 4);
+}
+
+/**
+ * Sort key of a holder suggestion: the dimensional fit of `compatibility()` together with the physics. Holders the
+ * tool does not fit stay at 0; a holder without a physics verdict keeps its fit score.
+ */
+export function rankWithPhysics(compat: Compatibility, physics: PhysicsRating | undefined): number {
+  if (!compat.ok) return 0;
+  return physics === undefined
+    ? compat.score
+    : foldFitAndRating(compat.score, physicsRating(physics));
+}

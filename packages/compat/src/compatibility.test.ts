@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'bun:test';
-import { compatibility, SCORE_BROADER_PENALTY } from './compatibility.ts';
+import {
+  compatibility,
+  FIT_WEIGHT,
+  physicsRating,
+  rankWithPhysics,
+  SCORE_BROADER_PENALTY,
+} from './compatibility.ts';
 import { roundTo } from './rotation.ts';
 import { BANK_HOLDERS, bankHolder, TOOLS } from './fixtures/testing.ts';
 import { BLOCKING_REASONS, type HolderSpec, type ToolInterface } from './types.ts';
@@ -207,5 +213,29 @@ describe('broader tool classes', () => {
 
   test('a class that is neither the tool class nor listed in `broader` stays refused', () => {
     expect(compatibility(chisel, holder('saw')).ok).toBe(false);
+  });
+});
+
+describe('ranking with the physics', () => {
+  const fits = compatibility(tool('screwdriver'), bankHolder('refit-screwdriver-rail-3'));
+  const refused = compatibility(tool('screwdriver'), bankHolder('refit-tape-measure-cradle'));
+
+  test('without a verdict the dimensional score is kept, a refused holder stays at zero', () => {
+    expect(rankWithPhysics(fits, undefined)).toBe(fits.score);
+    expect(rankWithPhysics(refused, { stability: 1, convenience: 1 })).toBe(0);
+  });
+
+  test('a holder that holds the tool beats a better fit that does not', () => {
+    const tight = rankWithPhysics({ ...fits, score: 0.7 }, { stability: 1, convenience: 0.9 });
+    const loose = rankWithPhysics({ ...fits, score: 0.95 }, { stability: 0.2, convenience: 0.9 });
+    expect(tight).toBeGreaterThan(loose);
+  });
+
+  test('stability counts twice as much as convenience, and a missing convenience repeats the stability', () => {
+    expect(physicsRating({ stability: 0.9, convenience: 0.3 })).toBe(0.7);
+    expect(physicsRating({ stability: 0.6, convenience: null })).toBe(0.6);
+    expect(rankWithPhysics(fits, { stability: 1, convenience: 1 })).toBe(
+      roundTo(FIT_WEIGHT * fits.score + (1 - FIT_WEIGHT), 4),
+    );
   });
 });

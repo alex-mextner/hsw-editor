@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { CloudOff, Hexagon, Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button.tsx';
 import { InvalidZonesLegend } from '@/features/invalid-zones/InvalidZonesLegend.tsx';
+import { PhysicsLegend } from '@/features/physics/PhysicsLegend.tsx';
 import { newWallDialogStore } from '@/features/wizard/NewWallDialog.tsx';
 import { PhotoModeLayer } from '@/features/photo/PhotoModeLayer.tsx';
 import { useI18n } from '@/i18n/index.ts';
@@ -64,6 +65,7 @@ export function ViewportArea() {
       </Suspense>
       <ViewportToolbar />
       <InvalidZonesLegend />
+      <PhysicsLegend />
       <PhotoModeLayer wall={wall} />
       <ViewportHint
         text={

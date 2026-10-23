@@ -103,6 +103,14 @@ const TIP_DOWN_CLASSES: ReadonlySet<string> = new Set([
 const MAX_INSERT_MM = 60;
 const INSERT_FRACTION = 0.35;
 
+/** The tool goes into a slot or hole working end (tip) first: its class, or a coarser class it also fits, is a tip-down one. */
+export function prefersTipDown(tool: Pick<ToolInterface, 'toolClass' | 'broader'>): boolean {
+  return (
+    TIP_DOWN_CLASSES.has(tool.toolClass) ||
+    (tool.broader ?? []).some((id) => TIP_DOWN_CLASSES.has(id))
+  );
+}
+
 export interface ToolPlacement {
   /** Tool pose in wall space (degrees, mm); only `rotZ` is non-zero for the in-plane styles. */
   pose: Pose;
@@ -126,9 +134,7 @@ function gripOf(style: MountStyle, tool: ToolInterface, holder: HolderSpec): Gri
   if (style === 'tray') return { point: [0, 0, -tool.maxSection.t / 2], workingEnd: 'up' };
   const pocket = holder.bboxMm.max.y - holder.bboxMm.min.y;
   const depth = Math.min(MAX_INSERT_MM, INSERT_FRACTION * length, 0.8 * pocket);
-  const tipDown =
-    TIP_DOWN_CLASSES.has(tool.toolClass) ||
-    (tool.broader ?? []).some((id) => TIP_DOWN_CLASSES.has(id));
+  const tipDown = prefersTipDown(tool);
   return tipDown
     ? { point: [0, length - depth, 0], workingEnd: 'down' }
     : { point: [0, depth, 0], workingEnd: 'up' };

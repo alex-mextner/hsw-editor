@@ -11,6 +11,9 @@ The marks are advisory like every geometry warning: the op reducer is unchanged,
 - **Board prism.** Every solid must lie in `x in [0, width]`, `y in [0, height]`, `z >= 0` of `boardSizeMm(board)`. Bank elements are modelled with
   the wall face at `z = 0` (screw bosses/plugs sit on it, see the bank geometry frame in `packages/bank`), so anything at `z < 0` is behind the wall. Mounting cells that
   fall off the board are caught by the same rule: their body is outside the prism.
+- **Tools may overhang the board** (user rule tg#24300). The prism rule applies to holders and board parts (`isBoundsChecked`), not to tools: a tool's
+  free end can stick out over the board edge and that is not an invalid zone. Tools keep every overlap check. Whether a tool that overhangs still hangs
+  well is the physics check's question (`docs/physics.md`, amber zones).
 - **Tolerances** (`ValidityTolerances`, configurable): a region is reported only if its thinnest width is `>= 0.05 mm` **and** its volume `>= 0.5 mm^3`.
   Coincident faces and float noise stay below that; a 0.1 mm sliver of two real holders does not.
 - **Depth** shown to the user is the thinnest width of the shared volume measured along the world axes and both items' own axes (the

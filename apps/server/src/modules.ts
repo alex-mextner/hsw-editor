@@ -14,6 +14,7 @@ import type { Server, WebSocketHandler } from 'bun';
 import type { ServerConfig } from './config.ts';
 import type { JobRunner } from './jobs.ts';
 import { ompModule } from './omp/module.ts';
+import { createPhysicsModule } from './physics/module.ts';
 import type { SettingsStore } from './settings.ts';
 import { createToolsModule } from './tools/module.ts';
 import type { WallStore } from './store/wall-store.ts';
@@ -47,4 +48,10 @@ export interface ServerModule {
   stop?(): Promise<void>;
 }
 
-export const modules: ServerModule[] = [bankModule, clientErrorsModule, ompModule, createToolsModule()];
+export const modules: ServerModule[] = [
+  bankModule,
+  clientErrorsModule,
+  ompModule,
+  createToolsModule(),
+  createPhysicsModule(),
+];

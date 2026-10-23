@@ -3,6 +3,7 @@ import type { BankElement } from '@hsw-editor/bank';
 import { bankRoutes } from '@/bank/client.ts';
 import { useI18n } from '@/i18n/index.ts';
 import { cn } from '@/lib/cn.ts';
+import { PhysicsBadge, type HolderPhysicsRating } from '@/features/physics/PhysicsBadge.tsx';
 
 export interface Candidate {
   readonly element: BankElement;
@@ -19,6 +20,8 @@ function scoreTone(score: number): string {
 
 interface VariantPickerCardProps {
   readonly candidate: Candidate;
+  /** Physics verdict of hanging the tool on this holder; undefined while unknown or for non-tool pickers. */
+  readonly physics?: HolderPhysicsRating | undefined;
   readonly current: boolean;
   readonly disabled: boolean;
   /** Tool mode: picking adds a new holder instead of replacing the current one. */
@@ -29,6 +32,7 @@ interface VariantPickerCardProps {
 /** One thumbnail card of the carousel; a single button so keyboard and touch behave the same. */
 export function VariantPickerCard({
   candidate,
+  physics,
   current,
   disabled,
   adds,
@@ -106,6 +110,7 @@ export function VariantPickerCard({
           </span>
         </span>
       ) : null}
+      <PhysicsBadge rating={physics} />
     </button>
   );
 }

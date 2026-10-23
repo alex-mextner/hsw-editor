@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { bankHolder, TOOLS } from './fixtures/testing.ts';
-import { mountSlots, placeTool } from './slots.ts';
+import { mountSlots, placeTool, prefersTipDown } from './slots.ts';
 import type { ToolInterface } from './types.ts';
 
 describe('placeTool grip of a finer tool class', () => {
@@ -20,5 +20,14 @@ describe('placeTool grip of a finer tool class', () => {
   test('without the `broader` link an unknown class stands butt first', () => {
     const { broader: _omitted, ...plain } = longNose;
     expect(placeTool(plain, holder, slot, pose).workingEnd).toBe('up');
+  });
+});
+
+describe('prefersTipDown', () => {
+  test('the class itself or a coarser class it also fits decides', () => {
+    expect(prefersTipDown({ toolClass: 'screwdriver' })).toBe(true);
+    expect(prefersTipDown({ toolClass: 'long-nose-pliers', broader: ['pliers'] })).toBe(true);
+    expect(prefersTipDown({ toolClass: 'long-nose-pliers' })).toBe(false);
+    expect(prefersTipDown({ toolClass: 'hammer' })).toBe(false);
   });
 });

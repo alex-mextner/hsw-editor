@@ -1,11 +1,13 @@
 /**
  * Binary glTF 2.0 export of a `ToolModel`: one node and mesh per named part, metallic-roughness
  * materials, millimetre units (same frame as the bank GLBs: Y up, no scale needed in a mm scene).
- * Holding interface and parameters travel in `extras` of the scene so the editor needs no second file.
+ * Holding interface, mass and centre of gravity (`physics`) and parameters travel in `extras` of the scene so the editor
+ * needs no second file.
  */
 import { linearColor } from './materials.ts';
 import { type ToolModel } from './model.ts';
 import { shade } from './mesh.ts';
+import { massPropertiesOfModel } from './physics/mass.ts';
 
 interface GltfAccessor {
   bufferView: number;
@@ -23,6 +25,13 @@ const ELEMENT_ARRAY_BUFFER = 34963;
 
 function pad4(n: number): number {
   return (n + 3) & ~3;
+}
+
+/** Mass and centre of gravity of the tool (tool frame), so the editor can balance it without the generator. */
+function physicsExtras(model: ToolModel): { massG: number; comMm: [number, number, number] } {
+  const mass = massPropertiesOfModel(model);
+  const round = (v: number): number => Math.round(v * 1000) / 1000;
+  return { massG: round(mass.massG), comMm: [round(mass.comMm[0]), round(mass.comMm[1]), round(mass.comMm[2])] };
 }
 
 export function exportGlb(model: ToolModel, extras: Record<string, unknown> = {}): Uint8Array {
@@ -131,6 +140,7 @@ export function exportGlb(model: ToolModel, extras: Record<string, unknown> = {}
           lod: model.lod,
           params: model.params,
           holding: model.holding,
+          physics: physicsExtras(model),
           ...extras,
         },
       },

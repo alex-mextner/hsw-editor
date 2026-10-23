@@ -46,6 +46,7 @@ function recordingActions(): { actions: EditorActions; calls: string[] } {
     toggleOverlay: record('overlay'),
     exportPhoto: record('exportPhoto'),
     findPhotoTools: record('findPhotoTools'),
+    checkPhysics: record('checkPhysics'),
     calibratePhoto: record('calibratePhoto'),
     togglePhotoVisible: record('togglePhotoVisible'),
     togglePhotoSplit: record('togglePhotoSplit'),
@@ -95,6 +96,21 @@ describe('editor defaults', () => {
       expect(command.title.en.trim()).not.toBe('');
       expect(command.title.ru.trim()).not.toBe('');
     }
+  });
+
+  test('physics.check is a read-only palette command with ru/en titles and physics keywords', async () => {
+    const { actions, calls } = recordingActions();
+    const registry = new CommandRegistry();
+    registry.register(...createEditorCommands(actions));
+    const command = registry.get('physics.check');
+    expect(command?.title).toEqual({ en: 'Check wall physics', ru: 'Проверить физику стены' });
+    expect(command?.mutates).toBe(false);
+    expect(command?.keywords).toEqual(expect.arrayContaining(['physics', 'removal', 'физика']));
+    expect(bindingsOf(buildKeymap(commands, EMPTY_USER_KEYMAP, 'linux'), 'physics.check')).toEqual(
+      [],
+    );
+    await registry.run('physics.check', undefined, SELECTED);
+    expect(calls).toEqual(['checkPhysics']);
   });
 
   test('keep every shortcut of the old flat list', () => {

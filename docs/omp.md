@@ -70,6 +70,7 @@ zod schemas of `packages/core` rendered with `z.toJSONSchema`.
 | `wall_bank_search` | search the element bank; returns ids, sizes, cells and parameters |
 | `wall_select` | highlight items in the editor |
 | `wall_view` | screenshot of the 3D viewport as an image block (requires an open editor window) |
+| `wall_analyse_hang` | physics of the hung tools (`GET /api/walls/:id/physics`): per tool stability score and status, problems with an English sentence each (levitating, not seated, falls, tips, swings, slides off, overloaded, removal blocked / needs a tilt / needs two hands), `skipped` tools; `itemId` limits it to one tool. The system prompt tells the agent to run it after placing tools and to move unstable tools to a better holder |
 | `wall_request_input` | open a core input request (dimensions, variant, compare, calibration) in the editor and wait for the answer |
 
 `vision_run` and `draw_view` are added the same way once their services land: write a `ToolFactory` and pass it as

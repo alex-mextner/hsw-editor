@@ -238,6 +238,30 @@ describe('board bounds', () => {
     ).toHaveLength(1);
     engine.dispose();
   });
+
+  test('a tool sticking 40 mm out of the board is not a protrusion (tg#24300); a holder in the same pose is', () => {
+    const engine = newEngine();
+    // The 20 mm cube centred at x = -30 spans x -40..-20: it reaches 40 mm past the left edge.
+    const asTool = engine.solve(DEFAULT_BOARD, [
+      item('t', 'cube20', { x: -30, y: 100 }, { kind: 'tool' }),
+    ]);
+    expect(bounds(asTool)).toEqual([]);
+    expect(asTool.regions).toEqual([]);
+    const asHolder = engine.solve(DEFAULT_BOARD, [item('h', 'cube20', { x: -30, y: 100 })]);
+    expect(bounds(asHolder)).toHaveLength(1);
+    engine.dispose();
+  });
+
+  test('tools still overlap-check against everything while they overhang the edge', () => {
+    const engine = newEngine();
+    const result = engine.solve(DEFAULT_BOARD, [
+      item('h', 'cube20', { x: 5, y: 100 }),
+      item('t', 'cube20', { x: 0, y: 100, z: 5 }, { kind: 'tool' }),
+    ]);
+    expect(overlaps(result)).toHaveLength(2);
+    expect(bounds(result).map((r) => r.itemId)).toEqual(['h']);
+    engine.dispose();
+  });
 });
 
 describe('real bank holder geometry', () => {

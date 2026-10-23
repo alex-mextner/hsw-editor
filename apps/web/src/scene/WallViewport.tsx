@@ -37,11 +37,13 @@ import { SelectionFrames } from './SelectionFrames.tsx';
 import { boardSizeMm } from '@hsw-editor/core';
 import { DimensionLayer } from '@/widgets/DimensionLayer.tsx';
 import { InvalidZones } from './invalid-zones/InvalidZones.tsx';
+import { PhysicsZones } from './physics/PhysicsZones.tsx';
 import { itemSolid } from './invalid-zones/itemSolid.ts';
 import { describeReason, regionReasons } from './invalid-zones/reasons.ts';
 import { invalidZonesEnabledStore, invalidZonesResultStore } from './invalid-zones/store.ts';
 import { useInvalidZones } from './invalid-zones/useInvalidZones.ts';
 import { engineScene } from './invalid-zones/wallAdapter.ts';
+import { usePhysicsLive } from '@/physics/live.ts';
 
 const GEOMETRY_WARNINGS = new Set(['cell_collision', 'out_of_board', 'cell_out_of_board']);
 
@@ -93,6 +95,8 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
     invalidZonesResultStore.set(zones);
     return () => invalidZonesResultStore.set(null);
   }, [zones]);
+  // Physics of the hung tools (stability, removal), re-checked off-thread when the wall changes.
+  usePhysicsLive();
   // Item-level verdicts feed only the selection frame (a selected item's outline turns red): the exact regions, plus
   // the cell-based verdicts and server warnings. Models themselves are never tinted; with the zones off nothing but
   // the frame of a selected item marks them.
@@ -180,6 +184,7 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
             onItemPointerDown={beginItemDrag}
           />
           <InvalidZones result={zones} theme={theme} describeRegion={describeRegion} />
+          <PhysicsZones />
           <SelectionFrames wall={wall} bank={bank} palette={palette} invalidIds={invalidIds} />
           <MountHighlights wall={wall} bank={bank} palette={palette} />
           <PlacementMarker point={editor.placeAt} color={palette.ghostOk} />

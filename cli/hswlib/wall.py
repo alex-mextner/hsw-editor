@@ -1,8 +1,9 @@
-"""``hsw-editor wall ...``: list, new, show, apply, undo, redo, export, delete (all via the daemon's HTTP API)."""
+"""``hsw-editor wall ...``: list, new, show, apply, undo, redo, export, physics, delete (all via the daemon's HTTP API)."""
 
 from __future__ import annotations
 
 import argparse
+from urllib.parse import quote
 import json
 import sys
 from typing import Any, Callable
@@ -61,6 +62,14 @@ def add_wall_parser(subs: Any) -> None:
     export.add_argument("id")
     export.add_argument("--out", "-o", help="write to FILE instead of stdout")
     export.add_argument("--wall-only", action="store_true", help="only the wall document, without history")
+
+    physics = verb(
+        "physics",
+        "how the tools hang on their holders: stability, problems and removal ergonomics",
+        wall_physics,
+    )
+    physics.add_argument("id")
+    physics.add_argument("--item", help="analyse only this tool item (the others stay in its way)")
 
     delete = verb("delete", "move a wall to the trash (walls/.trash/, recoverable by hand)", wall_delete)
     delete.add_argument("id")
@@ -173,6 +182,29 @@ def wall_export(args: argparse.Namespace, api: Api) -> int:
         print(f"wrote {args.out} (rev {data['wall']['rev']}, {len(data['history'])} history entries)", file=sys.stderr)
     else:
         sys.stdout.write(text)
+    return 0
+
+
+def wall_physics(args: argparse.Namespace, api: Api) -> int:
+    wall = quote(args.id, safe="")
+    if args.item is not None:
+        path = f"/api/walls/{wall}/items/{quote(args.item, safe='')}/physics"
+    else:
+        path = f"/api/walls/{wall}/physics"
+    data = api.request("GET", path)
+    if args.json:
+        return _dump(data)
+    print(f"{args.id}  rev {data['rev']}  {len(data['tools'])} tools judged, {data['flagged']} with problems")
+    if data["tools"]:
+        rows = [("TOOL", "HOLDER", "STATUS", "SCORE", "RATING")]
+        for tool in data["tools"]:
+            rows.append((tool["toolId"], tool["holderId"], tool["status"], f"{tool['score']:.2f}", f"{tool['rating']:.2f}"))
+        _table(rows)
+    for tool in data["tools"]:
+        for problem in tool["problems"]:
+            print(f"{tool['toolId']}  [{problem['severity']}] {problem['text']}")
+    for skipped in data["skipped"]:
+        print(f"{skipped['toolId']}  skipped: {skipped['reason']}")
     return 0
 
 

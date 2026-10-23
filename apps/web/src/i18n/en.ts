@@ -6,6 +6,7 @@ import { compareEn } from './catalog/compare.ts';
 import { ompEn } from './catalog/omp.ts';
 import { invalidZonesEn } from './catalog/invalidZones.ts';
 import { photoEn } from './catalog/photo.ts';
+import { physicsEn } from './catalog/physics.ts';
 import { shellEn } from './catalog/shell.ts';
 import { toolsEn } from './catalog/tools.ts';
 import { viewportEn } from './catalog/viewport.ts';
@@ -28,4 +29,5 @@ export const en = {
   ...commandsEn,
   ...toolsEn,
   ...photoEn,
+  ...physicsEn,
 } as const;
