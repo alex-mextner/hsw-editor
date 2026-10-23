@@ -1,5 +1,7 @@
 import {
   Columns2,
+  Download,
+  ScanSearch,
   Eye,
   EyeOff,
   ImageOff,
@@ -24,7 +26,8 @@ import {
 } from '@/state/photo.ts';
 import { useStore } from '@/state/react.ts';
 import { sessionStore } from '@/wall/session.ts';
-import { togglePhotoMode } from './photoActions.ts';
+import { exportPhotoPng, findPhotoTools, togglePhotoMode } from './photoActions.ts';
+import { findToolsStore } from './findTools.ts';
 import { choosePhotoFile } from './photoImport.ts';
 
 /** Photo controls of the viewport toolbar: photo mode on/off, import, calibrate, how the photo shows, board drag. */
@@ -34,6 +37,7 @@ export function PhotoToolbar() {
   const photo = useStore(photoStore);
   const wall = useStore(sessionStore)?.wall;
   const photoId = photo.photoId;
+  const tools = useStore(findToolsStore);
 
   return (
     <div className="pointer-events-auto flex items-center gap-1 rounded-lg border border-border bg-panel/95 p-0.5 pr-2 shadow-sm backdrop-blur">
@@ -82,6 +86,26 @@ export function PhotoToolbar() {
             onClick={() => toggleAlign('roll')}
           >
             <RotateCw />
+          </IconButton>
+          <IconButton
+            label={
+              tools.phase === 'unavailable'
+                ? t('photo.findTools.unavailable')
+                : t('photo.findTools')
+            }
+            disabled={
+              tools.phase === 'running' || tools.phase === 'unavailable' || photo.calibrating
+            }
+            onClick={() => void findPhotoTools()}
+          >
+            <ScanSearch />
+          </IconButton>
+          <IconButton
+            label={t('photo.export')}
+            disabled={photo.calibrating}
+            onClick={() => void exportPhotoPng()}
+          >
+            <Download />
           </IconButton>
           <Layers className="size-3.5 text-muted-foreground" aria-hidden />
           <Slider
