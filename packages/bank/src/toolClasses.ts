@@ -146,6 +146,58 @@ export const TOOL_CLASSES: readonly ToolClass[] = [
     ['саморез', 'винт', 'крепеж', 'шуруп', 'мелочь'],
     ['screws', 'fasteners', 'small parts'],
   ),
+  // Tool-library classes that had no honest home among the classes above (each has its own holder shape).
+  tc(
+    'nut-driver',
+    'Торцевая отвёртка',
+    'Nut driver',
+    ['торцевая отвертка', 'ключ-отвертка'],
+    ['nut driver'],
+  ),
+  tc(
+    'socket',
+    'Торцевая головка',
+    'Socket',
+    ['торцевая головка', 'сокет'],
+    ['socket', 'impact socket'],
+  ),
+  tc(
+    'ratchet',
+    'Трещотка',
+    'Ratchet',
+    ['трещотка', 'трещоточный ключ'],
+    ['ratchet', 'ratchet handle', 'socket wrench'],
+  ),
+  tc('drill-bit', 'Сверло', 'Drill bit', ['сверло', 'сверла'], ['drill bit', 'twist drill']),
+  tc(
+    'drill-bit-case',
+    'Набор свёрл',
+    'Drill bit case',
+    ['набор сверл', 'кассета со сверлами'],
+    ['drill bit case', 'drill bit set', 'drill index'],
+  ),
+  tc(
+    'soldering-iron',
+    'Паяльник',
+    'Soldering iron',
+    ['паяльник', 'паяльная станция'],
+    ['soldering iron', 'soldering station'],
+  ),
+  tc('flashlight', 'Фонарик', 'Flashlight', ['фонарик', 'фонарь'], ['flashlight', 'headlamp']),
+  tc(
+    'glue-gun',
+    'Клеевой пистолет',
+    'Glue gun',
+    ['клеевой пистолет', 'термоклей'],
+    ['glue gun', 'hot glue gun'],
+  ),
+  tc(
+    'battery-pack',
+    'Аккумулятор инструмента',
+    'Tool battery pack',
+    ['аккумулятор', 'акб'],
+    ['battery pack', 'power tool battery'],
+  ),
 ];
 
 function tc(id: string, ru: string, en: string, synRu: string[], synEn: string[]): ToolClass {
