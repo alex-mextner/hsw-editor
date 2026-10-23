@@ -75,7 +75,7 @@ export const wrenchRatchet = defineToolClass({
   id: 'wrench-ratchet',
   family: 'wrenches',
   name: L('Ratchet wrench', 'Трещотка'),
-  bankClass: 'wrench',
+  bankClass: 'ratchet',
   keywords: {
     en: ['ratchet', 'ratchet wrench', 'socket ratchet', 'reversible ratchet handle'],
     ru: ['трещотка', 'трещотка для головок', 'храповой ключ'],

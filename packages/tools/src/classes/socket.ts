@@ -75,7 +75,7 @@ export const socket = defineToolClass({
   id: 'socket',
   family: 'wrenches',
   name: L('Socket', 'Торцевая головка'),
-  bankClass: 'wrench',
+  bankClass: 'socket',
   keywords: {
     en: ['socket', 'wrench socket', 'ratchet socket', 'deep socket', 'impact socket'],
     ru: ['торцевая головка', 'головка', 'торцовая головка'],
