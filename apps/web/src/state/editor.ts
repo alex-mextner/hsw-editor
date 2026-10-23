@@ -55,7 +55,8 @@ export interface EditorState {
   readonly tool: ToolMode;
   readonly view: ViewMode;
   readonly selection: readonly string[];
-  /** Lattice snapping; the Alt key inverts it for the duration of a drag. */
+  /** Lattice snapping; the Alt key inverts it for the duration of a drag
+   * (a lone tool dragged on the wall treats Alt as "leave free" instead, so Alt never cells it). */
   readonly snap: boolean;
   readonly fitToken: number;
   readonly measure: { readonly a: Vec2 | null; readonly b: Vec2 | null };
