@@ -76,7 +76,7 @@ All bodies are `application/json`; `image_path` is an absolute path on this mach
 | `POST /segment` | `{image_path, segment: {method: sam2\|sam2-dense\|u2net, fill: owlv2\|none, reject_bg, points_per_side}, include_masks?}` | `{instances: [{id, source, bbox_xywh, area_px, bg_prob, stability, polygon, mask}], method, device, timing_s, overlay, dir, imageDir, masks_png_base64?}` |
 | `POST /recognise` | `{image_path, segment, instances?, bank_index?, categories?, topk?}` | `{classes, objects: {"<id>": {tool_class, label, score, prob, topk[], bank_topk[]}}}` |
 | `POST /fit` | `{image_path, calibrate, segment, instance, fixed_dims?, template?, planar?, max_tries?, device?}` | `{instance, fit: {kind, params, dims_mm, pose, confidence, views, glb, ...}, dimensionsMm, confidence, residual, dimsFixed}` |
-| `POST /multiview` | `{fit, views: [{mask, K, R, t}], flag_below}` | `{views: [{iou, flag}], min_iou, status, needs_views[], confidence, threshold, request_view}` |
+| `POST /multiview` | `{fit, views: [{mask \| mask_path, K, R, t, name?}], generated_views?: [{image_path, view \| azimuth_deg + elevation_deg, name?}], flag_below, generated_flag_below}` | `{mode, views: [{iou, flag, azimuth_deg, elevation_deg}], min_iou, status, needs_views[], sanity, confidence, threshold, request_view, generatedViews[], multiView}`; see "Multi-view check" |
 | `POST /photo-to-wall` | see "Proposal request" | **NDJSON**: `stage`/`progress`/`object`/`request_view`/`needs_calibration` events, then one `result` (or `error`) line |
 | `POST /photo-to-objects` | see "photo_to_objects" | the same NDJSON protocol; the final `result` is the `objects.json` content |
 
@@ -117,6 +117,50 @@ Confidence in [0, 1] has ONE implementation, `hsw_vision/confidence.py` (`fit_co
 - below `view_flag_iou` (default 0.75), or when the library flagged a checked view, the item is `needsView` and a **single `request_view`
   event per photo** lists the least confident items and the suggested azimuth/elevation of the missing views;
 - an item below `min_confidence` (default 0.5) has status `needs_confirmation`.
+
+### Multi-view check (ticket #13)
+
+A fit is checked by rendering it into every OTHER available view and comparing silhouettes (`threed_vision.view_check`, the hard cv2 rasteriser, independent of the
+soft one the fitter optimised). Three ways to get another view, one confidence rule:
+
+- **A second photo** (`extra_photos` of `/photo-to-objects` and `/photo-to-wall`, `--extra-photo IMG` of the CLI, `extraPhotoIds` of the job): the library's
+  register stage (SIFT + RANSAC, `threed_vision.register`) finds the camera move between the photos, each object's mask is warped into the other photo (the floor
+  is the plane) and becomes a held-out `{mask, K, R, t}` view of that object. Photos from the SAME viewpoint (`baseline_ok: false`) repeat the silhouette and hold
+  nothing out: they are reported in `diagnostics.extraPhotos` and the fit stays single-view. `/multiview` takes views directly (`mask` pixels or `mask_path`, an
+  image whose alpha channel or grey > 127 is the mask).
+- **No second photo**: the single-photo sanity mode renders the fit from canonical synthetic cameras (top, side, end, three-quarter) and tests for a degenerate
+  silhouette, an implausible thickness for the template and an impossible top-view fill. Status `unverified`, never `ok`; the confidence stays capped at 0.6.
+- **A drawn view** (`generated_views`, see [draw.md](draw.md)): an image on a white background with no camera. The fit is rendered from the named canonical direction
+  (the convention of the draw prompt, where the photo's cut-out is the FRONT view: `front` = down the thickness axis, `back` = its mirror, `side` = the end along
+  the length, `top` = the profile along the width; or an explicit azimuth/elevation in the object frame) and compared after normalising scale, position and
+  in-plane rotation on a 640 x 160 canvas (so a part up to about 20:1 keeps its tips; best of the principal-axis flips; a round silhouette sweeps the angle). Every row is
+  `source: "generated"`, flagged below `generated_flag_below` (0.7). **Drawn views never enter `min_iou`, the confidence or `needsView`**: they are hints for a human,
+  because a generator keeps the shape only approximately (and cannot be told what the unseen side really looks like).
+
+Result per object (`objects.json` `multiView`, also `/multiview`): `{mode: heldout|single_photo, status: ok|flagged|unverified, minIou, flagBelow,
+views: [{source: "photo", name, iou, flag, azimuthDeg, elevationDeg}], generatedViews: [...], sanityOk, sanityFailed[]}` next to `confidence`, `needsView` and
+`needsViews: [{azimuth_deg, elevation_deg, reason, priority, direction_object}]` (at most 3, in the object frame: azimuth in the length-width plane from +X toward
++Y, elevation toward +Z = the thickness axis, 90 = straight down; flat and boxy shapes never seen from above get a top-down suggestion first). The threshold is
+`view_flag_iou` of the request / `HSW_VISION_VIEW_FLAG_IOU` (default 0.75); below it ONE `request_view` event per photo lists the least confident items and the union
+of the suggested views (draw it, or ask for another photo).
+
+**Measured on the carpet photo** (`tools-on-carpet-2026-10-21.heic`, 98 segments, 97 fitted, `mm_per_px` 1.263; the second photo is the same scene seen by a camera
+moved 25 degrees about the world X axis, produced by the exact plane homography and registered back with 1970 matches / 1951 inliers, 0.13 px reprojection,
+24.999 degrees recovered): with the second photo, **held-out IoU median 0.862** (min 0.335, max 0.970; lathe 52 objects median 0.850, flat 22: 0.878, box 23: 0.872),
+15 of 97 objects ask for a view; without it all 97 are capped at 0.6 and ask. Registration took 2.4 s and the fit stage with the 97 held-out checks 1.0 s (the fits themselves came from the stage cache; CPU). The three objects below are recorded in `services/vision/tests/data/carpet-fit/` (18 KB, recorded by `tests/data/record_carpet_fit.py`) and
+`tests/test_multiview_recorded_fit.py` asserts these numbers without a GPU:
+
+| object | training IoU (1 photo) | held-out IoU, the fit | rotated 35 deg | 1.6x too big | half size | thickness x4 |
+| --- | --- | --- | --- | --- | --- | --- |
+| multimeter (lathe) | 0.936 | **0.912** | 0.571 | 0.372 | 0.289 | 0.449 |
+| box | 0.953 | **0.921** | 0.556 | 0.377 | 0.260 | 0.647 |
+| flat part | 0.971 | **0.970** | 0.482 | 0.389 | 0.264 | 0.908 (thin: a bad thickness hides) |
+
+A good fit holds out at 0.91-0.97 and needs no view; every wrong one drops to 0.26-0.65, is flagged and gets `needsViews`. Drawn views, same three fits, ideal drawings
+of the fit's own silhouette (turned 17 degrees, 0.8x, shifted): 0.99 in front, side and top view; the drawing of ANOTHER object: side 0.32-0.59, top 0.35-0.62,
+but **front 0.88-0.89** - the outlines of two elongated tools seen face-on are alike, so a front drawing says little; the end and the profile discriminate (they
+carry the thickness), which are the two views the draw request asks for by default. A drawing missing the last quarter of a 211 x 18 mm part scores < 0.9 against 0.99
+for the whole one. Real generated drawings were not run (they need the user's ChatGPT/omp login); their scores are unmeasured (tracked in #185).
 
 ## Model cache, offline policy, VRAM
 
@@ -244,6 +288,7 @@ Result (`<out>/objects.json`, also the return value):
                "palette": [{"colour_srgb": .., "hex": .., "lab": .., "area_frac": ..}], "axis_deg": 12.4} | null,
    "embedding": {"file": "embeddings.npy", "row": 0, "dim": 512, "model": "clip-b32", "vector": [512 floats, only with inline_embeddings]},
    "confidence": 0.6, "needsView": true, "needsViews": [{"azimuth_deg": 60, "elevation_deg": 30}],
+   "multiView": {"mode": "single_photo|heldout", "status": "unverified|ok|flagged", "minIou": null, "flagBelow": 0.75, "views": [], "generatedViews": [], "sanityOk": true, "sanityFailed": []} | null,
    "status": "ok|needs_confirmation|no_scale|fit_failed", "error": null,
    "needs": "scale (only without a scale)"}],
  "events": [], "diagnostics": {"timing_s": {open, calibrate, segment, recognise, fit, export, total}, "skipped": {...}, "failures": [...], "colours": {...}, "cache": {...}, "models": {...}}}
@@ -321,5 +366,5 @@ or `--mm-per-px`), 127 missing model/dependency (names the fix). Options: `--dev
 ## Remaining gaps
 
 See the per-issue status in the PR description. Known: SAM2 on the CPU takes ~90 s; flat/boxy multi-view fits are ambiguous (the check flags them); no UI for
-mask merge/split/delete, scale widget, anchor, or the request_view flow (web app, #9/#10 UI criteria); no tool-model bank for image retrieval; the
+mask delete, scale widget, anchor, or the request_view flow in the wizard (web app, #9/#10 UI criteria; the draw call path is `POST /api/tools/drafts/:id/objects/:key/draw-view`, docs/draw.md); no tool-model bank for image retrieval; the
 embedding index for retrieval is not built at ingestion; OWLv2 as a separate user-facing detector endpoint is not exposed (it runs inside the segmenter fill).

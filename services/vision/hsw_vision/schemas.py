@@ -7,6 +7,9 @@ from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator, model_validator
 
+from hsw_vision.errors import BadRequest
+from hsw_vision.stages.multiview import GENERATED_FLAG_BELOW, view_direction
+
 
 class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -82,12 +85,57 @@ class FitRequest(ImageRef):
     seed: int = 0
 
 
+Finite = Annotated[float, Field(allow_inf_nan=False)]
+Matrix3 = Annotated[list[Annotated[list[Finite], Field(min_length=3, max_length=3)]], Field(min_length=3, max_length=3)]
+
+
+class GeneratedView(Strict):
+    """A DRAWN view of the object (docs/draw.md): an image on a white background. It is compared at a named direction
+    (`view`: front = the photo's own view, side = its end, top = its profile along the length; see
+    `stages.multiview.GENERATED_VIEW_ANGLES`) XOR an explicit one in the object frame; a hint, never ground truth."""
+
+    image_path: Path
+    view: Literal["front", "side", "top", "back"] | None = None
+    azimuth_deg: Finite | None = None
+    elevation_deg: Finite | None = None
+    name: str | None = None
+
+    @model_validator(mode="after")
+    def _has_one_direction(self) -> GeneratedView:
+        try:
+            view_direction(self.view, self.azimuth_deg, self.elevation_deg)
+        except BadRequest as exc:
+            raise ValueError(exc.message) from exc
+        return self
+
+
+class PhotoView(Strict):
+    """Another photo of the object as seen by its own camera (world -> camera in the fit's world frame): the object's mask
+    as pixels (`mask`) or as an image file (`mask_path`: alpha channel of an RGBA PNG when it varies, else grey above half range)."""
+
+    mask: list[list[int]] | None = None
+    mask_path: Path | None = None
+    K: Matrix3
+    R: Matrix3
+    t: Annotated[list[Finite], Field(min_length=3, max_length=3)]
+    name: str | None = None
+
+    @model_validator(mode="after")
+    def _has_one_mask(self) -> PhotoView:
+        if (self.mask is None) == (self.mask_path is None):
+            raise ValueError("give exactly one of `mask` and `mask_path`")
+        return self
+
+
 class MultiviewRequest(Strict):
-    """Check a stored fit against other photos of the same object (mask + calibrated camera each)."""
+    """Check a stored fit against other photos of the same object and (as hints only) drawn views."""
 
     fit: dict[str, Any]
-    views: list[dict[str, Any]] = Field(default_factory=list)
+    views: list[PhotoView] = Field(default_factory=list)
+    generated_views: list[GeneratedView] = Field(default_factory=list, max_length=8)
     flag_below: float = Field(default=0.75, ge=0, le=1)
+    #: Drawn views are flagged below this agreement; they never change the confidence.
+    generated_flag_below: float = Field(default=GENERATED_FLAG_BELOW, ge=0, le=1)
 
 
 class PhotoRequest(ImageRef):

@@ -46,6 +46,9 @@ def test_every_object_has_mask_crops_class_fit_colours_and_embedding(tmp_path: P
     assert long_tool["profile"]["length_mm"] == pytest.approx(180.0, abs=1.5) and min(abs(long_tool["axis"]["deg"]), 180 - abs(long_tool["axis"]["deg"])) < 1
     assert long_tool["colours"]["parts"][0]["hex"] == "#c83c3c" and long_tool["confidence"] == pytest.approx(0.6)
     assert long_tool["needsViews"] and long_tool["needsView"] is True and long_tool["status"] == "ok"
+    multi_view = long_tool["multiView"]  # the compact multi-view record of the object (#13)
+    assert multi_view["status"] == "unverified" and multi_view["minIou"] is None and multi_view["views"] == []
+    assert multi_view["generatedViews"] == [] and multi_view["sanityOk"] is None
     embeddings = np.load(out / "embeddings.npy")
     assert embeddings.shape == (2, 512) and embeddings.dtype == np.float32
     assert long_tool["embedding"] == {"file": "embeddings.npy", "row": 0, "dim": 512, "model": "clip-b32"}

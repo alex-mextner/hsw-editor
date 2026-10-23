@@ -45,6 +45,7 @@ from hsw_vision.proposal import MIN_RECOGNITION_PROB, dimensions_mm
 from hsw_vision.schemas import PhotoToObjectsRequest
 from hsw_vision.service import Emit, Image, VisionService, _noop, library_version, segmentation_digest
 from hsw_vision.stages import embed as stage_embed
+from hsw_vision.stages import multiview as stage_multiview
 from hsw_vision.stages import recognise as stage_recognise
 from hsw_vision.stages import shape as stage_shape
 
@@ -360,6 +361,7 @@ def _record(
     confidence = 0.0
     needs_views: list[Any] = []
     needs_view = False
+    multi_view: dict[str, Any] | None = None
     status = STATUS_NO_SCALE
     if obj is not None:
         fit = {k: v for k, v in obj["fit"].items() if k not in ("glb", "_files", "cached")}
@@ -371,6 +373,7 @@ def _record(
         confidence = float(obj["confidence"])
         needs_view = bool(obj["needs_view"])
         needs_views = list((obj.get("check") or {}).get("needs_views") or [])
+        multi_view = stage_multiview.summarise(obj.get("check"))
         status = STATUS_OK if confidence >= min_conf else STATUS_NEEDS_CONFIRMATION
     elif error is not None:
         status = STATUS_FIT_FAILED
@@ -404,6 +407,7 @@ def _record(
         "confidence": round(confidence, 4),
         "needsView": needs_view,
         "needsViews": needs_views,
+        "multiView": multi_view,
         "status": status,
         "error": error,
         **({} if scaled else {"needs": "scale"}),

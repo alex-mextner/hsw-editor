@@ -17,6 +17,7 @@ from contextlib import asynccontextmanager
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from hsw_vision import __version__
@@ -42,6 +43,7 @@ from hsw_vision.schemas import (
 )
 from hsw_vision.service import VisionService
 from hsw_vision.stages import fit as stage_fit
+from hsw_vision.stages import multiview as stage_multiview
 
 LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "[::1]", "::1"}
 
@@ -109,6 +111,12 @@ def create_app(
                 {"error": {"code": "forbidden_host", "message": "only loopback Host headers are accepted"}}, 403
             )
         return await call_next(request)
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_request(_: Request, exc: RequestValidationError) -> JSONResponse:
+        # FastAPI's default body echoes each offending `input`: a NaN there cannot be encoded and turned a 422 into a 500.
+        detail = [{key: error[key] for key in ("type", "loc", "msg") if key in error} for error in exc.errors()]
+        return JSONResponse({"detail": detail}, status_code=422)
 
     @app.exception_handler(VisionServiceError)
     async def service_error(_: Request, exc: VisionServiceError) -> JSONResponse:
@@ -180,15 +188,19 @@ def create_app(
     @app.post("/multiview")
     def multiview(req: MultiviewRequest) -> dict[str, Any]:
         svc = get_service()
-        check = svc.check(req.fit, req.views, req.flag_below)
+        check = svc.check(req.fit, [view.model_dump(exclude_none=True) for view in req.views], req.flag_below)
         verdict = assess(
             req.fit, check, single_view_cap=svc.config.single_view_confidence_cap, view_flag_iou=req.flag_below
         )
+        # Drawn views are hints: scored next to the photo views, never part of `min_iou`, the confidence or `request_view`.
+        generated = svc.check_generated(req.fit, req.generated_views, req.generated_flag_below)
         return {
             **check,
             "confidence": verdict.confidence,
             "threshold": req.flag_below,
             "request_view": verdict.needs_view,
+            "generatedViews": generated,
+            "multiView": stage_multiview.summarise(check, generated),
         }
 
     @app.post("/photo-to-wall")
