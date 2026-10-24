@@ -144,7 +144,6 @@ needs an entry here first.
 ### Fixed
 
 - Photo mode (#30): the two-point calibration readout also states the scale error of a 3 px click error in mm per metre (it showed only a percentage), and the before/after divider follows a dragging mouse instead of jumping between 0 and 1. An e2e test covers the wall-from-scratch flow across a daemon restart (#5).
-||||||| parent of be4041a (web: palette add-tool preset hangs on a holder or a clear spot instead of stacking (Refs #235))
 - Adding tools from the command palette or the empty-wall menu no longer piles them at one point (#235): a preset hangs on the nearest free compatible holder, else lies on a clear spot of the board, exactly like a click on the Tools panel (`planToolAdd`), and a refusal is a toast.
 - The Tools panel and photo mode work with the daemon stopped after one online visit (#219, [docs/offline.md](docs/offline.md)): the tool library reads (list, classes, per-tool JSON and
   holding) answered `Cache-Control: no-store`, which the service worker refuses to store, so the panel said "the tool library is unavailable" offline; they answer `no-cache` now and the worker keeps them
