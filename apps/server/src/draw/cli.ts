@@ -5,7 +5,7 @@
  *   doctor                      status with live probes; exit 1 when no automatic backend is usable
  *   login chatgpt               one-time interactive login in the dedicated profile
  *   stop                        stop the dedicated automation browser
- *   settings [auto|omp|chatgpt-browser|manual]
+ *   settings [auto|draw-cli|omp|chatgpt-browser|manual]
  *   run [--backend <id>]        JSON DrawRequest on stdin -> one JSON DrawResult on stdout
  * `run` exit codes follow DRAW_ERROR_EXIT_CODES (0 ok).
  */

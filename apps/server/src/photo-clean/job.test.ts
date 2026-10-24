@@ -602,8 +602,9 @@ describe('photo.clean', () => {
 });
 
 describe('cleanBackends', () => {
-  test('auto tries omp then the browser, a pinned backend is the only one, manual never runs automatically', () => {
-    expect(cleanBackends('auto')).toEqual(['omp', 'chatgpt-browser']);
+  test('auto tries draw-cli, then omp, then the browser, a pinned backend is the only one, manual never runs automatically', () => {
+    expect(cleanBackends('auto')).toEqual(['draw-cli', 'omp', 'chatgpt-browser']);
+    expect(cleanBackends('draw-cli')).toEqual(['draw-cli']);
     expect(cleanBackends('omp')).toEqual(['omp']);
     expect(cleanBackends('chatgpt-browser')).toEqual(['chatgpt-browser']);
     expect(cleanBackends('manual')).toEqual([]);

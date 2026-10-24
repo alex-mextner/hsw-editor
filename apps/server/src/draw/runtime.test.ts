@@ -52,7 +52,14 @@ describe('runtime auto chain', () => {
   afterEach(() => scratch.cleanup());
 
   const make = (backends: Partial<Record<DrawBackendId, DrawBackend>>): DrawRuntime =>
-    createDrawRuntime({ env: { HSW_EDITOR_DATA_DIR: scratch.dir }, backends });
+    createDrawRuntime({
+      env: { HSW_EDITOR_DATA_DIR: scratch.dir },
+      // draw-cli is the real `draw` unless faked: an auto chain here must never reach a real generation
+      backends: {
+        'draw-cli': fake('draw-cli', () => new DrawError('backend_unavailable', 'not installed')),
+        ...backends,
+      },
+    });
 
   test('falls through login_required to the next backend, and remembers the login wall', async () => {
     const omp = fake('omp', () => new DrawError('login_required', 'no creds'));

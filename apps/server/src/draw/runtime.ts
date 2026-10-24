@@ -10,6 +10,7 @@ import {
 } from '@hsw-editor/draw';
 import { type BrowserOptions, browserOptions } from './browser-process.ts';
 import { type ChatgptBrowserConfig, ChatgptBrowserBackend } from './backends/chatgpt-browser.ts';
+import { DrawCliBackend, type DrawCliConfig, drawCliConfig } from './backends/draw-cli.ts';
 import { ManualBackend } from './backends/manual.ts';
 import { OmpBackend, type OmpConfig, ompConfig } from './backends/omp.ts';
 import { type GuardConfig, GuardStore, applyFailure, gate, recordHealthy } from './guard.ts';
@@ -17,8 +18,13 @@ import { envInt } from './env.ts';
 import { type DrawPaths, resolveDrawPaths } from './paths.ts';
 import { loadSettings, saveSettings } from './settings.ts';
 
-/** Order tried by `auto`: sanctioned codex path first, then the browser, then a human. */
-export const AUTO_ORDER: readonly DrawBackendId[] = ['omp', 'chatgpt-browser', 'manual'];
+/** Order tried by `auto`: draw-cli (whatever it is signed in with), then omp, then the browser, then a human. */
+export const AUTO_ORDER: readonly DrawBackendId[] = [
+  'draw-cli',
+  'omp',
+  'chatgpt-browser',
+  'manual',
+];
 
 /** In `auto`, only these failures fall through to the next backend. quota/challenge stop: the same
  * ChatGPT plan may sit behind both, and a captcha needs a human, never another try. */
@@ -27,6 +33,7 @@ const FALLTHROUGH: ReadonlySet<string> = new Set(['login_required', 'backend_una
 export interface DrawRuntime {
   readonly paths: DrawPaths;
   readonly store: GuardStore;
+  readonly drawCli: DrawCliConfig;
   readonly omp: OmpConfig;
   readonly chatgpt: ChatgptBrowserConfig;
   readonly backends: Readonly<Record<DrawBackendId, DrawBackend>>;
@@ -41,6 +48,7 @@ export interface RuntimeOverrides {
   readonly browser?: Partial<BrowserOptions>;
   readonly baseUrl?: string;
   readonly chatgptGuard?: GuardConfig;
+  readonly drawCli?: DrawCliConfig;
   readonly omp?: OmpConfig;
   readonly stopWhenDone?: boolean;
   /** Replace backends (unit tests inject fakes). */
@@ -51,6 +59,7 @@ export function createDrawRuntime(overrides: RuntimeOverrides = {}): DrawRuntime
   const env = overrides.env ?? process.env;
   const paths = resolveDrawPaths(env);
   const store = new GuardStore(paths.guardFile);
+  const drawCli = overrides.drawCli ?? drawCliConfig(env);
   const omp = overrides.omp ?? ompConfig(env);
   const chatgpt: ChatgptBrowserConfig = {
     browser: {
@@ -66,12 +75,14 @@ export function createDrawRuntime(overrides: RuntimeOverrides = {}): DrawRuntime
     stopWhenDone: overrides.stopWhenDone ?? true,
   };
   const backends: Record<DrawBackendId, DrawBackend> = {
+    'draw-cli': new DrawCliBackend(store, drawCli),
     omp: new OmpBackend(store, omp),
     'chatgpt-browser': new ChatgptBrowserBackend(store, chatgpt),
     manual: new ManualBackend(),
     ...overrides.backends,
   };
   const guardConfigs: Record<DrawBackendId, GuardConfig> = {
+    'draw-cli': drawCli.guard,
     omp: omp.guard,
     'chatgpt-browser': chatgpt.guard,
     manual: { minIntervalMs: 0, dailyCap: Number.MAX_SAFE_INTEGER },
@@ -84,7 +95,15 @@ export function createDrawRuntime(overrides: RuntimeOverrides = {}): DrawRuntime
   ): Promise<DrawResult> {
     try {
       if (id !== 'manual') {
-        const decision = gate(await store.get(id), guardConfigs[id], Date.now(), req.n);
+        // draw-cli is asked afresh on every run (its own login check is the authority and costs nothing), so a
+        // login recorded by an earlier failure never blocks the run that follows `codex login`.
+        const guard = await store.get(id);
+        const decision = gate(
+          id === 'draw-cli' ? { ...guard, loginRequiredAt: 0 } : guard,
+          guardConfigs[id],
+          Date.now(),
+          req.n,
+        );
         if (decision.kind === 'blocked') {
           throw new DrawError(decision.code, decision.message, {
             retryable: decision.code === 'quota_exhausted',
@@ -105,6 +124,7 @@ export function createDrawRuntime(overrides: RuntimeOverrides = {}): DrawRuntime
   return {
     paths,
     store,
+    drawCli,
     omp,
     chatgpt,
     backends,

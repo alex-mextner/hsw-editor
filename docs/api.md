@@ -108,7 +108,7 @@ linear stack across all actors: it applies the stored inverse of the newest not-
 - `GET /api/walls/:id/models/:modelId/file` — the model file.
 - Model references without a file (found online, bank candidates) are plain `addModelRef` / `updateModelRef` ops.
 - A **cleaned variant** of a wall photo is a second `Photo` of the same wall: `view: "clean"`, `origin: "generated"`, `cleanOf: <original id>`,
-  `backend: "basic" | "omp" | "chatgpt-browser"`, `cleanFootprint` (the board footprint it was made for, `1152x1536@12:x,y;x,y;x,y;x,y` (photo size, margin in mm, corner pixels),
+  `backend: "basic" | "draw-cli" | "omp" | "chatgpt-browser"`, `cleanFootprint` (the board footprint it was made for, `1152x1536@12:x,y;x,y;x,y;x,y` (photo size, margin in mm, corner pixels),
   `footprintSignature` of `@hsw-editor/overlay`). The file lives in `photos/derived/clean-*.jpg` and is served like any photo. It has no
   calibration of its own (the original's applies), the original is never changed, and a clean is an ordinary `addPhoto` (+ `removePhoto`
   of the variant it replaces) batch, so undo/redo work. Clients list originals only (`cleanOf` absent).
@@ -252,7 +252,7 @@ Import (several photos of one tool, or photos with several tools) goes through a
 | `POST /api/tools/drafts/:id/calibration` | `{ mmPerPx }` or `{ pointsPx, distanceMm }` | `{ draft }` back in state `created`: run `tools.analyze` again (tools already in the library stay marked). Refused (409) while the draft is being analysed |
 | `POST /api/tools/drafts/:id/commit` | `{ keys?, tags? }` (default: accepted objects; `tags` are added to the tags of every committed tool) | `201 { tools, skipped: [{ key, reason }], draft }`; objects without a scale, unknown keys and objects already added are skipped with the reason; `409` unless the draft is `ready` (after a recalibration, analyse again first) |
 | `DELETE /api/tools/drafts/:id` | | `{ ok }` |
-| `POST /api/tools/drafts/:id/objects/:key/draw-view` | `{ views?: ("front"\|"side"\|"top"\|"back")[] (default `["side","top"]`: the end and the profile along the length, the two views a top-down photo lacks), backend?: "omp"\|"chatgpt-browser"\|"manual" }` (empty body = defaults) | `202 { job }` of kind `tools.draw_view` (a draw takes minutes; follow `GET /api/jobs/:id/events`). A **pinned** backend (body or the draw setting) that cannot run now is refused up front, no job queued: `409 { error: { code: login_required\|quota_exhausted\|challenge\|backend_unavailable, message, details: { backend, steps[], retryAfterMs? } } }`, `steps` being the literal commands (`omp login openai-codex`, `hsw-editor draw login chatgpt`). `400 invalid_body`/`invalid_json`, `404 draft_not_found`, `409 conflict` (object discarded/added), `400 invalid` (no cut-out). Docs: [draw.md](draw.md) |
+| `POST /api/tools/drafts/:id/objects/:key/draw-view` | `{ views?: ("front"\|"side"\|"top"\|"back")[] (default `["side","top"]`: the end and the profile along the length, the two views a top-down photo lacks), backend?: "draw-cli"\|"omp"\|"chatgpt-browser"\|"manual" }` (empty body = defaults) | `202 { job }` of kind `tools.draw_view` (a draw takes minutes; follow `GET /api/jobs/:id/events`). A **pinned** backend (body or the draw setting) that cannot run now is refused up front, no job queued: `409 { error: { code: login_required\|quota_exhausted\|challenge\|backend_unavailable, message, details: { backend, steps[], retryAfterMs? } } }`, `steps` being the literal commands (`omp login openai-codex`, `hsw-editor draw login chatgpt`). `400 invalid_body`/`invalid_json`, `404 draft_not_found`, `409 conflict` (object discarded/added), `400 invalid` (no cut-out). Docs: [draw.md](draw.md) |
 | `GET /api/tools/drafts/:id/objects/:key/drawn` | | `{ views: DrawnView[] }`: the drawings kept for the object (newest per view, accepted or rejected), every one `source: "generated"` |
 | `GET /api/tools/drafts/:id/objects/:key/drawn/<view>.<ext>` | | the accepted drawing (only names listed by the route above; `404` otherwise) |
 
@@ -419,7 +419,7 @@ The job turns the photo's calibration into the board footprint (plus a 30 mm mar
 
 1. **basic** (always, instant, offline): `fillWall` of `@hsw-editor/overlay` - a robust quadratic illumination surface fitted to the wall
    around the area, the rim deviation relaxed inward, matched grain; the variant is stored at once (`backend: "basic"`).
-2. **AI** (`method: "auto"`): the draw backends in the user's `/api/draw/settings` order (`auto` = `omp`, then `chatgpt-browser`; `manual` is never
+2. **AI** (`method: "auto"`): the draw backends in the user's `/api/draw/settings` order (`auto` = `draw-cli`, then `omp`, then `chatgpt-browser`; `manual` is never
    used here) get the photo and a mask as two refs and an edit prompt; the answer is un-letterboxed, rejected when the unmasked part moved
    (`MAX_OUTSIDE_DRIFT`), else only the masked area (feathered) replaces the basic variant (`backend` = the backend id).
    `login_required` / `backend_unavailable` hand over to the next backend; `quota_exhausted` stops the chain.

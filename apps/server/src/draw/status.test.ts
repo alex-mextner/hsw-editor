@@ -84,6 +84,7 @@ test('status reports quota block with retryAfterMs and the challenge state; GET 
     env: {
       HSW_EDITOR_DATA_DIR: scratch.dir,
       HSW_OMP_BIN: '/nonexistent/omp',
+      HSW_DRAW_CLI_BIN: '/nonexistent/draw',
       HSW_CHATGPT_HEADLESS: '1',
     },
   });
@@ -107,7 +108,7 @@ test('status reports quota block with retryAfterMs and the challenge state; GET 
     backends: Array<{ id: string }>;
   };
   expect(body.settings.backend).toBe('auto');
-  expect(body.backends.map((b) => b.id)).toEqual(['omp', 'chatgpt-browser', 'manual']);
+  expect(body.backends.map((b) => b.id)).toEqual(['draw-cli', 'omp', 'chatgpt-browser', 'manual']);
 
   const put = await routes(
     new Request('http://x/api/draw/settings', {
