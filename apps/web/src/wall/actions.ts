@@ -45,7 +45,6 @@ import {
 import type { ToolClass } from '@hsw-editor/bank';
 import { offsetCell } from './footprint.ts';
 import type { ToolDragPayload } from '@/scene/toolDrop.ts';
-import { toolPresetOps } from './toolPresets.ts';
 import { planToolAdd } from './autoPlace.ts';
 import { sessionStore, submitOps } from './session.ts';
 
@@ -248,13 +247,16 @@ export function selectAll(): void {
     setSelection(wall.items.filter((item) => item.kind !== 'photo-ref').map((item) => item.id));
 }
 
-/** Adds a tool of `toolClass` (typical dimensions, drawn as a box) in front of the middle of the viewport. */
+/**
+ * Adds a tool of `toolClass` (typical dimensions, drawn as a box) like a click on the Tools panel: on the nearest free
+ * compatible holder mount, else on a clear spot of the board, so several presets in a row never pile up. A refusal tells the
+ * user why (a toast); no open wall is left to the caller.
+ */
 export function addToolPreset(toolClass: ToolClass, label: string): string | null {
-  if (!currentWall()) return null;
-  const { item, ops } = toolPresetOps(toolClass, label, viewportMiddle());
-  if (!submitOps(ops, 'add-tool').ok) return null;
-  setSelection([item.id]);
-  return item.id;
+  const result = addToolFromPayload({ toolClass: toolClass.id, label });
+  if (result.ok) return result.itemId;
+  if (result.reason !== 'noWall') notify('error', t(ADD_FAILURE_KEY[result.reason]));
+  return null;
 }
 
 /** Why `addToolFromPayload` added nothing: no wall open, the bank still loading, no clear spot on the board, or the wall refused the ops. */
@@ -263,6 +265,14 @@ export type AddToolFailure = 'noWall' | 'bankNotReady' | 'noRoom' | 'failed';
 export type AddToolResult =
   | { readonly ok: true; readonly itemId: string }
   | { readonly ok: false; readonly reason: AddToolFailure };
+
+/** Message key (Tools panel notice, toast) per reason a tool was not added. */
+export const ADD_FAILURE_KEY = {
+  noWall: 'toolLib.notice.noWall',
+  bankNotReady: 'toolLib.notice.bankNotReady',
+  noRoom: 'toolLib.notice.noRoom',
+  failed: 'toolLib.notice.failed',
+} as const satisfies Record<AddToolFailure, string>;
 
 /**
  * Adds a Tool Library tool (class dimensions, measured params, user-tool source): on the nearest free mount of a

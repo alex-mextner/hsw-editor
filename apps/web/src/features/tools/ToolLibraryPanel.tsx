@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button.tsx';
 import { useI18n } from '@/i18n/index.ts';
 import { cn } from '@/lib/cn.ts';
 import { useStore } from '@/state/react.ts';
-import { ADD_FAILURE_KEY, addLibraryTool, beginLibraryDrag, endLibraryDrag } from './actions.ts';
+import { ADD_FAILURE_KEY } from '@/wall/actions.ts';
+import { addLibraryTool, beginLibraryDrag, endLibraryDrag } from './actions.ts';
 import {
   buildEntries,
   createLibrarySearch,
