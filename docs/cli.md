@@ -158,3 +158,9 @@ Errors print as `error: <what>`, `why:`, `fix:` (agenttools_errors).
   `CHANGELOG.md`'s `[Unreleased]` section under the new version, commits `chore: release vX.Y.Z` and creates the annotated tag.
   It never pushes (`git push origin main --follow-tags`). To resume an interrupted run, pass the already-bumped version: only the
   release files may be pending, and a release commit that already exists is not repeated.
+  On this workstation two global git hooks sit around the script (rehearsed end to end in a throwaway clone, hsw-editor #22):
+  the `review-before-commit` gate refuses the `chore: release` commit until the staged diff was reviewed, so the first run stops
+  there with the version files staged; run `review diff --staged --task '#N'` (or `review-remote diff --staged ...`), then resume with
+  `bun run release X.Y.Z`. The publish step `git push origin main --follow-tags` is refused by the `protect-main` pre-push hook;
+  it is the release-script exception, so push with `PUSH_MAIN_OK=1 PUSH_MAIN_REASON="release vX.Y.Z" git push origin main --follow-tags`
+  (the override is logged). The test gate is the full suite (159 s on the build box): on the workstation wrap the run in the heavy-run wrapper of AGENTS.md.
