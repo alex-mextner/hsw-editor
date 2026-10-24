@@ -1,7 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { createEmptyWall } from '@hsw-editor/core';
+import { applyOp, createEmptyWall, type WallItem, WallItemSchema } from '@hsw-editor/core';
 import type { HolderEvaluation } from '@hsw-editor/compat';
 import {
+  BANK_ELEMENT_UNAVAILABLE,
   filterLibraryTools,
   libraryToolLabel,
   type LibraryToolSummary,
@@ -141,5 +142,90 @@ describe('pickMount', () => {
     const ghost = pickMount(wall, evaluations, { holderId: 'zzz' });
     expect(ghost.ok).toBe(false);
     expect(ghost).toMatchObject({ message: expect.stringContaining('no such item') });
+  });
+
+  describe('holders and slots the agent has to hear about', () => {
+    const item = (id: string, extra: Record<string, unknown>) =>
+      WallItemSchema.parse({ id, source: { type: 'agent' }, ...extra });
+    const built = (items: WallItem[]) =>
+      applyOp(createEmptyWall('w', 'W'), {
+        type: 'batch',
+        ops: items.map((candidate) => ({ type: 'addItem', item: candidate })),
+      }).wall;
+
+    test('a holder whose bank element could not be fetched is in the verdicts with an explicit reason', () => {
+      const wall = built([
+        item('known', { kind: 'holder', bankId: 'rail' }),
+        item('lost', { kind: 'holder', bankId: 'gone-from-bank' }),
+      ]);
+      const picked = pickMount(wall, [evaluation('known', true, 0.8, 0)], {});
+      expect(picked.ok).toBe(false);
+      if (picked.ok) return;
+      expect(picked.verdicts).toContainEqual({
+        holderId: 'lost',
+        bankId: 'gone-from-bank',
+        fits: false,
+        freeSlots: 0,
+        reasons: [BANK_ELEMENT_UNAVAILABLE],
+      });
+      expect(BANK_ELEMENT_UNAVAILABLE).toBe('bank element unavailable');
+      expect(picked.verdicts.map((v) => v.holderId)).toEqual(['known', 'lost']);
+    });
+
+    test('asking for such a holder says its element is unavailable, in the message and in the verdict', () => {
+      const wall = built([item('lost', { kind: 'holder', bankId: 'gone-from-bank' })]);
+      const picked = pickMount(wall, [], { holderId: 'lost' });
+      expect(picked).toMatchObject({
+        ok: false,
+        message: expect.stringContaining('bank element is not available'),
+        verdicts: [{ holderId: 'lost', reasons: [BANK_ELEMENT_UNAVAILABLE] }],
+      });
+    });
+
+    test('a slot taken on a compatible holder says it is taken and lists the free slots', () => {
+      const wall = built([
+        item('h', { kind: 'holder', bankId: 'rail' }),
+        item('hammer', {
+          kind: 'tool',
+          bankId: 'tool-hammer',
+          parentId: 'h',
+          slot: 1,
+          label: 'Hammer',
+        }),
+      ]);
+      // slot 1 is taken, slots 0 and 2 are free
+      const evaluations = [evaluation('h', true, 0.9, 3)].map((e) => ({
+        ...e,
+        freeSlots: e.freeSlots.filter((free) => free.slot.index !== 1),
+      }));
+      const picked = pickMount(wall, evaluations, { holderId: 'h', slot: 1 });
+      expect(picked.ok).toBe(false);
+      if (picked.ok) return;
+      expect(picked.message).toContain('slot 1 of holder h is taken by Hammer');
+      expect(picked.message).toContain('free slots: 0, 2');
+      expect(picked.verdicts).toEqual([
+        { holderId: 'h', bankId: 'rail', fits: true, freeSlots: 2, reasons: [] },
+      ]);
+    });
+
+    test('a slot the holder does not have says so and lists the free ones; a full holder says none are free', () => {
+      const wall = built([item('h', { kind: 'holder', bankId: 'rail' })]);
+      const roomy = pickMount(wall, [evaluation('h', true, 0.9, 2)], { holderId: 'h', slot: 9 });
+      expect(roomy).toMatchObject({
+        ok: false,
+        message: expect.stringContaining('holder h has no slot 9 (free slots: 0, 1)'),
+      });
+      const full = pickMount(wall, [evaluation('h', true, 0.9, 0)], { holderId: 'h', slot: 0 });
+      expect(full).toMatchObject({ ok: false, message: expect.stringContaining('none free') });
+    });
+
+    test('a holder that does not take the tool keeps the compatibility refusal, not a slot message', () => {
+      const wall = built([item('h', { kind: 'holder', bankId: 'rail' })]);
+      const picked = pickMount(wall, [evaluation('h', false, 0, 0)], { holderId: 'h', slot: 0 });
+      expect(picked).toMatchObject({
+        ok: false,
+        message: expect.stringContaining('does not take this tool'),
+      });
+    });
   });
 });

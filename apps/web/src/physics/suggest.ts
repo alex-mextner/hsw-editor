@@ -10,12 +10,15 @@
  *   ratings arrive, without rows jumping under the pointer.
  */
 import { createValueStore } from '#state-backend';
+import type { BankElement } from '@hsw-editor/bank';
 import {
   type AttachContext,
   type Compatibility,
   DEFAULT_SNAP_RADIUS_MM,
   evaluateHolders,
   rankWithPhysics,
+  wallSlot,
+  type WallSlot,
 } from '@hsw-editor/compat';
 import type { BatchOp, Wall, WallItem } from '@hsw-editor/core';
 import {
@@ -23,6 +26,8 @@ import {
   type PhysicsProblem,
   type RankedSeat,
   removalProblems,
+  samePose,
+  seatOps,
 } from '@hsw-editor/physics';
 import { useEffect, useMemo, useState } from 'react';
 import { bankStore } from '@/bank/client.ts';
@@ -31,24 +36,11 @@ import { toolModelVersion } from '@/toolmodels/regen.ts';
 import { paramsDraftStore } from '@/widgets/draft.ts';
 import { useStore } from '@/state/react.ts';
 import { sessionStore } from '@/wall/session.ts';
-import {
-  planVirtualRank,
-  planWallRank,
-  wallSlot,
-  type AssetContext,
-  type WallSlot,
-} from './assets.ts';
+import { planVirtualRank, planWallRank, type AssetContext } from './assets.ts';
 import type { PhysicsRanker } from './client.ts';
 import { ensureToolModels, physicsContext } from './context.ts';
 import { physicsEnabledStore } from './enabled.ts';
-import {
-  samePose,
-  seatAfterHang,
-  seatOps,
-  stillHung,
-  type PostStepDeps,
-  type SeatStatus,
-} from './seat.ts';
+import { seatAfterHang, stillHung, type PostStepDeps, type SeatStatus } from './seat.ts';
 import { physicsClient } from './service.ts';
 
 /** How much better (0..1 on the combined rank) another holder must be before a dropped tool moves there. */
@@ -108,7 +100,7 @@ export async function settleAfterDrop(
     toolInterface: ctx.toolInterface,
   };
   const holders = new Map(wall.items.filter((i) => i.kind === 'holder').map((i) => [i.id, i]));
-  const slots: WallSlot[] = [];
+  const slots: WallSlot<BankElement>[] = [];
   for (const evaluation of evaluateHolders(attachCtx, hung)) {
     const holderItem = holders.get(evaluation.holderId);
     const element = holderItem?.bankId === undefined ? undefined : ctx.bank.get(holderItem.bankId);

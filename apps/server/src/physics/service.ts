@@ -15,10 +15,11 @@ import {
   type WallHolder,
   type WallTool,
 } from '@hsw-editor/physics';
-import type { Wall, WallItem } from '@hsw-editor/core';
+import type { LeafOp, Wall, WallItem } from '@hsw-editor/core';
 import type { WallStore } from '../store/wall-store.ts';
 import { PhysicsAssets, loadManifold, type SkipReason } from './assets.ts';
 import { describeProblemEn } from './describe.ts';
+import { createSeatPlanner, NO_SEAT_TEXT, type NoSeatReason, type Seat } from './seat.ts';
 
 export type SkipCode = SkipReason | 'no_holder' | 'holder_missing';
 
@@ -59,6 +60,34 @@ export interface WallPhysicsView {
   readonly skipped: readonly SkippedTool[];
 }
 
+/** `GET /api/walls/:id/items/:itemId/seat`: where one hung tool rests in its holder, or why it has no seat. Never written. */
+export interface SeatProposalView {
+  readonly wallId: string;
+  readonly rev: number;
+  readonly toolId: string;
+  readonly seat: Seat | null;
+  readonly reason: { readonly code: NoSeatReason; readonly text: string } | null;
+}
+
+/** `GET /api/walls/:id/seat`: the seat of every hung tool as the editor's Seat tools pass finds it. Never written. */
+export interface WallSeatView {
+  readonly wallId: string;
+  readonly rev: number;
+  /** Tools that move, with the pose they move to. */
+  readonly seats: readonly Seat[];
+  readonly kept: readonly {
+    readonly toolId: string;
+    readonly reason: NoSeatReason;
+    readonly text: string;
+  }[];
+  /** Tools that already rest where the physics puts them. */
+  readonly unchanged: readonly string[];
+  /** Hung without a slot number: left to the user. */
+  readonly unslotted: readonly string[];
+  /** Rotate and move per tool in `seats`: apply as one batch labelled `seat all`. */
+  readonly ops: readonly LeafOp[];
+}
+
 export class ItemNotFoundError extends Error {
   constructor(readonly itemId: string) {
     super(`no item ${itemId} on this wall`);
@@ -77,6 +106,10 @@ export class NotAToolError extends Error {
 export interface PhysicsService {
   /** The whole wall, or with `toolId` only that tool (the others still stand in its way). */
   analyseWall(wallId: string, options?: { toolId?: string }): Promise<WallPhysicsView>;
+  /** Where the hung tool `toolId` rests in its own slot of its holder. Reads, never writes. */
+  proposeSeat(wallId: string, toolId: string): Promise<SeatProposalView>;
+  /** Where every hung tool rests. Reads, never writes. */
+  proposeSeatAll(wallId: string): Promise<WallSeatView>;
 }
 
 function viewOf(item: WallItem | undefined, physics: ToolPhysics): ToolPhysicsView {
@@ -99,27 +132,15 @@ function viewOf(item: WallItem | undefined, physics: ToolPhysics): ToolPhysicsVi
 
 export function createPhysicsService(options: { store: WallStore; home: string }): PhysicsService {
   const assets = new PhysicsAssets(options.home);
+  const planner = createSeatPlanner(assets);
   /** One analysis per (wall, rev, tool) at a time: an agent that asks twice shares the answer. */
   const inFlight = new Map<string, Promise<WallPhysicsView>>();
 
   async function run(wall: Wall, toolId: string | undefined): Promise<WallPhysicsView> {
     const items = new Map(wall.items.map((item) => [item.id, item]));
-    const holders: WallHolder[] = [];
-    const boardParts: SolidBody[] = [];
-    await Promise.all(
-      wall.items.map(async (item) => {
-        if ((item.kind !== 'holder' && item.kind !== 'board-part') || item.bankId === undefined)
-          return;
-        const loaded = await assets.elementSolid(item.bankId, item.params);
-        if (loaded === null) return;
-        const placement = placementOfPose(item.pose);
-        const body = new SolidBody(item.id, loaded.solid, placement.rotation, placement.position);
-        if (item.kind === 'holder') holders.push({ id: item.id, body });
-        else boardParts.push(body);
-      }),
-    );
-    // Deterministic obstacle order whatever order the decodes finished in.
-    holders.sort((a, b) => (a.id < b.id ? -1 : 1));
+    const solids = await assets.wallSolids(wall);
+    const holders: WallHolder[] = solids.holders.map((h) => ({ id: h.item.id, body: h.body }));
+    const { boardParts } = solids;
     const holderIds = new Set(holders.map((h) => h.id));
 
     const skipped: SkippedTool[] = [];
@@ -177,6 +198,38 @@ export function createPhysicsService(options: { store: WallStore; home: string }
   }
 
   return {
+    async proposeSeat(wallId, toolId) {
+      const { wall } = await options.store.get(wallId);
+      const asked = wall.items.find((item) => item.id === toolId);
+      if (asked === undefined) throw new ItemNotFoundError(toolId);
+      if (asked.kind !== 'tool') throw new NotAToolError(asked.id, asked.kind);
+      const attempt = await planner.seatOne(wall, toolId);
+      return {
+        wallId: wall.id,
+        rev: wall.rev,
+        toolId,
+        seat: attempt.seat,
+        reason:
+          attempt.seat === null
+            ? { code: attempt.reason, text: NO_SEAT_TEXT[attempt.reason] }
+            : null,
+      };
+    },
+
+    async proposeSeatAll(wallId) {
+      const { wall } = await options.store.get(wallId);
+      const plan = await planner.seatAll(wall);
+      return {
+        wallId: wall.id,
+        rev: wall.rev,
+        seats: plan.seats,
+        kept: plan.kept.map((k) => ({ ...k, text: NO_SEAT_TEXT[k.reason] })),
+        unchanged: plan.unchanged,
+        unslotted: plan.unslotted,
+        ops: plan.ops,
+      };
+    },
+
     async analyseWall(wallId, { toolId } = {}) {
       const { wall } = await options.store.get(wallId);
       const asked =

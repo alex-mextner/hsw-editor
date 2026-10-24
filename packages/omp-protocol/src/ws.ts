@@ -416,6 +416,7 @@ export const HSW_TOOL_NAMES = [
   'wall_bank_search',
   'wall_tools_search',
   'wall_add_tool',
+  'wall_seat_tools',
   'wall_select',
   'wall_view',
   'wall_request_input',

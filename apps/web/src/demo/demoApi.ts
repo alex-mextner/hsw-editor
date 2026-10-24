@@ -1,7 +1,8 @@
 /** The wall API of the demo build: one bundled wall, read-only. Same shape as the daemon client so `WallSync` is unchanged. */
 import type { HolderSpec } from '@hsw-editor/compat';
-import type { Wall } from '@hsw-editor/core';
+import { applyOp, LeafOpSchema, type Wall } from '@hsw-editor/core';
 import { TOOL_ASSET_INDEX_URL, ToolAssetIndexSchema } from '@hsw-editor/tools/contract';
+import { z } from 'zod';
 import { ApiError } from '@/api/http.ts';
 import type { OpResponse, WallResponse, WallSummary } from '@/api/schemas.ts';
 import { t } from '@/i18n/index.ts';
@@ -10,7 +11,16 @@ import { SHOWCASE_LAYOUT } from './showcaseLayout.ts';
 
 export const DEMO_WALL_ID = 'demo';
 
-/** The demo wall: the showcase holders with generated tools hanging in them (`showcase.ts`), built once from the bank and tool indexes the build ships. */
+/** Where the build ships the ops that seat the showcase tools (`scripts/tools/demo-assets.ts`). */
+export const DEMO_SEATS_URL = '/api/demo/seats';
+
+const DemoSeatsSchema = z.object({ ops: z.array(LeafOpSchema) });
+
+/**
+ * The demo wall: the showcase holders with generated tools hanging in them (`showcase.ts`), built once from the bank and tool
+ * indexes the build ships, then seated: the tools rest in their holders at the poses the build computed, so the physics check has
+ * nothing to flag on a wall that is the product's own showcase.
+ */
 let demoWall: Promise<Wall> | null = null;
 
 interface DemoBankElement {
@@ -21,9 +31,10 @@ interface DemoBankElement {
 }
 
 async function buildDemoWall(): Promise<Wall> {
-  const [bank, tools] = await Promise.all([
+  const [bank, tools, seats] = await Promise.all([
     fetchJson('/api/bank/index'),
     fetchJson(TOOL_ASSET_INDEX_URL),
+    fetchJson(DEMO_SEATS_URL),
   ]);
   const index = ToolAssetIndexSchema.parse(tools);
   const specs = new Map<string, HolderSpec>(
@@ -37,8 +48,15 @@ async function buildDemoWall(): Promise<Wall> {
       },
     ]),
   );
-  return buildShowcaseWall(DEMO_WALL_ID, 'Demo wall (read-only)', SHOWCASE_LAYOUT, specs, index)
-    .wall;
+  const { wall } = buildShowcaseWall(
+    DEMO_WALL_ID,
+    'Demo wall (read-only)',
+    SHOWCASE_LAYOUT,
+    specs,
+    index,
+  );
+  const { ops } = DemoSeatsSchema.parse(seats);
+  return ops.length === 0 ? wall : applyOp(wall, { type: 'batch', label: 'seat all', ops }).wall;
 }
 
 async function fetchJson(url: string): Promise<unknown> {

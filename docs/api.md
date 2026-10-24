@@ -271,6 +271,8 @@ board part is an obstacle at its own pose. Read-only; `manifold-3d` is loaded on
 | --- | --- |
 | `GET /api/walls/:id/physics` | `WallPhysicsView` of the whole wall |
 | `GET /api/walls/:id/items/:itemId/physics` | the same for one tool (`tools` has one entry; the other tools stay in its way) |
+| `GET /api/walls/:id/items/:itemId/seat` | `SeatProposalView`: where one hung tool rests in the real mesh of its holder (below) |
+| `GET /api/walls/:id/seat` | `WallSeatView`: the seat of every hung tool, with the ops that apply them (below) |
 
 ```ts
 WallPhysicsView = {
@@ -304,6 +306,49 @@ box preset of a class without a generator), `no_physics` (the model carries no m
 
 Errors: `404 wall_not_found`, `404 item_not_found` (unknown `:itemId`), `409 not_a_hung_tool` (the item is not a tool, or
 the tool was not analysed: `details.reason` is the `skipped` reason), `400 invalid_id`, `405 method_not_allowed`.
+
+### Seating
+
+A tool added through the API, the CLI or the agent is hung at the compatibility pose (one point of the tool on the slot
+anchor), which can float above the holder or sink into it, so the physics flags it `levitating` / `penetrates`. The editor
+lowers such a tool into the real holder mesh with `seatTool` as a second undo step; the seat routes give any client the same
+answer without a browser. They use the editor's own slot, window and neighbours (`isUpright`, `slotHalfWidthMm`, `wallSlot` of
+`@hsw-editor/compat`, `seatSlotInput` / `planSeatAll` of `@hsw-editor/physics`), judge the tool on the holder named by its
+`parentId` in its own `slot`, and **never write**: apply the poses as ordinary ops with the `baseRev` the answer carries.
+
+```ts
+// GET /api/walls/:id/items/:itemId/seat
+{
+  wallId, rev, toolId,
+  seat: {
+    toolId, holderId, slot,
+    pose: Pose,         // where it rests: apply as rotateItem (rotX, rotY, rotZ) then moveItem (x, y, z)
+    from: Pose,         // where it is now
+    changed: boolean,   // pose differs from `from`
+    status: 'stable' | 'marginal' | 'unstable', score: number,  // how it hangs there
+  } | null,
+  reason: { code, text } | null,  // set when seat is null
+}
+// GET /api/walls/:id/seat
+{
+  wallId, rev,
+  seats: Seat[],      // tools that move
+  kept: [{ toolId, reason, text }],  // hung tools with no seat
+  unchanged: string[],  // already rest where the physics puts them
+  unslotted: string[],  // hung without a slot number: left to the user
+  ops: LeafOp[],      // rotate + move per tool in `seats`: apply as ONE batch labelled `seat all`
+}
+```
+
+`reason.code` is `no_holder` (no `parentId`), `holder_missing` (not a holder of this wall or no model in the bank), `no_model`,
+`no_physics` (as in `skipped`), `no_slot` (hung without a slot number: left to the user), `holder_refuses` (the holder does not take the tool in that slot: compatibility, or no such slot),
+`holder_not_upright` (seating lowers a tool straight down, so a rotated holder is not seated) or `no_seat` (nothing holds the
+tool). The whole-wall pass seats the tools one after the other, each against the poses of the ones already done (a second look
+at the seated ones when some tool did not move), like the editor's Seat tools command. Locked tools and tools on no holder are
+not touched and appear in none of the lists. Errors as above.
+
+The agent applies these for you: `wall_add_tool` seats the tool it hangs (second undo step) and `wall_seat_tools` seats the
+whole wall ([omp.md](omp.md)); the CLI is `hsw-editor wall seat <id> [--item ID] [--apply]`.
 
 ## Jobs
 

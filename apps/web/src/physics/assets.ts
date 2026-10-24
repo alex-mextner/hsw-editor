@@ -10,17 +10,13 @@ import type { BankElement } from '@hsw-editor/bank';
 import {
   compatibility,
   type Compatibility,
-  type HolderSpec,
-  eulerToMatrix,
-  matchedEntry,
   type MountSlot,
-  mountSlots,
-  prefersTipDown,
-  slotWorldPosition,
+  slotsOf,
   type ToolInterface,
+  type WallSlot,
 } from '@hsw-editor/compat';
 import type { Pose, Wall, WallItem } from '@hsw-editor/core';
-import { defaultLoadCapacityG } from '@hsw-editor/physics';
+import { loadLimitG, seatSlotInput } from '@hsw-editor/physics';
 import { bankRoutes } from '@/bank/client.ts';
 import { resolveModel } from '@/bank/models.ts';
 import { itemBounds } from '@/scene/itemBounds.ts';
@@ -75,13 +71,6 @@ function solidOf(
   return { id: item.id, bodyKey: model.key, pose: item.pose };
 }
 
-/** What a holder's slot carries for a tool: the bank's number for the matched entry, else the category default. */
-export function loadLimitG(tool: ToolInterface | undefined, holder: HolderSpec): number {
-  const compat = tool === undefined ? null : compatibility(tool, holder);
-  const entry = compat === null ? null : matchedEntry(holder, compat);
-  return entry?.maxLoadG ?? defaultLoadCapacityG(holder.category);
-}
-
 /** The whole wall as the physics sees it. Items without a usable model are left out (tools are reported by the worker). */
 export function buildPhysicsScene(wall: Wall, ctx: AssetContext): SceneBuild {
   const sources = new Map<string, BodySource>();
@@ -113,15 +102,6 @@ export function buildPhysicsScene(wall: Wall, ctx: AssetContext): SceneBuild {
 
 // ---- seating --------------------------------------------------------------------------------------
 
-/** Half the slot pitch, capped: a tool is lowered at most this far either side of the slot centre (mm). */
-const MAX_SLOT_HALF_WIDTH_MM = 14;
-
-/** Seating lowers a tool straight down in the holder's own frame: only an upright holder is seated. */
-export function isUpright(pose: Pose): boolean {
-  const turn = ((pose.rotZ % 360) + 360) % 360;
-  return Math.abs(pose.rotX) < 0.5 && Math.abs(pose.rotY) < 0.5 && (turn < 0.5 || turn > 359.5);
-}
-
 /** A slot of a holder a tool could be seated in. */
 export interface SlotTarget {
   readonly holder: PlacedBody;
@@ -134,27 +114,15 @@ export interface SlotTarget {
 
 /** Candidate of `RankRequest` for one slot; null when the holder is not upright (it keeps the compat pose). */
 export function seatCandidate(target: SlotTarget, tool: ToolInterface): SeatCandidate | null {
-  const pose = target.holder.pose;
-  if (!isUpright(pose)) return null;
-  const width = target.element.bboxMm.max.x - target.element.bboxMm.min.x;
-  const anchor = slotWorldPosition(target.slot, pose, eulerToMatrix(pose));
-  return {
-    holder: target.holder,
-    anchor,
-    halfWidthMm: Math.min(width / Math.max(1, target.slots) / 2, MAX_SLOT_HALF_WIDTH_MM),
-    tipDown: prefersTipDown(tool),
-    compatScore: target.compat.score,
-    maxLoadG: loadLimitG(tool, target.element),
-  };
-}
-
-/** Slots a holder element offers for a compatibility result. */
-export function slotsOf(
-  element: BankElement,
-  compat: Compatibility,
-): { slots: MountSlot[]; count: number } {
-  const slots = mountSlots(element, matchedEntry(element, compat));
-  return { slots, count: slots.length };
+  const input = seatSlotInput(
+    target.holder.pose,
+    target.element,
+    target.slot,
+    target.slots,
+    target.compat,
+    tool,
+  );
+  return input === null ? null : { holder: target.holder, ...input };
 }
 
 export interface RankPlan {
@@ -199,40 +167,6 @@ function nearbyBodies(
   return out;
 }
 
-/** A slot of a holder that is on the wall. */
-export interface WallSlot {
-  readonly holderItem: WallItem;
-  readonly element: BankElement;
-  readonly compat: Compatibility;
-  readonly slot: MountSlot;
-}
-
-/**
- * The slot `toolItem` takes (or would take) in `holderItem`: `wanted` when given, else the first slot nobody else uses.
- * Null when the holder does not take the tool or has no such slot.
- */
-export function wallSlot(
-  wall: Wall,
-  toolItem: WallItem,
-  holderItem: WallItem,
-  element: BankElement,
-  tool: ToolInterface,
-  wanted?: number,
-): WallSlot | null {
-  const others = wall.items.filter(
-    (item) => item.kind === 'tool' && item.parentId === holderItem.id && item.id !== toolItem.id,
-  );
-  const compat = compatibility(tool, element, { occupied: others.length });
-  if (!compat.ok) return null;
-  const taken = new Set(others.flatMap((other) => (other.slot === undefined ? [] : [other.slot])));
-  const { slots } = slotsOf(element, compat);
-  const slot =
-    wanted === undefined
-      ? slots.find((s) => !taken.has(s.index))
-      : slots.find((s) => s.index === wanted);
-  return slot === undefined ? null : { holderItem, element, compat, slot };
-}
-
 /**
  * Request that seats `toolItem` in each of `slots` (slots of holders that are on the wall), with everything near as
  * obstacles. Null when the tool has no model or no slot is seatable.
@@ -241,7 +175,7 @@ export function planWallRank(
   wall: Wall,
   ctx: AssetContext,
   toolItem: WallItem,
-  slots: readonly WallSlot[],
+  slots: readonly WallSlot<BankElement>[],
   removal: boolean,
 ): RankPlan | null {
   const model = ctx.toolModel(toolItem);

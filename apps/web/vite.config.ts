@@ -10,7 +10,8 @@ import { pwaPluginOptions } from './src/pwa/pluginOptions.ts';
 /**
  * Demo build (`VITE_HSW_DEMO=1`, GitHub Pages): the committed seed bank is copied next to the app at the URLs the daemon would
  * serve (`/api/bank/index`, `/api/bank/search-index`, `/bank/assets/...`), so the bank browser needs no code path of its own.
- * The tool models of the showcase wall are copied the same way (`/api/tools/assets/index`, `/tools/assets/glb/...`).
+ * The tool models of the showcase wall are copied the same way (`/api/tools/assets/index`, `/tools/assets/glb/...`), with the
+ * poses that seat its tools (`/api/demo/seats`).
  */
 function demoSeedBank() {
   const seed = fileURLToPath(new URL('../../packages/bank/seed', import.meta.url));
@@ -26,13 +27,16 @@ function demoSeedBank() {
       }
       // Generated tool models of the showcase wall (`bun scripts/tools/demo-assets.ts`, run by `bun run build`).
       const tools = fileURLToPath(new URL('./.generated/tools-assets', import.meta.url));
-      if (!existsSync(`${tools}/index.json`)) {
+      if (!existsSync(`${tools}/index.json`) || !existsSync(`${tools}/seats.json`)) {
         throw new Error(
           'demo build: run `bun scripts/tools/demo-assets.ts` first (tool model assets are missing)',
         );
       }
       mkdirSync(`${out}/api/tools/assets`, { recursive: true });
       cpSync(`${tools}/index.json`, `${out}/api/tools/assets/index`);
+      // The poses that seat the showcase tools in their holders (the demo has no daemon to do it).
+      mkdirSync(`${out}/api/demo`, { recursive: true });
+      cpSync(`${tools}/seats.json`, `${out}/api/demo/seats`);
       cpSync(`${tools}/glb`, `${out}/tools/assets/glb`, { recursive: true });
     },
   };

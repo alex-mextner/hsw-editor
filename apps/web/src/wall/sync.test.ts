@@ -377,16 +377,23 @@ describe('demo API (read-only)', () => {
     const tools = showcaseToolIndex(
       SHOWCASE_LAYOUT.flatMap((holder) => holder.tools.map((tool) => tool.classId)),
     );
-    installFetch((url) =>
-      url === '/api/bank/index'
-        ? new Response(seed, { headers: { 'content-type': 'application/json' } })
-        : Response.json(tools),
-    );
+    installFetch((url) => {
+      if (url === '/api/bank/index')
+        return new Response(seed, { headers: { 'content-type': 'application/json' } });
+      // One seat op: the demo applies what the build computed on top of the showcase wall it builds.
+      if (url === '/api/demo/seats')
+        return Response.json({
+          ops: [{ type: 'rotateItem', id: 'sc-drivers-t0', rotX: 0, rotY: 0, rotZ: 180 }],
+        });
+      return Response.json(tools);
+    });
     const { demoApi } = await import('@/demo/demoApi.ts');
     const sync = new WallSync('demo', demoApi, ME);
     await sync.load();
     const before = sync.getSnapshot().wall?.rev;
     expect(before).toBeGreaterThan(0);
+    const seated = sync.getSnapshot().wall?.items.find((item) => item.id === 'sc-drivers-t0');
+    expect(seated?.pose.rotZ).toBe(180);
     sync.submit([{ type: 'rename', name: 'Mine' }]);
     await sync.idle();
     const state = sync.getSnapshot();

@@ -13,6 +13,7 @@ export {
   roundTo,
   transpose,
 } from './rotation.ts';
+export * from './seatSlots.ts';
 export {
   type MountSlot,
   type MountStyle,

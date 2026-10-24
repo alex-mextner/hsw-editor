@@ -4,17 +4,10 @@
  * the real holder mesh (`seatTool`, in the worker, 0.1-1 s) and one more undo step moves the tool to where it rests.
  * The pointer is never blocked: the drag/drop preview stays on `placeTool`.
  */
-import {
-  applyOp,
-  type BatchOp,
-  type LeafOp,
-  type Op,
-  type Pose,
-  type Wall,
-  type WallItem,
-} from '@hsw-editor/core';
-import type { HangReport } from '@hsw-editor/physics';
-import { type AssetContext, planWallRank, wallSlot } from './assets.ts';
+import { wallSlot } from '@hsw-editor/compat';
+import type { Op, Pose, Wall, WallItem } from '@hsw-editor/core';
+import { type HangReport, planSeatAll, samePose, seatOps } from '@hsw-editor/physics';
+import { type AssetContext, planWallRank } from './assets.ts';
 import type { PhysicsRanker } from './client.ts';
 
 /** What the post-steps need from the editor; `livePostStepDeps` binds them to the stores, tests pass fakes. */
@@ -73,35 +66,10 @@ export async function seatToolInHolder(
     : { pose: best.seat.pose, report: best.seat.report, slot: target.slot.index };
 }
 
-/** The undo step that puts a tool on its seated pose (rotate, then move; the slot stays). */
-export function seatOps(toolId: string, pose: Pose): BatchOp {
-  return {
-    type: 'batch',
-    label: 'seat',
-    ops: [
-      { type: 'rotateItem', id: toolId, rotX: pose.rotX, rotY: pose.rotY, rotZ: pose.rotZ },
-      { type: 'moveItem', id: toolId, to: { x: pose.x, y: pose.y, z: pose.z } },
-    ],
-  };
-}
-
 /** A seat is never fatal: the compatibility pose stays and the check flags it. */
 export function warnSeatFailed(toolId: string, error: unknown): void {
   console.warn(
     `[physics] seat of ${toolId} failed: ${error instanceof Error ? error.message : String(error)}`,
-  );
-}
-
-const SAME_POSE_MM = 0.01;
-
-export function samePose(a: Pose, b: Pose): boolean {
-  return (
-    Math.abs(a.x - b.x) < SAME_POSE_MM &&
-    Math.abs(a.y - b.y) < SAME_POSE_MM &&
-    Math.abs(a.z - b.z) < SAME_POSE_MM &&
-    Math.abs(a.rotX - b.rotX) < SAME_POSE_MM &&
-    Math.abs(a.rotY - b.rotY) < SAME_POSE_MM &&
-    Math.abs(a.rotZ - b.rotZ) < SAME_POSE_MM
   );
 }
 
@@ -192,78 +160,14 @@ export async function seatAllTools(deps: PostStepDeps): Promise<SeatAllOutcome> 
     stale: false,
   };
   if (start === null || !deps.enabled()) return empty;
-  let local = start;
-  const seated: string[] = [];
-  const unchanged: string[] = [];
-  const kept: string[] = [];
-  const unslotted: string[] = [];
-  // A tool is seated among the holders and the tools already dealt with. Tools still waiting hang at the poses the wall
-  // was built with (often sunk into their holders), which would only block the slots the physics is about to use.
-  // Tools that will not move are real obstacles from the start, not ones that are still waiting: locked ones and ones
-  // without a slot number (their slot is anybody's guess, they are left to the user).
-  const fixed = (i: WallItem): boolean => i.locked || i.slot === undefined;
-  const waiting = new Set(
-    start.items
-      .filter((i) => i.kind === 'tool' && i.parentId !== undefined && !fixed(i))
-      .map((i) => i.id),
+  const { ops, seated, unchanged, kept, unslotted } = await planSeatAll(
+    start,
+    async (item, view) =>
+      (await seatToolInHolder(item.id, item.parentId, { ...deps, wall: () => view }, item.slot))
+        ?.pose ?? null,
+    warnSeatFailed,
   );
-  const view = (current: string): PostStepDeps => ({
-    ...deps,
-    wall: () => ({
-      ...local,
-      items: local.items.filter((i) => i.id === current || !waiting.has(i.id)),
-    }),
-  });
-  for (const item of start.items) {
-    if (item.kind !== 'tool' || item.parentId === undefined || item.locked) continue;
-    if (item.slot === undefined) {
-      unslotted.push(item.id);
-      continue;
-    }
-    waiting.delete(item.id);
-    let seat: SeatOutcome | null = null;
-    try {
-      seat = await seatToolInHolder(item.id, item.parentId, view(item.id), item.slot);
-    } catch (error) {
-      warnSeatFailed(item.id, error);
-    }
-    if (seat === null) {
-      kept.push(item.id);
-    } else if (samePose(seat.pose, item.pose)) {
-      unchanged.push(item.id);
-    } else {
-      local = applyOp(local, seatOps(item.id, seat.pose)).wall;
-      seated.push(item.id);
-    }
-  }
-  // Tools that did not move (or could not be seated) were hidden from the ones seated before them: now that every pose
-  // is known, each seated tool looks once more at all of them and settles again if one is in its way.
-  if (seated.length > 0 && (unchanged.length > 0 || kept.length > 0)) {
-    for (const id of seated) {
-      const item = local.items.find((candidate) => candidate.id === id);
-      if (item === undefined || item.parentId === undefined || item.slot === undefined) continue;
-      let again: SeatOutcome | null = null;
-      try {
-        again = await seatToolInHolder(id, item.parentId, view(id), item.slot);
-      } catch (error) {
-        warnSeatFailed(id, error);
-      }
-      if (again === null || samePose(again.pose, item.pose)) continue;
-      local = applyOp(local, seatOps(id, again.pose)).wall;
-    }
-  }
-  // What is applied is the difference between where each tool started and where the passes left it: a tool the second
-  // pass put back where it began is no move at all.
-  const moved = seated.filter((id) => {
-    const from = start.items.find((candidate) => candidate.id === id)?.pose;
-    const to = local.items.find((candidate) => candidate.id === id)?.pose;
-    return from !== undefined && to !== undefined && !samePose(from, to);
-  });
-  const ops: LeafOp[] = moved.flatMap((id) => {
-    const to = local.items.find((candidate) => candidate.id === id)?.pose;
-    return to === undefined ? [] : seatOps(id, to).ops;
-  });
-  if (ops.length === 0) return { seated: moved, unchanged, kept, unslotted, stale: false };
+  if (ops.length === 0) return { seated, unchanged, kept, unslotted, stale: false };
   // Anything that touched the wall meanwhile (the user kept editing) makes these poses stale: apply none of them.
   const now = deps.wall();
   if (now?.id !== start.id || now.rev !== start.rev) {
@@ -271,8 +175,8 @@ export async function seatAllTools(deps: PostStepDeps): Promise<SeatAllOutcome> 
   }
   // Switched off while the worker was busy: the setting means no seating at all.
   if (!deps.enabled()) return { seated: [], unchanged, kept, unslotted, stale: false };
-  const applied = deps.submit([{ type: 'batch', label: 'seat all', ops }], 'seat all');
+  const applied = deps.submit([{ type: 'batch', label: 'seat all', ops: [...ops] }], 'seat all');
   return applied
-    ? { seated: moved, unchanged, kept, unslotted, stale: false }
+    ? { seated, unchanged, kept, unslotted, stale: false }
     : { seated: [], unchanged, kept, unslotted, stale: true };
 }

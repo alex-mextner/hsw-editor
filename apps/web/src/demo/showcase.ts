@@ -19,7 +19,7 @@ import {
 } from '@hsw-editor/core';
 import type { ToolAssetEntry, ToolAssetIndex } from '@hsw-editor/tools/contract';
 import type { ShowcaseHolder } from './showcaseLayout.ts';
-import { toolInterfaceFromHolding } from '@/toolmodels/holdingInterface.ts';
+import { toolInterfaceFromHolding } from '../toolmodels/holdingInterface.ts';
 
 export interface ShowcaseResult {
   readonly wall: Wall;

@@ -1,4 +1,4 @@
-"""``hsw-editor wall ...``: list, new, show, apply, undo, redo, export, physics, delete (all via the daemon's HTTP API)."""
+"""``hsw-editor wall ...``: list, new, show, apply, undo, redo, export, physics, seat, delete (all via the daemon's HTTP API)."""
 
 from __future__ import annotations
 
@@ -70,6 +70,16 @@ def add_wall_parser(subs: Any) -> None:
     )
     physics.add_argument("id")
     physics.add_argument("--item", help="analyse only this tool item (the others stay in its way)")
+
+    seat = verb(
+        "seat",
+        "where the hung tools rest in their holders; --apply seats them as one undoable step",
+        wall_seat,
+    )
+    seat.add_argument("id")
+    seat.add_argument("--item", help="only this tool item (in its own slot)")
+    seat.add_argument("--apply", action="store_true", help="write the proposed poses (nothing is written without it)")
+    seat.add_argument("--actor", default="cli", help="who edits: human|agent|cli, optionally kind:name (default cli)")
 
     delete = verb("delete", "move a wall to the trash (walls/.trash/, recoverable by hand)", wall_delete)
     delete.add_argument("id")
@@ -206,6 +216,64 @@ def wall_physics(args: argparse.Namespace, api: Api) -> int:
     for skipped in data["skipped"]:
         print(f"{skipped['toolId']}  skipped: {skipped['reason']}")
     return 0
+
+
+def wall_seat(args: argparse.Namespace, api: Api) -> int:
+    wall = quote(args.id, safe="")
+    if args.item is not None:
+        data = api.request("GET", f"/api/walls/{wall}/items/{quote(args.item, safe='')}/seat")
+        seat = data["seat"]
+        ops = _seat_ops(args.item, seat["pose"]) if seat is not None and seat["changed"] else []
+        label = f"seat {args.item}"
+    else:
+        data = api.request("GET", f"/api/walls/{wall}/seat")
+        ops = data["ops"]
+        label = "seat all"
+    applied: dict[str, Any] | None = None
+    if args.apply and ops:
+        body = {"ops": [{"type": "batch", "label": label, "ops": ops}], "baseRev": data["rev"], "label": label}
+        body["actor"] = _parse_actor(args.actor)
+        applied = api.request("POST", f"/api/walls/{wall}/ops", body)
+    if args.json:
+        return _dump({"proposal": data, "applied": applied} if args.apply else data)
+    if args.item is not None:
+        if data["seat"] is None:
+            print(f"{args.item}  no seat: {data['reason']['text']}")
+        else:
+            seat = data["seat"]
+            pose = seat["pose"]
+            moved = "moves to" if seat["changed"] else "already rests at"
+            print(
+                f"{args.item}  slot {seat['slot']} of {seat['holderId']}: {moved} "
+                f"x={pose['x']:.1f} y={pose['y']:.1f} z={pose['z']:.1f} rot={pose['rotX']:g},{pose['rotY']:g},{pose['rotZ']:g} "
+                f"({seat['status']}, score {seat['score']:.2f})"
+            )
+    else:
+        print(
+            f"{args.id}  rev {data['rev']}  {len(data['seats'])} to seat, {len(data['unchanged'])} already seated, "
+            f"{len(data['kept'])} without a seat, {len(data['unslotted'])} without a slot"
+        )
+        if data["seats"]:
+            rows = [("TOOL", "HOLDER", "SLOT", "STATUS", "SCORE")]
+            for seat in data["seats"]:
+                rows.append((seat["toolId"], seat["holderId"], str(seat["slot"]), seat["status"], f"{seat['score']:.2f}"))
+            _table(rows)
+        for kept in data["kept"]:
+            print(f"{kept['toolId']}  no seat: {kept['text']}")
+        for tool in data["unslotted"]:
+            print(f"{tool}  left alone: hung without a slot number")
+    if applied is not None:
+        print(f"applied as rev {applied['rev']} ({label}); undo with: hsw-editor wall undo {args.id}")
+    elif ops:
+        print("nothing written; add --apply to seat them")
+    return 0
+
+
+def _seat_ops(tool: str, pose: dict[str, float]) -> list[dict[str, Any]]:
+    return [
+        {"type": "rotateItem", "id": tool, "rotX": pose["rotX"], "rotY": pose["rotY"], "rotZ": pose["rotZ"]},
+        {"type": "moveItem", "id": tool, "to": {"x": pose["x"], "y": pose["y"], "z": pose["z"]}},
+    ]
 
 
 def wall_delete(args: argparse.Namespace, api: Api) -> int:
