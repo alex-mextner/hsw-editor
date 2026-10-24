@@ -5,6 +5,7 @@
  */
 import { defineCommand, type Command } from '@hsw-editor/commands';
 import { z } from 'zod';
+import type { AddLibraryToolResult } from '@/features/tools/actions.ts';
 import { msg } from './messages.ts';
 
 export type PanelKey = 'bank' | 'inspector' | 'history' | 'agent';
@@ -60,8 +61,8 @@ export interface EditorActions {
   readonly openToolPhotoWizard: () => void;
   /** Shows the library filtered by `query` (ru/en words). */
   readonly searchToolLibrary: (query: string) => void;
-  /** Adds a library tool by entry key (`class:<id>`, `tool:<id>`) or bare id; the new item id, or null. */
-  readonly addLibraryTool: (id: string) => string | null;
+  /** Adds a library tool by entry key (`class:<id>`, `tool:<id>`) or bare id; the new item id, or why nothing was added. */
+  readonly addLibraryTool: (id: string) => AddLibraryToolResult;
   /** Undoes edits until the wall is at `rev`; resolves to the number of undo steps taken. */
   readonly undoToRevision: (rev: number) => Promise<number>;
   readonly resetSettings: () => void;
@@ -594,9 +595,11 @@ export function createEditorCommands(actions: EditorActions): readonly Command[]
       when: 'hasWall',
       args: idArgs,
       mutates: true,
-      handler: ({ id }) => ({
-        itemId: requireSome(actions.addLibraryTool(id), `cannot add library tool '${id}'`),
-      }),
+      handler: ({ id }) => {
+        const result = actions.addLibraryTool(id);
+        if (!result.ok) throw new Error(`cannot add library tool '${id}': ${result.reason}`);
+        return { itemId: result.itemId };
+      },
     }),
     defineCommand({
       id: 'history.undoTo',

@@ -68,7 +68,7 @@ function recordingActions(): { actions: EditorActions; calls: string[] } {
     showToolLibrary: () => undefined,
     openToolPhotoWizard: () => undefined,
     searchToolLibrary: () => undefined,
-    addLibraryTool: () => 'new-item',
+    addLibraryTool: () => ({ ok: true, itemId: 'new-item' }),
     undoToRevision: async () => 0,
     resetSettings: record('resetSettings'),
   };

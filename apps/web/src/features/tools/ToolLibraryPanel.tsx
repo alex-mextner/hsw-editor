@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button.tsx';
 import { useI18n } from '@/i18n/index.ts';
 import { cn } from '@/lib/cn.ts';
 import { useStore } from '@/state/react.ts';
-import { addLibraryTool, beginLibraryDrag, endLibraryDrag } from './actions.ts';
+import { ADD_FAILURE_KEY, addLibraryTool, beginLibraryDrag, endLibraryDrag } from './actions.ts';
 import {
   buildEntries,
   createLibrarySearch,
@@ -76,7 +76,7 @@ export function ToolLibraryPanel() {
       const name = entryName(entry, locale);
       const result = addLibraryTool(entry, locale);
       if (result.ok) show({ tone: 'ok', text: t('toolLib.notice.added', { name }) });
-      else show({ tone: 'error', text: t(result.reason === 'noWall' ? 'toolLib.notice.noWall' : 'toolLib.notice.failed') });
+      else show({ tone: 'error', text: t(ADD_FAILURE_KEY[result.reason]) });
     },
     [locale, show, t],
   );
