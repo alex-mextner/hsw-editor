@@ -25,8 +25,8 @@ import {
   type ParamValues,
   type ToolClassInfo,
 } from './api.ts';
-import type { AddToolFailure } from '@/wall/actions.ts';
-import { ADD_FAILURE_KEY, addLibraryTool } from './actions.ts';
+import { ADD_FAILURE_KEY, type AddToolFailure } from '@/wall/actions.ts';
+import { addLibraryTool } from './actions.ts';
 import { useClassHolding, useDebouncedValue, useToolHolding } from './hooks.ts';
 import { HoldingSection } from './HoldingSection.tsx';
 import { buildEntries, entryName, type LibraryEntry } from './model.ts';

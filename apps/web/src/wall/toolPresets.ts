@@ -3,9 +3,7 @@
  * A preset becomes a `tool` item backed by a file-less ModelRef, drawn as a proportional box until a
  * better reference model is found; the user then edits the dimensions and picks a holder for it.
  */
-import { toolDraftOps, type ToolDraft } from '@hsw-editor/compat';
 import type { Wall, WallItem } from '@hsw-editor/core';
-import type { ToolClass } from '@hsw-editor/bank';
 import { defaultDimsOfTool } from '@/toolmodels/resolve.ts';
 import { paramsDraftFor } from '@/widgets/draft.ts';
 
@@ -61,15 +59,6 @@ const GENERIC: Dims3 = { x: 40, y: 150, z: 30 };
 
 export function presetDims(toolClassId: string): Dims3 {
   return PRESET_DIMS[toolClassId] ?? GENERIC;
-}
-
-/** Ops that add `toolClass` as a tool item at (xMm, yMm) hovering in front of the wall. */
-export function toolPresetOps(
-  toolClass: ToolClass,
-  label: string,
-  position: { readonly x: number; readonly y: number },
-): ToolDraft {
-  return toolDraftOps(toolClass.id, label, position, presetDims(toolClass.id));
 }
 
 /** Names of the item params that override a tool's reference dimensions (mm). */

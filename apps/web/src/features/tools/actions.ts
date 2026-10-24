@@ -4,7 +4,7 @@
  * refused and is filtered in the bank exactly like any other tool.
  */
 import { beginToolDrag, endToolDrag, type ToolDragPayload } from '@/scene/toolDrop.ts';
-import { addToolFromPayload, type AddToolFailure, type AddToolResult } from '@/wall/actions.ts';
+import { addToolFromPayload, type AddToolResult } from '@/wall/actions.ts';
 import type { Locale } from '@/i18n/index.ts';
 import { measuredDimensions } from '@hsw-editor/compat';
 import { buildEntries, entryName, type LibraryEntry } from './model.ts';
@@ -22,14 +22,6 @@ export function payloadOf(entry: LibraryEntry, locale: Locale): ToolDragPayload 
     ...(entry.kind === 'tool' ? { customToolId: entry.id } : { generatorClass: entry.id }),
   };
 }
-
-/** Message key (Tools panel notice) per reason a tool was not added. */
-export const ADD_FAILURE_KEY = {
-  noWall: 'toolLib.notice.noWall',
-  bankNotReady: 'toolLib.notice.bankNotReady',
-  noRoom: 'toolLib.notice.noRoom',
-  failed: 'toolLib.notice.failed',
-} as const satisfies Record<AddToolFailure, string>;
 
 /** Hangs the tool on the nearest free compatible holder, else puts it on a clear spot of the board, and selects it. */
 export function addLibraryTool(entry: LibraryEntry, locale: Locale): AddToolResult {

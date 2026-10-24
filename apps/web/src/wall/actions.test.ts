@@ -1,8 +1,10 @@
 import { afterAll, afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import type { ToolClass } from '@hsw-editor/bank';
 import { makeElement } from '@hsw-editor/bank/testing';
 import {
   applyOp,
   cellCenter,
+  checkWall,
   createEmptyWall,
   DEFAULT_BOARD,
   type Op,
@@ -50,7 +52,7 @@ mock.module('@/physics/postStep.ts', () => ({
   },
 }));
 
-const { addToolFromPayload, deleteSelection, nudgeSelection, rotateSelection } =
+const { addToolFromPayload, addToolPreset, deleteSelection, nudgeSelection, rotateSelection } =
   await import('./actions.ts');
 const { editorStore, setSelection } = await import('@/state/editor.ts');
 const { toastStore } = await import('@/features/notices/notices.ts');
@@ -306,6 +308,85 @@ describe('addToolFromPayload', () => {
     if (!result.ok) throw new Error(`expected an add, got ${result.reason}`);
     expect(item(afterSubmit(wall), result.itemId).parentId).toBeUndefined();
     expect(seated).toEqual([]);
+  });
+});
+
+const SCREWDRIVER_CLASS: ToolClass = {
+  id: 'screwdriver',
+  name: { ru: 'Отвёртка', en: 'Screwdriver' },
+  synonyms: { ru: [], en: [] },
+};
+
+describe('addToolPreset', () => {
+  /** Adds `count` presets one after the other, the wall each time being what the previous ones left. */
+  function addInARow(base: Wall, toolClass: ToolClass, count: number): string[] {
+    const ids: string[] = [];
+    for (let n = 0; n < count; n += 1) {
+      open(afterSubmit(base));
+      const id = addToolPreset(toolClass, toolClass.name.en);
+      if (id === null) throw new Error(`preset ${n} was not added`);
+      ids.push(id);
+    }
+    return ids;
+  }
+
+  test('several presets in a row hang on the compatible holder while it has room, the rest lie on distinct clear spots of the board', () => {
+    const base = wallWith([holder('h', 6, 10)]);
+    const ids = addInARow(base, SCREWDRIVER_CLASS, 5);
+    const wall = afterSubmit(base);
+    const added = ids.map((id) => item(wall, id));
+    // the rail takes three: first fitting tool on it, each in its own slot
+    const hung = added.filter((tool) => tool.parentId === 'h');
+    expect(hung).toHaveLength(3);
+    expect(hung.map((tool) => tool.slot).sort()).toEqual([0, 1, 2]);
+    expect(seated.sort()).toEqual(hung.map((tool) => tool.id).sort());
+    // the other two are loose, on distinct spots, inside the board (not the viewport-centre pile)
+    const loose = added.filter((tool) => tool.parentId === undefined);
+    expect(loose).toHaveLength(2);
+    const spots = new Set(loose.map((tool) => `${tool.pose.x},${tool.pose.y}`));
+    expect(spots.size).toBe(2);
+    for (const tool of loose) {
+      expect(tool.pose.x).toBeGreaterThanOrEqual(0);
+      expect(tool.pose.y).toBeGreaterThanOrEqual(0);
+    }
+    expect(submitted.map((entry) => entry.label)).toEqual([
+      'add-and-hang',
+      'add-and-hang',
+      'add-and-hang',
+      'add-tool',
+      'add-tool',
+    ]);
+    // right after adding presets the wall has no out_of_board or overlap warning
+    const codes = checkWall(wall).map((warning) => warning.code);
+    expect(codes).not.toContain('out_of_board');
+    expect(codes).not.toContain('cell_collision');
+  });
+
+  test('presets of a class no holder takes never stack at one point', () => {
+    const base = wallWith([holder('h', 6, 10)]);
+    const pliers: ToolClass = {
+      ...SCREWDRIVER_CLASS,
+      id: 'pliers',
+      name: { ru: 'Плоскогубцы', en: 'Pliers' },
+    };
+    const ids = addInARow(base, pliers, 4);
+    const wall = afterSubmit(base);
+    const spots = new Set(ids.map((id) => `${item(wall, id).pose.x},${item(wall, id).pose.y}`));
+    expect(spots.size).toBe(4);
+    expect(seated).toEqual([]);
+  });
+
+  test('with no wall open it adds nothing and is silent (the caller says the wall is missing)', () => {
+    expect(addToolPreset(SCREWDRIVER_CLASS, 'Screwdriver')).toBeNull();
+    expect(submitted).toHaveLength(0);
+    expect(toastStore.get()).toEqual([]);
+  });
+
+  test('a refusal is a toast, not a silent null', () => {
+    open(wallWith([]));
+    fakeBank.set({ status: 'loading' });
+    expect(addToolPreset(SCREWDRIVER_CLASS, 'Screwdriver')).toBeNull();
+    expect(toastStore.get().some((toast) => toast.kind === 'error')).toBe(true);
   });
 });
 
