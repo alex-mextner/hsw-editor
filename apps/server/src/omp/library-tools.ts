@@ -165,10 +165,13 @@ export type MountPick =
   | { readonly ok: true; readonly holderId: string }
   | { readonly ok: false; readonly message: string; readonly verdicts: HolderVerdict[] };
 
+/** The reason of the verdict of a holder whose bank element could not be fetched: what it takes is unknown. */
+export const BANK_ELEMENT_UNAVAILABLE = 'bank element unavailable';
+
 /**
  * The holder a tool hangs on: the one asked for, else the best fit among the wall's holders that take it and have a
- * free slot (highest score; the first on the wall on a tie). A refusal carries one verdict per holder considered.
- * `evaluations` hold only holders whose bank element was found.
+ * free slot (highest score; the first on the wall on a tie). A refusal carries one verdict per holder considered,
+ * including holders whose bank element could not be fetched (`evaluations` hold only the ones it could).
  */
 export function pickMount(
   wall: Wall,
@@ -189,6 +192,19 @@ export function pickMount(
       reasons: evaluation.compat.reasons.map((reason) => reason.code),
     };
   });
+  // A holder the bank could not describe is not an evaluation, but it is a holder the agent should hear about.
+  const evaluated = new Set(evaluations.map((e) => e.holderId));
+  for (const item of wall.items) {
+    if (item.kind !== 'holder' || evaluated.has(item.id)) continue;
+    if (holderId !== undefined && item.id !== holderId) continue;
+    verdicts.push({
+      holderId: item.id,
+      ...(item.bankId !== undefined ? { bankId: item.bankId } : {}),
+      fits: false,
+      freeSlots: 0,
+      reasons: [BANK_ELEMENT_UNAVAILABLE],
+    });
+  }
   if (holderId !== undefined && considered.length === 0) {
     const item = wall.items.find((candidate) => candidate.id === holderId);
     const why =
@@ -211,6 +227,24 @@ export function pickMount(
     if (best === undefined || evaluation.compat.score > best.compat.score) best = evaluation;
   }
   if (best !== undefined) return { ok: true, holderId: best.holderId };
+  const asked = holderId === undefined ? undefined : considered[0];
+  if (asked !== undefined && asked.compat.ok && slot !== undefined) {
+    // The holder takes the tool; the slot asked for is the problem: say whose it is and which slots are free.
+    const occupants = wall.items
+      .filter((item) => item.kind === 'tool' && item.parentId === holderId && item.slot === slot)
+      .map((item) => item.label ?? item.id);
+    const free = asked.freeSlots.map((candidate) => candidate.slot.index);
+    const freeText = free.length === 0 ? 'none free' : `free slots: ${free.join(', ')}`;
+    const why =
+      occupants.length > 0
+        ? `slot ${slot} of holder ${holderId} is taken by ${occupants.join(', ')}`
+        : `holder ${holderId} has no slot ${slot}`;
+    return {
+      ok: false,
+      message: `Holder ${holderId} takes this tool, but ${why} (${freeText}). Ask for one of the free slots or leave slot out.`,
+      verdicts,
+    };
+  }
   return {
     ok: false,
     message:

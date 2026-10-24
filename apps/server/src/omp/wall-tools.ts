@@ -11,13 +11,16 @@ import {
   type HistoryEntry,
   type InputRequest,
   NewInputRequestSchema,
+  type LeafOp,
   type Op,
+  type Pose,
   type Wall,
   type WallResponse,
   OpSchema,
   OpsBodySchema,
 } from '@hsw-editor/core';
 import type { JsonObject, JsonValue, OmpToolResult } from '@hsw-editor/omp-protocol';
+import { seatOps } from '@hsw-editor/physics';
 import { z } from 'zod';
 import type { OmpConfig } from './config.ts';
 import {
@@ -185,6 +188,7 @@ const ViewArgsSchema = z.strictObject({
   maxSidePx: z.number().int().min(200).max(MAX_VIEW_SIDE_PX).default(900),
 });
 const AnalyseHangArgsSchema = z.strictObject({ itemId: z.string().min(1).max(64).optional() });
+const SeatToolsArgsSchema = z.strictObject({});
 const RequestInputArgsSchema = z.strictObject({ request: NewInputRequestSchema });
 const CleanBackgroundArgsSchema = z.strictObject({
   photoId: z.string().min(1).max(64).optional(),
@@ -215,6 +219,38 @@ interface WallPhysicsReply {
   readonly rev?: number;
   readonly tools?: readonly unknown[];
   readonly flagged?: number;
+}
+
+/** `GET /api/walls/:id/items/:itemId/seat`: the slice the add step reads. */
+interface SeatReply {
+  readonly rev: number;
+  readonly seat: {
+    readonly changed: boolean;
+    readonly status: string;
+    readonly score: number;
+    readonly pose: Pose;
+  } | null;
+  readonly reason: { readonly code: string; readonly text: string } | null;
+}
+
+/** `GET /api/walls/:id/seat`: what `wall_seat_tools` applies and reports. */
+interface WallSeatReply {
+  readonly rev: number;
+  readonly seats: readonly {
+    readonly toolId: string;
+    readonly holderId: string;
+    readonly slot: number;
+    readonly status: string;
+    readonly score: number;
+  }[];
+  readonly kept: readonly {
+    readonly toolId: string;
+    readonly reason: string;
+    readonly text: string;
+  }[];
+  readonly unchanged: readonly string[];
+  readonly unslotted: readonly string[];
+  readonly ops: readonly LeafOp[];
 }
 
 export function createWallToolFactory(options: WallToolOptions): ToolFactory {
@@ -352,6 +388,72 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
         },
         signal,
       );
+
+    /** What the second undo step of a `wall_add_tool` did to the tool it just hung. */
+    type SeatStep =
+      | {
+          readonly status: 'seated' | 'already_seated';
+          readonly stability: string;
+          readonly score: number;
+        }
+      | { readonly status: 'not_seated'; readonly reason: string };
+
+    interface AddedState {
+      readonly rev: number;
+      readonly canUndo: boolean;
+      readonly warnings: ApplyResponse['warnings'];
+    }
+
+    /**
+     * The second step of an add: the daemon's seat proposal for the new tool (`GET .../items/:id/seat`, the editor's own
+     * seat search) applied as one more undo step. Never fails the add: the tool stays at its compatibility pose and the
+     * step says why.
+     */
+    async function seatAdded(
+      itemId: string,
+      label: string,
+      added: AddedState,
+      signal: AbortSignal,
+    ): Promise<AddedState & { readonly step: SeatStep }> {
+      const notSeated = (reason: string) => ({
+        ...added,
+        step: { status: 'not_seated', reason } satisfies SeatStep,
+      });
+      const proposal = await api<SeatReply & ApiErrorReply>(
+        'GET',
+        `${wallPath}/items/${encodeURIComponent(itemId)}/seat`,
+        undefined,
+        signal,
+      );
+      if (proposal.status !== 200)
+        return notSeated(
+          `no seat proposal (${proposal.body.error?.code ?? `http_${proposal.status}`}); run wall_seat_tools`,
+        );
+      const { seat, reason } = proposal.body;
+      if (seat === null) return notSeated(reason?.text ?? 'no seat exists for this tool');
+      const rounded = Math.round(seat.score * 100) / 100;
+      if (!seat.changed) {
+        return {
+          ...added,
+          step: { status: 'already_seated', stability: seat.status, score: rounded },
+        };
+      }
+      const applied = await postOps(
+        [seatOps(itemId, seat.pose)],
+        { baseRev: proposal.body.rev, label: `seat ${label}`.slice(0, MAX_BATCH_LABEL_CHARS) },
+        signal,
+      );
+      if (applied.status !== 200)
+        return notSeated(
+          `the wall changed while the tool was being seated (${applied.body.error?.code ?? `http_${applied.status}`}); run wall_seat_tools`,
+        );
+      return {
+        rev: applied.body.rev,
+        canUndo: applied.body.canUndo,
+        warnings: applied.body.warnings,
+        step: { status: 'seated', stability: seat.status, score: rounded },
+      };
+    }
 
     const wallGet: HostTool = {
       definition: {
@@ -654,7 +756,7 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
         name: 'wall_add_tool',
         label: 'Wall: add library tool',
         description:
-          "Add a tool of the user's library (id from wall_tools_search) to the open wall, drawn as its real model and hung on a holder of the wall: one undoable edit that creates the tool item (kind tool, model ref tool:<id>) and attaches it to a free slot at the compatibility pose the editor computes for a hang (same rules as dragging the tool onto a holder; the editor's follow-up physics step that settles the tool into the real holder mesh is NOT run, so wall_analyse_hang may report levitating or not seated for a tool that is fine: do not chase that by re-adding, tell the user to run the Seat tools command). holderId: the holder item (id from wall_get) to hang it on; omitted, the best fitting holder with a free slot is used. slot: a specific free slot of that holder. A tool that no holder on the wall takes (class, dimension ranges, free slots) is refused with one verdict per holder: add a suitable holder first (wall_bank_search, wall_apply addItem) or pick another. Run wall_analyse_hang afterwards. It reads the wall itself: leave baseRev out unless you hold the rev of a wall_get that is still current (each wall_add_tool changes the rev).",
+          "Add a tool of the user's library (id from wall_tools_search) to the open wall, drawn as its real model and hung on a holder of the wall: one undoable edit that creates the tool item (kind tool, model ref tool:<id>) and attaches it to a free slot at the compatibility pose the editor computes for a hang (same rules as dragging the tool onto a holder; a second undo step then seats the tool in the real holder mesh, as the editor does: the reply's seat says seated, already_seated or not_seated with the reason, and wall_analyse_hang then judges it where it rests). holderId: the holder item (id from wall_get) to hang it on; omitted, the best fitting holder with a free slot is used. slot: a specific free slot of that holder. A tool that no holder on the wall takes (class, dimension ranges, free slots) is refused with one verdict per holder: add a suitable holder first (wall_bank_search, wall_apply addItem) or pick another. Run wall_analyse_hang afterwards. It reads the wall itself: leave baseRev out unless you hold the rev of a wall_get that is still current (each wall_add_tool changes the rev).",
         parameters: jsonSchemaOf(AddToolArgsSchema),
       },
       async execute(args, { signal }) {
@@ -712,20 +814,95 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
         );
         if (reply.status !== 200) return apiFailure(reply.status, reply.body);
         const { rev, canUndo, warnings } = reply.body;
+        // The compatibility pose is where the tool is first hung; the physics then lowers it into the real holder mesh,
+        // as the editor does, in a second undo step. A tool that cannot be seated stays hung and the reason is reported.
+        const added: AddedState = { rev, canUndo, warnings };
+        // The tool is on the wall now: a seat step that throws (cancelled call, dropped connection) must not turn the add into
+        // an error the agent would retry into a duplicate.
+        const seated = await seatAdded(
+          draft.item.id,
+          draft.item.label ?? toolId,
+          added,
+          signal,
+        ).catch((error: unknown) => ({
+          ...added,
+          step: {
+            status: 'not_seated',
+            reason: `the seat step failed (${error instanceof Error ? error.message : String(error)}); run wall_seat_tools`,
+          } satisfies SeatStep,
+        }));
         return jsonResult(
           {
             ok: true,
-            rev,
-            canUndo,
+            rev: seated.rev,
+            canUndo: seated.canUndo,
             itemId: draft.item.id,
             modelId: draft.model.id,
             holderId: target.holderId,
             slot: target.slot,
             fit: Math.round(target.compat.score * 100) / 100,
-            warnings,
+            seat: seated.step,
+            warnings: seated.warnings,
             next: 'Run wall_analyse_hang once all tools are placed.',
           },
-          { details: { rev, itemId: draft.item.id, holderId: target.holderId } },
+          { details: { rev: seated.rev, itemId: draft.item.id, holderId: target.holderId } },
+        );
+      },
+    };
+
+    const seatTools: HostTool = {
+      definition: {
+        name: 'wall_seat_tools',
+        label: 'Wall: seat tools',
+        description:
+          "Seat every tool of the wall that hangs on a holder: lower it into the real holder mesh (a shaft into its hole, a hammer head on the fork, a ring on its peg) so it no longer floats above or sinks into the holder. One undoable edit labelled 'seat all', the same pass as the editor's Seat tools command. wall_add_tool already seats the tool it adds, so use this after other edits that moved holders or tools (wall_apply), or to fix a wall built before seating existed. Locked tools and tools on no holder are left alone; tools without a slot number, rotated holders and tools without a model are left where they are and listed with the reason. Run wall_analyse_hang afterwards. It reads the wall itself.",
+        parameters: jsonSchemaOf(SeatToolsArgsSchema),
+      },
+      async execute(args, { signal }) {
+        const parsed = SeatToolsArgsSchema.safeParse(args);
+        if (!parsed.success) return failure(formatIssues(parsed.error));
+        const proposal = await api<WallSeatReply & ApiErrorReply>(
+          'GET',
+          `${wallPath}/seat`,
+          undefined,
+          signal,
+        );
+        if (proposal.status !== 200) return apiFailure(proposal.status, proposal.body);
+        const { rev, seats, kept, unchanged, unslotted, ops } = proposal.body;
+        const summary = {
+          seated: seats.map((seat) => ({
+            toolId: seat.toolId,
+            holderId: seat.holderId,
+            slot: seat.slot,
+            stability: seat.status,
+            score: Math.round(seat.score * 100) / 100,
+          })),
+          alreadySeated: unchanged,
+          kept,
+          unslotted,
+        };
+        if (ops.length === 0) {
+          return jsonResult(
+            { ok: true, rev, ...summary, note: 'Nothing moved: no tool needed seating.' },
+            { details: { rev, seated: 0 } },
+          );
+        }
+        const reply = await postOps(
+          [{ type: 'batch', label: 'seat all', ops: [...ops] }],
+          { baseRev: rev, label: 'seat all' },
+          signal,
+        );
+        if (reply.status !== 200) return apiFailure(reply.status, reply.body);
+        return jsonResult(
+          {
+            ok: true,
+            rev: reply.body.rev,
+            canUndo: reply.body.canUndo,
+            ...summary,
+            warnings: reply.body.warnings,
+            next: 'Run wall_analyse_hang to confirm the tools hang.',
+          },
+          { details: { rev: reply.body.rev, seated: seats.length } },
         );
       },
     };
@@ -962,6 +1139,7 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
       bankSearch,
       toolsSearch,
       addTool,
+      seatTools,
       wallSelect,
       wallView,
       requestInput,

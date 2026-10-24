@@ -1,8 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Pose } from '@hsw-editor/core';
-import type { RankedSeat, RemovalReport } from '@hsw-editor/physics';
+import { type RankedSeat, type RemovalReport, seatOps } from '@hsw-editor/physics';
 import type { AssetContext } from './assets.ts';
-import { seatOps } from './seat.ts';
 import {
   type HolderRating,
   rankCandidates,

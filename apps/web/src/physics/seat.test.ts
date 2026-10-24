@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import type { Pose } from '@hsw-editor/core';
-import { samePose, seatAfterHang, seatAllTools, seatOps, seatToolInHolder } from './seat.ts';
+import { seatOps } from '@hsw-editor/physics';
+import { seatAfterHang, seatAllTools, seatToolInHolder } from './seat.ts';
 import { fakeEditor, fakeSeat, holderItem, toolItem, wallOf } from './testWall.testkit.ts';
 
 const SEATED: Pose = { x: 12.5, y: 31, z: 15, rotX: 0, rotY: 90, rotZ: 180 };
@@ -153,13 +154,6 @@ describe('seatAfterHang', () => {
     });
     expect(await seatAfterHang('drv', editor.deps)).toBe('failed');
     expect(editor.submitted).toEqual([]);
-  });
-});
-
-describe('samePose', () => {
-  test('compares every component within 0.01', () => {
-    expect(samePose(SEATED, { ...SEATED, x: 12.504 })).toBe(true);
-    expect(samePose(SEATED, { ...SEATED, rotY: 91 })).toBe(false);
   });
 });
 

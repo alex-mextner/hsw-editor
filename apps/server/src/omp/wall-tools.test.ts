@@ -677,7 +677,15 @@ function wallWithHolder(holderBankId = 'sd-holder'): Wall {
   }).wall;
 }
 
-function libraryDaemon(options: { wall?: Wall; holding?: object } = {}) {
+function libraryDaemon(
+  options: {
+    wall?: Wall;
+    holding?: object;
+    seat?: object;
+    wallSeat?: object;
+    seatThrows?: boolean;
+  } = {},
+) {
   const applied: Recorded[] = [];
   const reply = (request: Recorded) => {
     if (request.path === '/api/tools') return { status: 200, body: { tools: LIBRARY } };
@@ -713,12 +721,27 @@ function libraryDaemon(options: { wall?: Wall; holding?: object } = {}) {
       return { status: 200, body: { results: [{ id: 'sd-holder', score: 2 }] } };
     if (request.path === '/api/bank/elements/sd-holder')
       return { status: 200, body: HOLDER_ELEMENT };
+    if (options.seatThrows === true && /\/seat$/.test(request.path)) {
+      throw new Error('connection reset');
+    }
+    if (
+      request.method === 'GET' &&
+      options.seat !== undefined &&
+      /^\/api\/walls\/w1\/items\/[^/]+\/seat$/.test(request.path)
+    )
+      return { status: 200, body: options.seat };
+    if (
+      request.method === 'GET' &&
+      options.wallSeat !== undefined &&
+      request.path === '/api/walls/w1/seat'
+    )
+      return { status: 200, body: options.wallSeat };
     if (request.method === 'POST' && request.path === '/api/walls/w1/ops') {
       applied.push(request);
       return {
         status: 200,
         body: {
-          rev: 7,
+          rev: 6 + applied.length,
           changed: true,
           op: { type: 'batch', ops: [] },
           warnings: [],
@@ -871,5 +894,162 @@ describe('wall_add_tool', () => {
     const generic = await run(h, 'wall_add_tool', { toolId: 'blob-1' });
     expect(generic.isError).toBe(true);
     expect(resultText(generic)).toContain('generic shape');
+  });
+});
+
+const SEATED_POSE = { x: 12.5, y: 31, z: 15, rotX: 0, rotY: 90, rotZ: 180 };
+const SEAT_REPLY = {
+  wallId: 'w1',
+  rev: 7,
+  toolId: 'x',
+  seat: {
+    toolId: 'x',
+    holderId: 'h-1',
+    slot: 0,
+    pose: SEATED_POSE,
+    from: SEATED_POSE,
+    changed: true,
+    status: 'stable',
+    score: 0.912,
+  },
+  reason: null,
+};
+
+describe('wall_add_tool seats the tool it hangs', () => {
+  test('applies the daemon seat as a second undo step and reports the seat', async () => {
+    const { h, applied } = libraryDaemon({ seat: SEAT_REPLY });
+    const body = JSON.parse(resultText(await run(h, 'wall_add_tool', { toolId: 'sd-1' }))) as {
+      itemId: string;
+      rev: number;
+      seat: { status: string; stability: string; score: number };
+    };
+    expect(applied).toHaveLength(2);
+    const second = applied[1]?.body as {
+      baseRev: number;
+      label: string;
+      ops: { type: string; id?: string; ops?: { type: string; to?: object; rotY?: number }[] }[];
+    };
+    // the seat is proposed for the wall as the add left it, and applied against exactly that rev
+    expect(second.baseRev).toBe(7);
+    expect(second.label).toStartWith('seat ');
+    expect(second.ops).toHaveLength(1);
+    expect(second.ops[0]?.type).toBe('batch');
+    expect(second.ops[0]?.ops?.map((op) => op.type)).toEqual(['rotateItem', 'moveItem']);
+    expect(second.ops[0]?.ops?.[1]?.to).toEqual({ x: 12.5, y: 31, z: 15 });
+    expect(body.seat).toEqual({ status: 'seated', stability: 'stable', score: 0.91 });
+    expect(body.rev).toBe(8);
+    const seatRequest = h.requests.find((request) => request.path.endsWith('/seat'));
+    expect(seatRequest?.path).toBe(`/api/walls/w1/items/${body.itemId}/seat`);
+  });
+
+  test('a tool that already rests there posts no second step', async () => {
+    const { h, applied } = libraryDaemon({
+      seat: { ...SEAT_REPLY, seat: { ...SEAT_REPLY.seat, changed: false } },
+    });
+    const body = JSON.parse(resultText(await run(h, 'wall_add_tool', { toolId: 'sd-1' }))) as {
+      seat: { status: string };
+      rev: number;
+    };
+    expect(applied).toHaveLength(1);
+    expect(body.seat.status).toBe('already_seated');
+    expect(body.rev).toBe(7);
+  });
+
+  test('no seat keeps the compatibility pose, says why, and the add still succeeds', async () => {
+    const { h, applied } = libraryDaemon({
+      seat: {
+        ...SEAT_REPLY,
+        seat: null,
+        reason: { code: 'holder_not_upright', text: 'its holder is rotated' },
+      },
+    });
+    const result = await run(h, 'wall_add_tool', { toolId: 'sd-1' });
+    expect(result.isError).not.toBe(true);
+    const body = JSON.parse(resultText(result)) as { ok: boolean; seat: object };
+    expect(applied).toHaveLength(1);
+    expect(body.ok).toBe(true);
+    expect(body.seat).toEqual({ status: 'not_seated', reason: 'its holder is rotated' });
+  });
+
+  test('a seat step that throws does not turn the add into an error', async () => {
+    const { h, applied } = libraryDaemon({ seat: SEAT_REPLY, seatThrows: true });
+    const result = await run(h, 'wall_add_tool', { toolId: 'sd-1' });
+    expect(result.isError).not.toBe(true);
+    const body = JSON.parse(resultText(result)) as {
+      ok: boolean;
+      seat: { status: string; reason: string };
+    };
+    expect(applied).toHaveLength(1);
+    expect(body.ok).toBe(true);
+    expect(body.seat.status).toBe('not_seated');
+    expect(body.seat.reason).toContain('wall_seat_tools');
+  });
+
+  test('a daemon without seat proposals leaves the tool hung and points at wall_seat_tools', async () => {
+    const { h, applied } = libraryDaemon();
+    const body = JSON.parse(resultText(await run(h, 'wall_add_tool', { toolId: 'sd-1' }))) as {
+      ok: boolean;
+      seat: { status: string; reason: string };
+    };
+    expect(applied).toHaveLength(1);
+    expect(body.ok).toBe(true);
+    expect(body.seat.status).toBe('not_seated');
+    expect(body.seat.reason).toContain('wall_seat_tools');
+  });
+});
+
+describe('wall_seat_tools', () => {
+  const moveOps: LeafOp[] = [
+    { type: 'rotateItem', id: 't1', rotX: 0, rotY: 90, rotZ: 180 },
+    { type: 'moveItem', id: 't1', to: { x: 12.5, y: 31, z: 15 } },
+  ];
+  const wallSeat = {
+    wallId: 'w1',
+    rev: 5,
+    seats: [{ ...SEAT_REPLY.seat, toolId: 't1' }],
+    kept: [{ toolId: 't2', reason: 'no_model', text: 'it has no tool model to seat' }],
+    unchanged: ['t3'],
+    unslotted: ['t4'],
+    ops: moveOps,
+  };
+
+  test('applies the whole-wall proposal as one batch labelled seat all, against the rev it was computed at', async () => {
+    const { h, applied } = libraryDaemon({ wallSeat });
+    const body = JSON.parse(resultText(await run(h, 'wall_seat_tools', {}))) as {
+      ok: boolean;
+      rev: number;
+      seated: { toolId: string; slot: number; stability: string }[];
+      alreadySeated: string[];
+      kept: { toolId: string; reason: string }[];
+      unslotted: string[];
+    };
+    expect(applied).toHaveLength(1);
+    expect(applied[0]?.body).toMatchObject({
+      baseRev: 5,
+      label: 'seat all',
+      ops: [{ type: 'batch', label: 'seat all', ops: moveOps }],
+      actor: { kind: 'agent', name: 'omp' },
+    });
+    expect(body.ok).toBe(true);
+    expect(body.seated).toMatchObject([{ toolId: 't1', slot: 0, stability: 'stable' }]);
+    expect(body.alreadySeated).toEqual(['t3']);
+    expect(body.kept).toMatchObject([{ toolId: 't2', reason: 'no_model' }]);
+    expect(body.unslotted).toEqual(['t4']);
+  });
+
+  test('posts nothing when no tool moves', async () => {
+    const { h, applied } = libraryDaemon({
+      wallSeat: { ...wallSeat, seats: [], ops: [] },
+    });
+    const result = await run(h, 'wall_seat_tools', {});
+    expect(result.isError).not.toBe(true);
+    expect(applied).toHaveLength(0);
+    expect(resultText(result)).toContain('Nothing moved');
+  });
+
+  test('surfaces a daemon refusal instead of claiming success', async () => {
+    const { h } = libraryDaemon();
+    const result = await run(h, 'wall_seat_tools', {});
+    expect(result.isError).toBe(true);
   });
 });

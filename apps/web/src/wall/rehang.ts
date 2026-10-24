@@ -7,11 +7,10 @@
  * that no longer fits stays where it is: the compatibility panel says why.
  */
 import { evaluateHolders, planHang, resolveDrop } from '@hsw-editor/compat';
+import { samePose, seatOps } from '@hsw-editor/physics';
 import { paramsKey } from '@/bank/models.ts';
 import { livePostStepDeps, untilToolModelSettled } from '@/physics/context.ts';
 import {
-  samePose,
-  seatOps,
   seatToolInHolder,
   stillHung,
   warnSeatFailed,

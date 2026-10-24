@@ -1,12 +1,7 @@
 import { describe, expect, test } from 'bun:test';
-import {
-  buildPhysicsScene,
-  isUpright,
-  loadLimitG,
-  planVirtualRank,
-  planWallRank,
-  wallSlot,
-} from './assets.ts';
+import { wallSlot } from '@hsw-editor/compat';
+import { loadLimitG } from '@hsw-editor/physics';
+import { buildPhysicsScene, planVirtualRank, planWallRank } from './assets.ts';
 import {
   contextOf,
   HOOK,
@@ -79,16 +74,6 @@ describe('loadLimitG', () => {
     expect(loadLimitG(tool, RACK)).toBe(1000);
     expect(loadLimitG({ ...tool, toolClass: 'pliers' }, HOOK)).toBe(1500);
     expect(loadLimitG(undefined, RACK)).toBe(1000);
-  });
-});
-
-describe('isUpright', () => {
-  test('only an unrotated holder is seated', () => {
-    expect(isUpright(POSE)).toBe(true);
-    expect(isUpright({ ...POSE, rotZ: 360 })).toBe(true);
-    expect(isUpright({ ...POSE, rotZ: -0.2 })).toBe(true);
-    expect(isUpright({ ...POSE, rotZ: 90 })).toBe(false);
-    expect(isUpright({ ...POSE, rotX: 5 })).toBe(false);
   });
 });
 

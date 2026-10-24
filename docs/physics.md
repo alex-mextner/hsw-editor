@@ -270,6 +270,9 @@ share one analysis. Items without a holder or a model come back under `skipped`.
 - Agent: the omp host tool `wall_analyse_hang` (`{itemId?}`, [omp.md](omp.md)); the system prompt tells the agent to run it after placing
   tools and to move unstable tools to a better holder before finishing.
 - CLI: `hsw-editor wall physics <id> [--item ID] [--json]`.
+- Seating without a browser: `GET /api/walls/:id/items/:itemId/seat` and `GET /api/walls/:id/seat` propose the poses the editor's Seat tools would
+  move the tools to ([api.md](api.md#seating)); the agent tools `wall_add_tool` (seats what it adds) and `wall_seat_tools` apply them, the CLI is
+  `hsw-editor wall seat <id> [--apply]`.
 
 Every problem carries an English `text` sentence (`describeProblemEn`); the page has its own ru/en catalogue for the same codes.
 

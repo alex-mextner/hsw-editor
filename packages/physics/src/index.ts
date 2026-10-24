@@ -5,6 +5,7 @@ export * from './equilibrium.ts';
 export * from './hang.ts';
 export * from './nnls.ts';
 export * from './seat.ts';
+export * from './seatPlan.ts';
 export * from './settle.ts';
 export * from './removal.ts';
 export * from './wall.ts';

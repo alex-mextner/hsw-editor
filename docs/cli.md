@@ -30,6 +30,7 @@ Need the running daemon; if it is down the command exits 3 and prints `hsw-edito
 | `wall undo <id>` / `wall redo <id>` `[--base-rev N] [--actor ..]` | step through the shared history |
 | `wall export <id> [-o FILE] [--wall-only]` | wall + full history as JSON |
 | `wall physics <id> [--item ID]` | how the tools hang on their holders (stability score, swing / tip / levitating / overload problems, removal ergonomics) as a table plus one sentence per problem; `--item` judges one tool. See [physics.md](physics.md) |
+| `wall seat <id> [--item ID] [--apply] [--actor ..]` | where the hung tools rest in their holders (the daemon's seat proposal, [api.md](api.md#seating)): table of tools that move, tools without a seat and why. Nothing is written without `--apply`, which applies the poses as one undoable `seat all` step (`--item` seats one tool in its own slot) |
 | `wall delete <id>` | move to `walls/.trash/` (recoverable) |
 
 All wall verbs accept `--json` and then print the daemon's JSON response unchanged. `--actor` is `human`, `agent` or `cli`

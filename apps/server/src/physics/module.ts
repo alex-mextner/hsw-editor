@@ -1,5 +1,6 @@
 /**
- * Server module for tool physics: `GET /api/walls/:id/physics` and `GET /api/walls/:id/items/:itemId/physics`.
+ * Server module for tool physics: `GET /api/walls/:id/physics`, `GET /api/walls/:id/items/:itemId/physics` and the seat
+ * proposals `GET /api/walls/:id/seat`, `GET /api/walls/:id/items/:itemId/seat`.
  * Contract: docs/api.md (Physics), the maths: docs/physics.md. Read-only; mounted after the global loopback guard.
  */
 import { errorResponse } from '../api.ts';
@@ -15,6 +16,8 @@ import {
 
 const WALL_ROUTE = /^\/api\/walls\/([^/]+)\/physics$/;
 const ITEM_ROUTE = /^\/api\/walls\/([^/]+)\/items\/([^/]+)\/physics$/;
+const SEAT_WALL_ROUTE = /^\/api\/walls\/([^/]+)\/seat$/;
+const SEAT_ITEM_ROUTE = /^\/api\/walls\/([^/]+)\/items\/([^/]+)\/seat$/;
 
 const SKIP_TEXT = {
   no_holder: 'it hangs on no holder (no parentId)',
@@ -47,9 +50,11 @@ export function createPhysicsModule(): ServerModule {
     name: 'physics',
     async handle(request, deps) {
       const { pathname } = new URL(request.url);
+      const seatWall = SEAT_WALL_ROUTE.exec(pathname);
+      const seatItem = seatWall === null ? SEAT_ITEM_ROUTE.exec(pathname) : null;
       const wall = WALL_ROUTE.exec(pathname);
       const item = wall === null ? ITEM_ROUTE.exec(pathname) : null;
-      if (wall === null && item === null) return null;
+      if (wall === null && item === null && seatWall === null && seatItem === null) return null;
       if (request.method !== 'GET') {
         return Response.json(
           { error: { code: 'method_not_allowed', message: 'use GET' } },
@@ -57,6 +62,15 @@ export function createPhysicsModule(): ServerModule {
         );
       }
       try {
+        if (seatWall !== null || seatItem !== null) {
+          const service = serviceFor(deps);
+          const seatWallId = decodeSegment((seatWall ?? seatItem)?.[1]);
+          const view =
+            seatItem === null
+              ? await service.proposeSeatAll(seatWallId)
+              : await service.proposeSeat(seatWallId, decodeSegment(seatItem[2]));
+          return Response.json(view, { headers: { 'cache-control': 'no-store' } });
+        }
         const wallId = decodeSegment((wall ?? item)?.[1]);
         const itemId = item === null ? undefined : decodeSegment(item[2]);
         const report = await serviceFor(deps).analyseWall(

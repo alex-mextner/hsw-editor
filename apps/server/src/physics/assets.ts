@@ -4,12 +4,17 @@
  * the daemon gives is the report the page would compute.
  */
 import { join } from 'node:path';
-import type { BankElement, VariantResponse } from '@hsw-editor/bank';
+import { type BankElement, broaderToolClasses, type VariantResponse } from '@hsw-editor/bank';
+import {
+  type HoldingMeasure,
+  type ToolInterface,
+  toolInterfaceFromHolding,
+} from '@hsw-editor/compat';
 import type { Wall, WallItem } from '@hsw-editor/core';
 import { readGlbSolid, readToolBody, type GlbSolid } from '@hsw-editor/physics/glb';
-import type { ToolBody } from '@hsw-editor/physics';
+import { placementOfPose, SolidBody, type ToolBody } from '@hsw-editor/physics';
 import { applyPatch, exportGlb, generate, hasToolClass, type ToolModel } from '@hsw-editor/tools';
-import { ToolStore } from '@hsw-editor/tools/node';
+import { holdingOf, ToolStore } from '@hsw-editor/tools/node';
 import type { ManifoldToplevel } from 'manifold-3d';
 import { bankContextFor } from '../bank-user.ts';
 
@@ -103,9 +108,24 @@ export function toolSourceOf(item: WallItem, wall: Wall): ToolSource | null {
   return classId === undefined ? null : { kind: 'class', classId, params: { ...item.params } };
 }
 
+/** A holder of the wall: its item, its bank element and its mesh posed like the item. */
+export interface WallHolderSolid {
+  readonly item: WallItem;
+  readonly element: BankElement;
+  readonly body: SolidBody;
+}
+
+/** The solids a wall stands on: every holder and board part whose bank model is served, in a stable order. */
+export interface WallSolids {
+  /** Sorted by item id. */
+  readonly holders: readonly WallHolderSolid[];
+  readonly boardParts: readonly SolidBody[];
+}
+
 export class PhysicsAssets {
   private readonly solids = new Lru<Promise<GlbSolid>>();
   private readonly bodies = new Lru<Promise<ToolBody | null>>();
+  private readonly holdings = new Lru<Promise<HoldingMeasure | null>>();
   private readonly library: ToolStore;
 
   constructor(private readonly home: string) {
@@ -161,6 +181,28 @@ export class PhysicsAssets {
     return readGlbSolid(await reply.arrayBuffer());
   }
 
+  /** Holders and board parts of the wall as posed solids; an item whose element is not in the served bank is left out. */
+  async wallSolids(wall: Wall): Promise<WallSolids> {
+    const holders: WallHolderSolid[] = [];
+    const boardParts: SolidBody[] = [];
+    await Promise.all(
+      wall.items.map(async (item) => {
+        if ((item.kind !== 'holder' && item.kind !== 'board-part') || item.bankId === undefined)
+          return;
+        const loaded = await this.elementSolid(item.bankId, item.params);
+        if (loaded === null) return;
+        const placement = placementOfPose(item.pose);
+        const body = new SolidBody(item.id, loaded.solid, placement.rotation, placement.position);
+        if (item.kind === 'holder') holders.push({ item, element: loaded.element, body });
+        else boardParts.push(body);
+      }),
+    );
+    // Deterministic obstacle order whatever order the decodes finished in.
+    holders.sort((a, b) => (a.item.id < b.item.id ? -1 : 1));
+    boardParts.sort((a, b) => (a.id < b.id ? -1 : 1));
+    return { holders, boardParts };
+  }
+
   /** The tool as a rigid body (mesh, mass, centre of gravity, hang point), or why there is none. */
   async toolBody(item: WallItem, wall: Wall): Promise<{ body: ToolBody } | { skip: SkipReason }> {
     const source = toolSourceOf(item, wall);
@@ -172,6 +214,44 @@ export class PhysicsAssets {
           )
         : await this.libraryBody(source.toolId);
     return built === null ? { skip: 'no_physics' } : { body: { ...built, id: item.id } };
+  }
+
+  /**
+   * What the compatibility maths reads of a tool item (the interface the editor builds with `toolInterfaceOf`): the
+   * measured holding of its model, the item's own named dimensions on top. Undefined for a tool without a class or model.
+   */
+  async toolInterface(item: WallItem, wall: Wall): Promise<ToolInterface | undefined> {
+    const source = toolSourceOf(item, wall);
+    const model =
+      item.modelRefId === undefined ? undefined : wall.models.find((m) => m.id === item.modelRefId);
+    const toolClass = item.toolClass ?? model?.toolClass;
+    if (source === null || toolClass === undefined) return undefined;
+    let holding: Promise<HoldingMeasure | null> | undefined;
+    if (source.kind === 'class') {
+      const key = `class|${source.classId}|${stableParamsKey(source.params)}`;
+      holding = this.holdings.get(key);
+      if (holding === undefined) {
+        holding = Promise.resolve().then(
+          () => generate(source.classId, source.params, TOOL_LOD).holding,
+        );
+        this.holdings.set(key, holding);
+        holding.catch(() => this.holdings.delete(key));
+      }
+    } else {
+      const tool = await this.library.get(source.toolId).catch(() => null);
+      if (tool === null) return undefined;
+      const key = `library|${source.toolId}|${tool.updatedAt}`;
+      holding = this.holdings.get(key);
+      if (holding === undefined) {
+        holding = Promise.resolve().then(() => holdingOf(tool).holding);
+        this.holdings.set(key, holding);
+        holding.catch(() => this.holdings.delete(key));
+      }
+    }
+    const measured = await holding;
+    return measured === null
+      ? undefined
+      : toolInterfaceFromHolding(toolClass, broaderToolClasses(toolClass), measured, item.params);
   }
 
   private cached(key: string, make: () => Promise<ToolBody | null>): Promise<ToolBody | null> {

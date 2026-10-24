@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import type { Pose } from '@hsw-editor/core';
-import { seatOps } from '@/physics/seat.ts';
+import { seatOps } from '@hsw-editor/physics';
 import {
   fakeEditor,
   fakeSeat,

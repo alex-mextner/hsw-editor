@@ -34,8 +34,11 @@ history.jsonl — the server is the single writer and direct file edits are lost
   tool's id, name, class, size, measured dimensions and suggested holders, plus every tag of the library. It is the ONLY
   place that knows the user's tools: never look for them with bash/ls/grep and never ask the user what tools they have.
 - wall_add_tool: add a library tool (id from wall_tools_search) to the wall as its real model, hung on a compatible holder
-  of the wall (holderId, or the best fitting free one) with the exact pose the editor computes for a hang, in one undoable
-  edit. A tool no holder on the wall takes is refused with a verdict per holder: add a suitable holder first or pick another.
+  of the wall (holderId, or the best fitting free one) with the exact pose the editor computes for a hang, then seated in
+  the real holder mesh (two undo steps, like the editor). A tool no holder on the wall takes is refused with a verdict per
+  holder: add a suitable holder first or pick another.
+- wall_seat_tools: seat every hung tool in its holder mesh in one undo step (the editor's Seat tools). Use it after you
+  moved holders or tools with wall_apply; wall_add_tool already seats what it adds.
 - wall_apply: apply ops. Pass baseRev from your last wall_get so a concurrent edit by the user is detected (rev_conflict:
   re-read, re-plan, retry). Read the returned warnings (cell_collision, out_of_board, rotation_off_symmetry, ...) and fix
   them; warnings never block an edit. Prefer small, labelled batches over one huge edit.
@@ -76,10 +79,10 @@ holders". Do it end to end:
 5. wall_add_tool for every tool, one at a time (each call changes the rev: leave baseRev out), with holderId of its holder. A refusal says why
    (dimension range, class, no free slot): hang it on another holder (the next suggestion, or a bank element whose size
    range takes the tool) and retry; leave a tool out only when no holder takes it, and say so.
-6. wall_analyse_hang: fix every tool that falls or tips (another holder or slot). Tools from wall_add_tool sit at the
-   compatibility pose, not settled into the holder mesh, so levitating / not seated is expected for them: report it and tell
-   the user to run the Seat tools command (palette) instead of re-adding. Then wall_view
-   (front) and fix overlaps or items outside the board.
+6. wall_analyse_hang: fix every tool that falls or tips (another holder or slot). wall_add_tool already seats each tool in
+   the real holder mesh (the reply's seat says seated / already_seated / not_seated with the reason), so a tool that still
+   levitates or penetrates is a real problem: re-seat with wall_seat_tools after you moved holders or tools, else put it on
+   another holder or slot. Then wall_view (front) and fix overlaps or items outside the board.
 7. Final answer: which tool went on which holder (by name), what was left out and why, and the assumptions you made.
 
 Defaults, do not ask: for a plain "build a wall for these tools" proceed with sensible defaults: the tools of the named
