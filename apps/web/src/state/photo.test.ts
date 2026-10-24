@@ -9,6 +9,7 @@ import {
   photoStore,
   setOverlayOpacity,
   setSplit,
+  splitAtPointer,
   startCalibration,
   toggleAlign,
   toggleSplit,
@@ -54,6 +55,15 @@ describe('photo mode state', () => {
     expect(photoStore.get().overlayOpacity).toBe(0);
     setSplit(1.5);
     expect(photoStore.get().split).toBe(1);
+  });
+
+  test('a pointer over the photo box puts the divider under the pointer, clamped to the box', () => {
+    const box = { left: 100, width: 400 };
+    expect(splitAtPointer(300, box)).toBe(0.5);
+    expect(splitAtPointer(100, box)).toBe(0);
+    expect(splitAtPointer(40, box)).toBe(0);
+    expect(splitAtPointer(900, box)).toBe(1);
+    expect(splitAtPointer(200, { left: 0, width: 0 })).toBe(0.5);
   });
 
   test('the divider toggles on at the centre and off again', () => {

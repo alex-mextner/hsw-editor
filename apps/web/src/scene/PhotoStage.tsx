@@ -5,7 +5,7 @@ import { api } from '@/api/http.ts';
 import { notify } from '@/features/notices/notices.ts';
 import { PhotoGhosts } from '@/features/photo/PhotoGhosts.tsx';
 import { useT } from '@/i18n/index.ts';
-import { setSplit, photoStore } from '@/state/photo.ts';
+import { setSplit, splitAtPointer, photoStore } from '@/state/photo.ts';
 import { useStore } from '@/state/react.ts';
 import { PhotoAlign } from './PhotoAlign.tsx';
 import { PhotoGuides } from './PhotoGuides.tsx';
@@ -48,9 +48,23 @@ function SplitHandle({ split }: { readonly split: number }) {
         step={0.005}
         value={split}
         aria-label={t('photo.split.handle')}
-        className="absolute inset-y-0 z-20 h-full w-10 -translate-x-1/2 cursor-ew-resize opacity-0"
+        className="absolute inset-y-0 z-20 h-full w-10 -translate-x-1/2 cursor-ew-resize touch-none opacity-0"
         style={{ left: `${split * 100}%` }}
         onChange={(event) => setSplit(Number(event.target.value))}
+        // The native thumb of a 40 px wide input that moves with its own value jumps between 0 and 1 under a
+        // dragging pointer, so the pointer is mapped onto the photo box instead; the input keeps the keyboard.
+        onPointerDown={(event) => {
+          event.preventDefault();
+          event.currentTarget.focus();
+          event.currentTarget.setPointerCapture(event.pointerId);
+        }}
+        onPointerMove={(event) => {
+          const box = event.currentTarget.parentElement?.getBoundingClientRect();
+          if (box && event.currentTarget.hasPointerCapture(event.pointerId)) {
+            setSplit(splitAtPointer(event.clientX, box));
+          }
+        }}
+        onPointerUp={(event) => event.currentTarget.releasePointerCapture(event.pointerId)}
       />
     </>
   );
