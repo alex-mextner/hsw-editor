@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { calibrateFromCorners, calibrateTwoPoint } from '@hsw-editor/overlay';
-import { boardOutlinePx, percent } from './calibrationWizardView.ts';
+import { calibrateFromCorners, calibrateTwoPoint, scaleErrorBound } from '@hsw-editor/overlay';
+import { en } from '../i18n/en.ts';
+import { interpolate } from '../i18n/format.ts';
+import { boardOutlinePx, clickErrorParams, percent } from './calibrationWizardView.ts';
 
 const image = { width: 1000, height: 800 };
 const extent = { widthMm: 500, heightMm: 400 };
@@ -50,5 +52,21 @@ describe('percent', () => {
     expect(percent(0.0123)).toBe('1.2%');
     expect(percent(0.5, 0)).toBe('50%');
     expect(percent(Number.POSITIVE_INFINITY)).toBe('∞');
+  });
+});
+
+describe('clickErrorParams', () => {
+  test('the readout states the scale error of a 3 px click error in percent and in mm per metre', () => {
+    const m = { a: [100, 700] as [number, number], b: [100, 400] as [number, number], realMm: 480 };
+    const params = clickErrorParams(
+      { onePx: scaleErrorBound(m, 1), threePx: scaleErrorBound(m, 3) },
+      (mm) => mm.toFixed(1),
+    );
+    // 300 px reference: worst case of 3 px per end = 300 / 294 - 1 = 2.04 % = 20.4 mm per metre.
+    expect(params.threeWorst).toBe('2.0%');
+    expect(params.threeMm).toBe('20.4');
+    const text = interpolate(en['photo.wizard.clickError'], params);
+    expect(text).toContain('3 px: about 1.4% (at worst 2.0%, 20.4 mm per metre)');
+    expect(text).not.toContain('{');
   });
 });

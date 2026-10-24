@@ -109,6 +109,15 @@ export function setSplit(value: number): void {
   patchPhoto({ split: Math.min(1, Math.max(0, value)) });
 }
 
+/** Where the divider belongs for a pointer at `clientX` over a photo box of `width` px starting at `left` (0..1). */
+export function splitAtPointer(
+  clientX: number,
+  box: { readonly left: number; readonly width: number },
+): number {
+  if (box.width <= 0) return 0.5;
+  return Math.min(1, Math.max(0, (clientX - box.left) / box.width));
+}
+
 /** Turns board dragging on, or off when it already is on in that mode. */
 export function toggleAlign(mode: AlignMode): void {
   const { align } = photoStore.get();

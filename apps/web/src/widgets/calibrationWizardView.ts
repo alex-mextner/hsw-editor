@@ -6,6 +6,7 @@ import {
   type BoardExtent,
   type CalibrationResult,
   type ImageSize,
+  type ScaleErrorBound,
 } from '@hsw-editor/overlay';
 
 import type { Point2 } from './calibrationView.ts';
@@ -32,4 +33,19 @@ export function boardOutlinePx(
 export function percent(fraction: number, digits = 1): string {
   if (!Number.isFinite(fraction)) return '∞';
   return `${(fraction * 100).toFixed(digits)}%`;
+}
+
+/** What `photo.wizard.clickError` shows: the scale error of a 1 px and of a 3 px click error, in % and in mm per metre. */
+export function clickErrorParams(
+  clickError: { readonly onePx: ScaleErrorBound; readonly threePx: ScaleErrorBound },
+  formatMm: (mm: number) => string,
+): Record<'typical' | 'worst' | 'mm' | 'three' | 'threeWorst' | 'threeMm', string> {
+  return {
+    typical: percent(clickError.onePx.typicalRelativeError),
+    worst: percent(clickError.onePx.worstRelativeError),
+    mm: formatMm(clickError.onePx.worstMmPerMeter),
+    three: percent(clickError.threePx.typicalRelativeError),
+    threeWorst: percent(clickError.threePx.worstRelativeError),
+    threeMm: formatMm(clickError.threePx.worstMmPerMeter),
+  };
 }

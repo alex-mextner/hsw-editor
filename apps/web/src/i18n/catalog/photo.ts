@@ -32,7 +32,7 @@ export const photoEn = {
   'photo.wizard.scale': '1 px = {value} mm',
   'photo.wizard.scale.per100': '100 px = {value} mm at the centre of the photo',
   'photo.wizard.clickError':
-    'A 1 px click error changes the scale by about {typical} (at worst {worst}, {mm} mm per metre); 3 px: about {three}.',
+    'A 1 px click error changes the scale by about {typical} (at worst {worst}, {mm} mm per metre); 3 px: about {three} (at worst {threeWorst}, {threeMm} mm per metre).',
   'photo.wizard.spread': 'The scale varies by {value} between the near and far part of the photo.',
   'photo.wizard.reprojection': 'Fit error: rms {rms} px, max {max} px ({mm} mm on the wall).',
   'photo.wizard.undoClick': 'Undo point',
@@ -181,7 +181,7 @@ export const photoRu: FeatureRu<typeof photoEn> = {
   'photo.wizard.scale': '1 px = {value} мм',
   'photo.wizard.scale.per100': '100 px = {value} мм в центре фото',
   'photo.wizard.clickError':
-    'Ошибка клика в 1 px меняет масштаб примерно на {typical} (в худшем случае на {worst}, {mm} мм на метр); 3 px — около {three}.',
+    'Ошибка клика в 1 px меняет масштаб примерно на {typical} (в худшем случае на {worst}, {mm} мм на метр); 3 px — около {three} (в худшем случае {threeWorst}, {threeMm} мм на метр).',
   'photo.wizard.spread': 'Масштаб различается на {value} между ближней и дальней частью фото.',
   'photo.wizard.reprojection': 'Ошибка подгонки: СКО {rms} px, макс. {max} px ({mm} мм на стене).',
   'photo.wizard.undoClick': 'Отменить точку',

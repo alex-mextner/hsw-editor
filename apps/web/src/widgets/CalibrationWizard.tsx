@@ -35,7 +35,7 @@ import {
   unitStore,
   type LengthUnit,
 } from './units.ts';
-import { boardOutlinePx, percent } from './calibrationWizardView.ts';
+import { boardOutlinePx, clickErrorParams, percent } from './calibrationWizardView.ts';
 
 export type CalibrationMode = 'two-point' | 'corners' | 'grid';
 
@@ -319,12 +319,10 @@ export function CalibrationWizard({
                   </span>
                   {preview.clickError ? (
                     <span className="text-xs text-muted-foreground">
-                      {t('photo.wizard.clickError', {
-                        typical: percent(preview.clickError.onePx.typicalRelativeError),
-                        worst: percent(preview.clickError.onePx.worstRelativeError),
-                        mm: fixed.format(preview.clickError.onePx.worstMmPerMeter),
-                        three: percent(preview.clickError.threePx.typicalRelativeError),
-                      })}
+                      {t(
+                        'photo.wizard.clickError',
+                        clickErrorParams(preview.clickError, fixed.format),
+                      )}
                     </span>
                   ) : null}
                   {preview.spread ? (
