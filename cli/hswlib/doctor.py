@@ -293,14 +293,6 @@ def check_draw(ctx: Context) -> list[Check]:
     return [Check("draw backends", "ok", detail)]
 
 
-def check_systemd(ctx: Context) -> list[Check]:
-    if shutil.which("systemctl") is None:
-        return [Check("systemd --user", "warn", "systemctl not found: `enable` cannot install autostart", "start manually: hsw-editor start")]
-    ok = _run(["systemctl", "--user", "show-environment"]) is not None
-    return [Check("systemd --user", "ok" if ok else "warn", "available" if ok else "no user session bus: `enable` falls back to a plain start",
-                  "" if ok else "log in through a session with a user manager, or loginctl enable-linger $USER")]
-
-
 BASE_CHECKS: list[CheckFn] = [
     check_agent_tools,
     check_bun,
@@ -314,7 +306,6 @@ BASE_CHECKS: list[CheckFn] = [
     check_gpu,
     check_vision,
     check_draw,
-    check_systemd,
 ]
 
 

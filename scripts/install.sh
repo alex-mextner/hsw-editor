@@ -32,6 +32,11 @@ if [ -z "$agent_tools_lib" ]; then
   echo "install: agent-tools lib not found. Check out agent-tools and set AGENT_TOOLS_LIB=<agent-tools>/lib" >&2
   exit 127
 fi
+# the lifecycle verbs are the library's: 0.3 added restart, the unit-aware start/stop and the readiness wait
+if ! PYTHONPATH="$agent_tools_lib" python3 -c 'import agenttools_service as s, sys; sys.exit(tuple(map(int, s.__version__.split(".")[:2])) < (0, 3))'; then
+  echo "install: agenttools_service in $agent_tools_lib is older than 0.3. git pull agent-tools" >&2
+  exit 127
+fi
 
 cd "$root"
 # always run: it is a no-op when nothing changed, works offline with a warm cache, and picks up a pulled lockfile
@@ -57,4 +62,4 @@ case ":$PATH:" in
 esac
 
 AGENT_TOOLS_LIB="$agent_tools_lib" "$bin_dir/hsw-editor" --version
-echo "install: done. Next: hsw-editor doctor && hsw-editor enable   (autostart at login)"
+echo "install: done. Next: hsw-editor doctor && hsw-editor enable   (autostart at login); a running daemon keeps the old code until: hsw-editor restart"

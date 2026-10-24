@@ -9,13 +9,15 @@ walls through its HTTP API ([api.md](api.md)). `--port N` selects another daemon
 | Command | Effect |
 | --- | --- |
 | `run` | foreground |
-| `start` / `stop` / `restart` | background daemon (pidfile `~/.local/state/hsw-editor/`, log `~/.cache/hsw-editor/hsw-editor.log`); `start` returns only once the API answers, otherwise exit 4 with the log path. While autostart is enabled for the port (the unit's own `--port`; another `--port` keeps the pidfile path) the verbs go through `systemctl --user start\|stop\|restart agenttools-hsw-editor-hsw-editor.service` (a leftover pidfile daemon is stopped first), so exactly one daemon runs; `systemctl` failing or unreachable is exit 4, `stop` of an inactive unit exit 3 |
-| `status` | `running (pid, url) [autostart on]`, exit 3 when stopped; with autostart on, the pid is the unit's `MainPID` and an inactive unit reads `stopped` |
-| `enable` / `disable` | install / remove the systemd user unit `agenttools-hsw-editor-hsw-editor.service` (`Restart=on-failure`, `WantedBy=default.target`) and start / stop the daemon |
+| `start` / `stop` / `restart` | background daemon (pidfile `~/.local/state/hsw-editor/`, log `~/.cache/hsw-editor/hsw-editor.log`); `start` / `restart` / `enable` return only once `/api/health` answers as hsw-editor, otherwise exit 4 with the log path and whether the port is held by another process. While autostart is enabled the verbs act on the systemd unit `agenttools-hsw-editor-hsw-editor.service` (a leftover pidfile daemon is stopped first), so exactly one daemon runs; `stop` keeps autostart installed; a refused `systemctl` is exit 4, `stop` of a stopped service exit 3. All of it is the agent-tools `agenttools_service` library (>= 0.3), not hsw-editor code |
+| `status` | `running (pid, url) [autostart on]`, exit 3 when stopped (`stopped`, `failed`, `restarting`); with autostart on, the pid is the unit's `MainPID` |
+| `logs [-n N] [-f]` | last lines of the daemon log |
+| `enable` / `disable` | install / remove the systemd user unit (`Restart=on-failure`, `WantedBy=default.target`), turn `loginctl` linger on so it starts at boot, and start / stop the daemon |
+| `--port N` | another daemon is another service: `hsw-editor-N` has its own unit `agenttools-hsw-editor-hsw-editor-N.service`, pidfile and log, and never touches the default one on 8794 |
 | `open` | open the editor in the browser (exit 3 if the daemon is down) |
 | `--version` | read from the root `package.json` (`bun run release` is the only writer) |
 
-The unit survives `systemctl --user daemon-reload` and starts at login or boot (the machine has `loginctl` linger).
+The unit starts at login, and at boot while `loginctl` linger is on (`enable` turns it on and warns if it cannot; `doctor` reports it). The unit file carries `--home`, the data directory resolved when `enable` ran.
 
 ## Wall verbs
 
@@ -128,7 +130,8 @@ backend is ready), `doctor`, `login chatgpt`, `stop`, `settings [auto|draw-cli|o
 | bank (served) | FAIL if the daemon rejected a generation or serves nothing | only when the port answers as hsw-editor (`/api/bank/health`); no row otherwise |
 | port | FAIL if another process holds it | an hsw-editor already serving is ok |
 | data dir | FAIL if not writable, warn if world-writable | `HSW_EDITOR_HOME` |
-| state-lib, uv, omp, GPU, vision sidecar, draw backends, systemd --user | warn | vision: `HSW_VISION_URL`, else the sidecar's state file, else `http://127.0.0.1:8795`; "installed, not running" is the normal idle state (the daemon starts the sidecar on the first vision job; fix for "not installed": `hsw-editor vision setup`); draw: `omp`, ChatGPT browser profile, manual upload |
+| state-lib, uv, omp, GPU, vision sidecar, draw backends | warn | vision: `HSW_VISION_URL`, else the sidecar's state file, else `http://127.0.0.1:8795`; "installed, not running" is the normal idle state (the daemon starts the sidecar on the first vision job; fix for "not installed": `hsw-editor vision setup`); draw: `omp`, ChatGPT browser profile, manual upload |
+| service command, autostart, unit file, unit state, linger | warn, FAIL for a missing command, an invalid unit file or a `failed` unit | the agent-tools `service_checks`: `systemd-analyze --user verify` findings about the unit, the unit's real state, linger on |
 
 Other modules add checks by appending to `hswlib.doctor.EXTRA_CHECKS`, and verbs with `register_verb` in `cli/hsw_editor.py`.
 

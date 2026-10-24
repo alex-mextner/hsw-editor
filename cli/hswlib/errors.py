@@ -64,10 +64,3 @@ class OpRefusedError(AgentToolError):
     """HTTP 422: the reducer refused an op. Exit 10."""
 
     exit_code: int = EXIT_OP_REFUSED
-
-
-@dataclass(eq=False)
-class AutostartError(AgentToolError):
-    """Autostart or port failure. Exit 4."""
-
-    exit_code: int = EXIT_AUTOSTART
