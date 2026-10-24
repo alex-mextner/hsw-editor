@@ -14,10 +14,19 @@ import { type Scratch, scratchDir } from './test-helpers.ts';
 import { applyFailure, recordSend } from './guard.ts';
 
 let scratch: Scratch;
+let chromeBefore: string | undefined;
 beforeEach(async () => {
   scratch = await scratchDir();
+  // The status probe resolves Chrome from the process environment (findChrome()), not from the runtime's
+  // env: pin it so the test does not depend on a Chrome being installed on the machine.
+  chromeBefore = process.env['HSW_CHATGPT_CHROME'];
+  process.env['HSW_CHATGPT_CHROME'] = '/bin/true';
 });
-afterEach(() => scratch.cleanup());
+afterEach(async () => {
+  if (chromeBefore === undefined) delete process.env['HSW_CHATGPT_CHROME'];
+  else process.env['HSW_CHATGPT_CHROME'] = chromeBefore;
+  await scratch.cleanup();
+});
 
 test('omp image-chain failures map to login_required with the one-time command', () => {
   const err = mapOmpError('Image generation exhausted the resolved image chain.');
@@ -76,7 +85,6 @@ test('status reports quota block with retryAfterMs and the challenge state; GET 
       HSW_EDITOR_DATA_DIR: scratch.dir,
       HSW_OMP_BIN: '/nonexistent/omp',
       HSW_CHATGPT_HEADLESS: '1',
-      HSW_CHATGPT_CHROME: '/bin/true',
     },
   });
   await runtime.store.update('chatgpt-browser', (g) =>
