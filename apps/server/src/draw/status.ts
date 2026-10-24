@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { type DrawBackendId, type DrawBackendStatus, DrawError } from '@hsw-editor/draw';
 import { CHATGPT_LOGIN_STEPS, probeChatgptLogin } from './backends/chatgpt-browser.ts';
+import { type DrawCliProbe, probeDrawCli } from './backends/draw-cli.ts';
 import { OMP_LOGIN_STEPS } from './backends/omp.ts';
 import { findChrome, findXvfb } from './browser-process.ts';
 import {
@@ -63,8 +64,60 @@ async function cachedOmpProbe(bin: string, force: boolean): Promise<OmpProbe> {
   return result;
 }
 
+const DRAW_CLI_PROBE_TTL_MS = 60_000;
+let drawCliProbeCache: { at: number; bin: string; result: DrawCliProbe } | null = null;
+
+/** `draw --backend chatgpt --check` is local and spends nothing, so it runs on every status call (TTL-cached). */
+async function cachedDrawCliProbe(bin: string, force: boolean): Promise<DrawCliProbe> {
+  const now = Date.now();
+  if (
+    !force &&
+    drawCliProbeCache &&
+    drawCliProbeCache.bin === bin &&
+    now - drawCliProbeCache.at < DRAW_CLI_PROBE_TTL_MS
+  ) {
+    return drawCliProbeCache.result;
+  }
+  const result = await probeDrawCli(bin);
+  drawCliProbeCache = { at: now, bin, result };
+  return result;
+}
+
 function sendsLast24h(guard: BackendGuard, now: number): number {
   return guard.sends.filter((t) => now - t < DAY_MS).length;
+}
+
+/** draw-cli: ready exactly when draw-cli itself says its Codex is signed in with ChatGPT; no login of the editor's own. */
+async function drawCliStatus(
+  runtime: DrawRuntime,
+  options: StatusOptions,
+): Promise<DrawBackendStatus> {
+  const now = Date.now();
+  const probe = await cachedDrawCliProbe(runtime.drawCli.bin, options.probe);
+  if (probe.state === 'unavailable') {
+    const guard = await runtime.store.get('draw-cli');
+    return {
+      id: 'draw-cli',
+      state: 'unavailable',
+      message: probe.message,
+      steps: probe.steps,
+      verified: true,
+      sendsLast24h: sendsLast24h(guard, now),
+      dailyCap: runtime.drawCli.guard.dailyCap,
+    };
+  }
+  const guard = await runtime.store.update('draw-cli', (g) =>
+    probe.state === 'ready' ? recordHealthy(g, now) : recordLoginRequired(g, now),
+  );
+  const status = fromGuard('draw-cli', guard, runtime.drawCli.guard, now, {
+    loginMessage: probe.state === 'login_required' ? probe.message : 'draw-cli is not signed in',
+    loginSteps: probe.state === 'login_required' ? probe.steps : [],
+    neverVerifiedIsLogin: false,
+    verified: true,
+  });
+  return status.state === 'ready' && probe.state === 'ready'
+    ? { ...status, message: `ready: ${probe.detail}` }
+    : status;
 }
 
 async function ompStatus(runtime: DrawRuntime, options: StatusOptions): Promise<DrawBackendStatus> {
@@ -211,11 +264,13 @@ export async function getBackendStatuses(
   runtime: DrawRuntime,
   options: StatusOptions = { probe: false },
 ): Promise<DrawBackendStatus[]> {
-  const [omp, chatgpt] = await Promise.all([
+  const [drawCli, omp, chatgpt] = await Promise.all([
+    drawCliStatus(runtime, options),
     ompStatus(runtime, options),
     chatgptStatus(runtime, options),
   ]);
   return [
+    drawCli,
     omp,
     chatgpt,
     {

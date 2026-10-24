@@ -151,6 +151,7 @@ export function applyFailure(g: BackendGuard, error: DrawError, now: number): Ba
 export type GuardBook = Readonly<Record<DrawBackendId, BackendGuard>>;
 
 export const EMPTY_BOOK: GuardBook = {
+  'draw-cli': EMPTY_GUARD,
   omp: EMPTY_GUARD,
   'chatgpt-browser': EMPTY_GUARD,
   manual: EMPTY_GUARD,

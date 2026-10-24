@@ -4,7 +4,7 @@
  * `chatgpt-browser` backend. Pure TypeScript, no runtime dependencies.
  */
 
-export const DRAW_BACKEND_IDS = ['omp', 'chatgpt-browser', 'manual'] as const;
+export const DRAW_BACKEND_IDS = ['draw-cli', 'omp', 'chatgpt-browser', 'manual'] as const;
 export type DrawBackendId = (typeof DRAW_BACKEND_IDS)[number];
 
 export const DRAW_SIZES = ['1024x1024', '1536x1024', '1024x1536'] as const;
@@ -241,7 +241,7 @@ export const DRAW_BACKEND_CHOICES = ['auto', ...DRAW_BACKEND_IDS] as const;
 export type DrawBackendChoice = (typeof DRAW_BACKEND_CHOICES)[number];
 
 export interface DrawSettings {
-  /** `auto` tries omp, then chatgpt-browser, then manual (falling through only on login/unavailable). */
+  /** `auto` tries draw-cli, omp, chatgpt-browser, then manual (falling through only on login/unavailable). */
   readonly backend: DrawBackendChoice;
 }
 

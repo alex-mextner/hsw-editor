@@ -11,13 +11,20 @@ the "draw a missing view of a draft object" path in `apps/server/src/tools/draw-
 
 | id | what | one-time user action |
 |---|---|---|
+| `draw-cli` | The user's [draw-cli](https://github.com/alex-mextner/draw-cli) (`draw --backend chatgpt -i ref... -o out`): the ChatGPT plan signed in to the local Codex CLI. **No login of the editor's own**: availability is asked of draw-cli itself (`draw --backend chatgpt --check`, local, spends nothing) on every status call and every run, and nothing is copied or stored | none when `draw` and a ChatGPT-signed `codex` are installed; else `uv tool install git+https://github.com/alex-mextner/draw-cli` / `codex login` (choose ChatGPT) |
 | `omp` | omp `generate_image` (codex transport) run as a throw-away `omp --mode json` with a per-run config overlay; the user's omp config is never changed | `omp login openai-codex` (or an `OPENROUTER_API_KEY` / `GEMINI_API_KEY` / `XAI_API_KEY`) |
 | `chatgpt-browser` | Ordinary Chrome with a **dedicated** profile (`~/.local/share/hsw-editor/chatgpt-profile`), own loopback CDP port (9231), private Xvfb `:131`. Driven over CDP: upload refs, type prompt, send, wait, extract `<img>` | `hsw-editor draw login chatgpt`: log in once in the window that opens, close it |
 | `manual` | A pending job holds `prompt.txt` + the refs; the user uploads image(s); the same request collects them | none |
 
-Setting `backend`: `auto` (default) tries `omp` → `chatgpt-browser` → `manual`, falling through **only** on
+Setting `backend`: `auto` (default) tries `draw-cli` → `omp` → `chatgpt-browser` → `manual`, falling through **only** on
 `login_required` / `backend_unavailable`. `quota_exhausted` and `challenge` stop the chain (the same plan may sit behind
 both ChatGPT paths; a captcha needs a human). Or pin one backend.
+
+draw-cli specifics: the refs go to `draw` as repeated `-i` in the request's order (for `photo.clean` the photo, then the mask), the prompt on stdin, and `--timeout` is the request's remaining budget; `draw`'s
+own words are mapped to the failure classes (`ChatGPT login required` -> `login_required`, Codex missing/too old -> `backend_unavailable`, `timed out` -> `timeout`, usage/rate limit -> `quota_exhausted` with the parsed reset,
+anything else -> `refused`) and a `draw` exit 0 whose file is not an image is `refused`. draw-cli's chatgpt backend has no size or seed controls, so `size` is only a hint (the answer is 1254 px square in the observed runs;
+the clean un-letterboxes whatever comes back). The editor never uses draw-cli's own `chatgpt-browser` backend (that one calls back into `hsw-editor draw run --backend chatgpt-browser`), and a signed-out draw-cli is
+re-checked on the next run: the usual 2-minute local login wall is not applied to it. `HSW_DRAW_CLI_BIN` picks another `draw`; `HSW_DRAW_CLI_DAILY_CAP` (default 200) is the local cap on top of the plan's own limit.
 
 Rules the browser backend never breaks: one owner lock (`draw/chatgpt-owner.lock` + Chrome's own profile lock); never
 attaches to a `chatgpt-guardian-*` browser or profile (refuses any path containing `chatgpt-guardian`); only its own tab;
@@ -55,9 +62,9 @@ probe; a challenge is cleared only by a healthy probe/login after the human acte
 ## HTTP API (`createDrawRoutes`, `apps/server/src/draw/routes.ts`)
 
 - `GET /api/draw/backends[?probe=1]` → `{settings, backends:[{id,state,message,steps[],retryAfterMs?,verified,sendsLast24h,dailyCap}]}`;
-  `state` ∈ ready|login_required|quota_exhausted|challenge|unavailable|manual. `steps` are literal shell commands. omp is
-  checked on every call (cheap `omp models ls --kind image`, 60 s cache); the ChatGPT page is loaded only with `probe=1`.
-- `GET|PUT /api/draw/settings` `{backend: auto|omp|chatgpt-browser|manual}`.
+  `state` ∈ ready|login_required|quota_exhausted|challenge|unavailable|manual. `steps` are literal shell commands. draw-cli
+  (`draw --backend chatgpt --check`) and omp (cheap `omp models ls --kind image`) are checked on every call (60 s cache, `probe=1` skips it); the ChatGPT page is loaded only with `probe=1`.
+- `GET|PUT /api/draw/settings` `{backend: auto|draw-cli|omp|chatgpt-browser|manual}`.
 - `GET /api/draw/manual/:id` → prompt, refs, uploaded count; `POST /api/draw/manual/:id/inbox` raw image body (<= 35 MiB,
   magic-byte validated) → the next `tools.draw_view` run with the same inputs collects it.
 - `/api/draw/*` is mounted by the daemon (`apps/server/src/draw/module.ts`); the routes and the jobs share ONE in-process runtime
@@ -104,7 +111,7 @@ result says how it ended (the job itself `succeeded`; the draw state is in the r
 `DrawnView` = `{ source: "generated", view, backend, sha256, width, height, mime, promptTemplateVersion, accepted, quality (the gate's report), file | null, check | null, drawnAt }`.
 
 Tested with fake backends and a fake sidecar (`apps/server/src/tools/draw-view.test.ts`): accepted, rejected, no fit, pinned `login_required` (no job), quota stop,
-auto -> `manual_pending` -> upload -> `done`, bad requests. The real ChatGPT/omp backends were NOT called (they need the user's login).
+auto -> `manual_pending` -> upload -> `done`, bad requests. The real omp and ChatGPT-browser backends were NOT called (they need their own login). The draw-cli backend was run for real on 2026-10-24 (ticket #191, #36): `hsw-editor draw run` (auto) drew a red circle with `backend: draw-cli`, and `photo.clean` on IMG_4937 (`docs/photos/IMG_4937.jpeg`, honeycomb board footprint) returned `method: ai`, `backend: draw-cli` (about 40 s): the plates are gone, the cable and every unmasked pixel kept.
 
 ## CLI
 
@@ -113,7 +120,7 @@ hsw-editor draw status [--probe] [--json]   # exit 1 when no automatic backend i
 hsw-editor draw doctor                      # status with live probes + the exact one-time steps
 hsw-editor draw login chatgpt               # one-time interactive login (user's display, dedicated profile)
 hsw-editor draw stop                        # stop the dedicated automation browser
-hsw-editor draw settings [auto|omp|chatgpt-browser|manual]
+hsw-editor draw settings [auto|draw-cli|omp|chatgpt-browser|manual]
 hsw-editor draw run [--backend id] < request.json
 ```
 

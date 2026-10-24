@@ -170,7 +170,11 @@ async function startDaemon(ompBin: string): Promise<void> {
   // own data directory per daemon: the guard state (a quota block, a login wall) must not leak between tests
   const dataDir = mkdtempSync(join(scratch.dir, 'data-'));
   const runtime = createDrawRuntime({
-    env: { HSW_EDITOR_DATA_DIR: dataDir, HSW_OMP_BIN: ompBin },
+    env: {
+      HSW_EDITOR_DATA_DIR: dataDir,
+      HSW_OMP_BIN: ompBin,
+      HSW_DRAW_CLI_BIN: '/nonexistent/draw',
+    },
     backends: { omp, 'chatgpt-browser': chatgpt },
   });
   root = mkdtempSync(join(tmpdir(), 'hsw-draw-view-'));
@@ -447,13 +451,20 @@ describe('draw a missing view of a draft object', () => {
       const { draftId, prefix } = await draftWithObject();
       omp.script.push(await goodPng());
       await drawView(prefix, { views: ['side'], backend: 'omp' });
-      expect(((await (await fetch(`${base}${prefix}/drawn`)).json()) as { views: unknown[] }).views.length).toBe(1);
+      expect(
+        ((await (await fetch(`${base}${prefix}/drawn`)).json()) as { views: unknown[] }).views
+          .length,
+      ).toBe(1);
       // recalibrate and analyse again: the sidecar numbers its objects from 1 again, and this time the tool is another one
       vision.bar = { r: 20, g: 120, b: 220 };
       await post(`/api/tools/drafts/${draftId}/calibration`, { mmPerPx: 1 });
       const again = await post('/api/jobs', { kind: 'tools.analyze', input: { draftId } });
-      expect((await waitJob(((await again.json()) as { job: { id: string } }).job.id)).state).toBe('succeeded');
-      expect(((await (await fetch(`${base}${prefix}/drawn`)).json()) as { views: unknown[] }).views).toEqual([]);
+      expect((await waitJob(((await again.json()) as { job: { id: string } }).job.id)).state).toBe(
+        'succeeded',
+      );
+      expect(
+        ((await (await fetch(`${base}${prefix}/drawn`)).json()) as { views: unknown[] }).views,
+      ).toEqual([]);
       expect((await fetch(`${base}${prefix}/drawn/side.png`)).status).toBe(404);
       // the new picture draws and keeps its own
       omp.script.push(await goodPng());

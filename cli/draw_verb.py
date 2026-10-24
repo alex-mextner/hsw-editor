@@ -33,7 +33,7 @@ def configure(subs: Any) -> None:
         help=f"draw missing views of an object: {' | '.join(VERBS)}",
         description="Draw backends for missing views (docs/draw.md). status [--probe] [--json]: which backends are usable "
         "and the one-time steps for the rest. doctor: status with live probes. login chatgpt: one-time login in the dedicated "
-        "browser profile. stop: stop that browser. settings [auto|omp|chatgpt-browser|manual]. run [--backend id]: one JSON "
+        "browser profile. stop: stop that browser. settings [auto|draw-cli|omp|chatgpt-browser|manual]. run [--backend id]: one JSON "
         "request on stdin, one JSON result on stdout.",
     )
     parser.add_argument("draw_args", nargs=argparse.REMAINDER, help="verb and its arguments (see docs/draw.md)")

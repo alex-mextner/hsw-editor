@@ -84,7 +84,7 @@ Editing by agents: same ops via CLI (`hsw-editor wall apply`), HTTP, and omp too
 Anything new and reusable goes into `~/dev/3d-cli` (+ issue in alex-mextner/3d-cli).
 
 ### Draw backends (missing views)
-`DrawBackend` interface: `draw(prompt, refs[]) -> image`. Backends: `omp-generate-image` (codex transport),
+`DrawBackend` interface: `draw(prompt, refs[]) -> image`. Backends: `draw-cli` (the user's draw-cli, signed-in ChatGPT via Codex, no login of its own), `omp-generate-image` (codex transport),
 `chatgpt-browser` (CDP, dedicated profile, one owner lock, human-pace, no stealth), `manual-upload`. Selected in settings.
 
 ### omp integration

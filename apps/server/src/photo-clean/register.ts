@@ -16,7 +16,7 @@ const drawRuntime = (): DrawRuntime => (runtime ??= createDrawRuntime());
 
 /** The backends the AI clean may use: the user's draw setting, never the manual one (it needs a human upload). */
 export function cleanBackends(setting: DrawBackendId | 'auto'): readonly DrawBackendId[] {
-  if (setting === 'auto') return ['omp', 'chatgpt-browser'];
+  if (setting === 'auto') return ['draw-cli', 'omp', 'chatgpt-browser'];
   return setting === 'manual' ? [] : [setting];
 }
 

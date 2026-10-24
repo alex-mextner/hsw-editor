@@ -279,6 +279,8 @@ def check_vision(ctx: Context) -> list[Check]:
 
 def check_draw(ctx: Context) -> list[Check]:
     backends = ["manual-upload"]
+    if _which("draw") and _which("codex"):
+        backends.append("draw-cli")
     if _which("omp"):
         backends.append("omp-generate-image")
     profile = ctx.data_dir / "chatgpt-profile"
@@ -287,7 +289,7 @@ def check_draw(ctx: Context) -> list[Check]:
     detail = ", ".join(backends)
     if len(backends) == 1:
         return [Check("draw backends", "warn", f"only {detail}: missing views cannot be drawn automatically",
-                      "install omp (generate_image) or set up the ChatGPT browser profile")]
+                      "install draw-cli and `codex login` (ChatGPT), install omp (generate_image), or set up the ChatGPT browser profile")]
     return [Check("draw backends", "ok", detail)]
 
 

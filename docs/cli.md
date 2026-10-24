@@ -110,7 +110,7 @@ Exit codes of the photo verbs: 0 ok, 2 bad input or no scale (`--two-point X1,Y1
 ## draw
 
 `hsw-editor draw VERB ...` (`cli/draw_verb.py` execs `apps/server/src/draw/cli.ts`; details in [draw.md](draw.md)): `status [--probe] [--json]` (exit 1 when no automatic
-backend is ready), `doctor`, `login chatgpt`, `stop`, `settings [auto|omp|chatgpt-browser|manual]`, `run [--backend id] < request.json`.
+backend is ready), `doctor`, `login chatgpt`, `stop`, `settings [auto|draw-cli|omp|chatgpt-browser|manual]`, `run [--backend id] < request.json`.
 
 ## doctor
 
