@@ -566,10 +566,28 @@ describe('wall_undo and wall_bank_search', () => {
         return {
           status: 200,
           body: {
-            results: [
-              { id: 'e1', score: 3.14159 },
-              { id: 'gone', score: 1 },
-            ],
+            results: Array.from({ length: 30 }, (_, index) => {
+              const id = `e${index + 1}`;
+              return {
+                id,
+                score: index === 0 ? 3.14159 : 1,
+                element: {
+                  id,
+                  name: { ru: 'holder', en: 'holder' },
+                  category: 'holders',
+                  dimsMm: { x: 60, y: 40, z: 30 },
+                  footprint: { cells: [{}, {}] },
+                  mounting: { kind: 'plug' },
+                  ...(index === 0
+                    ? {
+                        params: [
+                          { key: 'length', min: 80, max: 200, default: 120, unit: 'mm' },
+                        ],
+                      }
+                    : {}),
+                },
+              };
+            }),
           },
         };
       if (request.path === '/api/bank/elements/e1') {
@@ -590,21 +608,41 @@ describe('wall_undo and wall_bank_search', () => {
     };
     const h = harness({ reply });
     const body = JSON.parse(
-      resultText(await run(h, 'wall_bank_search', { query: 'отвертка', limit: 5 })),
+      resultText(await run(h, 'wall_bank_search', { query: 'отвертка', limit: 30 })),
     ) as {
       count: number;
       results: { id: string; cells: number; score: number; params: { key: string }[] }[];
     };
     expect(h.requests[0]?.path).toBe(
-      '/api/bank/search?q=%D0%BE%D1%82%D0%B2%D0%B5%D1%80%D1%82%D0%BA%D0%B0&limit=5',
+      '/api/bank/search?q=%D0%BE%D1%82%D0%B2%D0%B5%D1%80%D1%82%D0%BA%D0%B0&limit=30&include=elements',
     );
-    expect(body.count).toBe(1);
+    expect(h.requests.length).toBeLessThanOrEqual(2);
+    expect(body.count).toBe(30);
     expect(body.results[0]).toMatchObject({
       id: 'e1',
       cells: 2,
       score: 3.14,
       params: [{ key: 'length' }],
     });
+  });
+
+  test('bank search does not fetch hits individually when elements are omitted', async () => {
+    const h = harness({
+      reply: (request) =>
+        request.path.startsWith('/api/bank/search')
+          ? {
+              status: 200,
+              body: { results: Array.from({ length: 30 }, (_, i) => ({ id: `e${i + 1}`, score: 1 })) },
+            }
+          : { status: 200, body: { id: 'unexpected' } },
+    });
+
+    const body = JSON.parse(
+      resultText(await run(h, 'wall_bank_search', { query: 'holder', limit: 30 })),
+    ) as { count: number; results: unknown[] };
+
+    expect(h.requests).toHaveLength(1);
+    expect(body).toEqual({ count: 0, results: [] });
   });
 });
 

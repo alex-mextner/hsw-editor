@@ -504,7 +504,11 @@ export function createBankHandler(options: BankHandlerOptions): BankHandler {
         filter.mounting = mounting;
       }
       const limit = Math.min(200, Math.max(1, Number(url.searchParams.get('limit') ?? 50) || 50));
-      const results = data.search(q, filter, limit).map(({ id, score }) => ({ id, score }));
+      const results = data.search(q, filter, limit).map(({ id, score, element }) => ({
+        id,
+        score,
+        ...(url.searchParams.get('include') === 'elements' ? { element } : {}),
+      }));
       return json({ results });
     }
 
