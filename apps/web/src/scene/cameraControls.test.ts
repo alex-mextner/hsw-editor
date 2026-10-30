@@ -45,13 +45,16 @@ describe('touchesFor', () => {
 });
 
 describe('bindCameraLock', () => {
-  test('orbit is disabled the moment an item is held, without waiting for a React render', () => {
+  // state-lib delivers subscriber notifications in a microtask (statelib-scope.ts): still before any React render.
+  test('orbit is disabled the moment an item is held, without waiting for a React render', async () => {
     const store = createValueStore({ holding: false, tool: 'select' as ToolMode });
     const controls = { enabled: true };
     const unbind = bindCameraLock(controls, store);
     store.set({ holding: true, tool: 'select' });
+    await Promise.resolve();
     expect(controls.enabled).toBe(false);
     store.set({ holding: false, tool: 'select' });
+    await Promise.resolve();
     expect(controls.enabled).toBe(true);
     unbind();
   });
@@ -63,21 +66,24 @@ describe('bindCameraLock', () => {
     expect(controls.enabled).toBe(false);
   });
 
-  test('a drawing tool owns the left drag, so orbit is off until the select tool returns', () => {
+  test('a drawing tool owns the left drag, so orbit is off until the select tool returns', async () => {
     const store = createValueStore({ holding: false, tool: 'select' as ToolMode });
     const controls = { enabled: true };
     bindCameraLock(controls, store);
     store.set({ holding: false, tool: 'measure' });
+    await Promise.resolve();
     expect(controls.enabled).toBe(false);
     store.set({ holding: false, tool: 'select' });
+    await Promise.resolve();
     expect(controls.enabled).toBe(true);
   });
 
-  test('stops following the store after unbind', () => {
+  test('stops following the store after unbind', async () => {
     const store = createValueStore({ holding: false, tool: 'select' as ToolMode });
     const controls = { enabled: true };
     bindCameraLock(controls, store)();
     store.set({ holding: true, tool: 'select' });
+    await Promise.resolve();
     expect(controls.enabled).toBe(true);
   });
 });
@@ -164,35 +170,43 @@ describe('item press owns the left-button gesture', () => {
     sessionStore.set(null);
   });
 
-  test('pressing an item disables orbit synchronously; releasing re-enables it', () => {
+  test('pressing an item disables orbit before the next task; releasing re-enables it', async () => {
     arm([holder('a', 4, 4)]);
     press('a');
+    await Promise.resolve();
     expect(controls.enabled).toBe(false);
     pointer('pointerup');
+    await Promise.resolve();
     expect(controls.enabled).toBe(true);
   });
 
-  test('orbit comes back after a real drag is cancelled with pointercancel', () => {
+  test('orbit comes back after a real drag is cancelled with pointercancel', async () => {
     arm([holder('a', 4, 4)]);
     press('a');
     pointer('pointermove', { x: 160, y: 140 });
+    await Promise.resolve();
     expect(controls.enabled).toBe(false);
     pointer('pointercancel', { x: 160, y: 140 });
+    await Promise.resolve();
     expect(controls.enabled).toBe(true);
     expect(editorStore.get().dragging.size).toBe(0);
   });
 
-  test('orbit comes back after a real drag is cancelled with Escape', () => {
+  test('orbit comes back after a real drag is cancelled with Escape', async () => {
     arm([holder('a', 4, 4)]);
     press('a');
     pointer('pointermove', { x: 160, y: 140 });
+    await Promise.resolve();
+    expect(controls.enabled).toBe(false);
     globalThis.dispatchEvent(Object.assign(new Event('keydown'), { key: 'Escape' }));
+    await Promise.resolve();
     expect(controls.enabled).toBe(true);
   });
 
-  test('a locked item cannot be moved, so the press does not hold the camera', () => {
+  test('a locked item cannot be moved, so the press does not hold the camera', async () => {
     arm([holder('a', 4, 4, true)]);
     press('a');
+    await Promise.resolve();
     expect(controls.enabled).toBe(true);
   });
 });

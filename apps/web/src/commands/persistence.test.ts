@@ -66,6 +66,30 @@ describe('persistNamespaces', () => {
     expect(writes).toBe(0);
   });
 
+  test('a remote value the store normalizes is not written back when notifications arrive later', async () => {
+    const client = createSettingsClient({ storage: memoryStorage() });
+    const store = createValueStore<string>('');
+    let writes = 0;
+    const set = client.set.bind(client);
+    client.set = (namespace, value) => {
+      writes += 1;
+      set(namespace, value);
+    };
+    persistNamespaces(client, [
+      {
+        namespace: 'key',
+        read: () => (store.get() === '' ? undefined : store.get()),
+        write: (value) => store.set(typeof value === 'string' ? value.toLowerCase() : ''),
+        subscribe: store.subscribe,
+      },
+    ]);
+    set('key', 'Ctrl+U');
+    const afterRemote = writes;
+    await Promise.resolve();
+    expect(store.get()).toBe('ctrl+u');
+    expect(writes).toBe(afterRemote);
+  });
+
   test('a namespace removed elsewhere resets the store to its defaults', () => {
     const client = createSettingsClient({ storage: memoryStorage() });
     const store = new SettingsStore(APP_SETTINGS);
@@ -84,7 +108,7 @@ describe('persistNamespaces', () => {
     expect(client.get('settings')).toBeUndefined();
   });
 
-  test('keymap and usage round-trip through their parsers', () => {
+  test('keymap and usage round-trip through their parsers', async () => {
     const client = createSettingsClient({ storage: memoryStorage() });
     const keymap = createValueStore<UserKeymap>(EMPTY_USER_KEYMAP);
     const usage = createValueStore<UsageRecord>({});
@@ -107,6 +131,8 @@ describe('persistNamespaces', () => {
     ]);
     keymap.set({ version: 1, overrides: { 'edit.undo': [{ key: 'mod+u', when: undefined }] } });
     usage.set(recordUse({}, 'cmd:edit.undo', 1000));
+    // state-lib delivers subscriber notifications in a microtask (see statelib-scope.ts).
+    await Promise.resolve();
     expect(client.get('keymap')).toEqual({
       version: 1,
       overrides: { 'edit.undo': [{ key: 'mod+u' }] },

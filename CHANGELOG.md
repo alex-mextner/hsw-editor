@@ -129,6 +129,7 @@ needs an entry here first.
 
 ### Changed
 
+- The UI state layer is a normal dependency now (#252): `@ultrabricks/state-lib` 0.1.0-pilot.1 is public (MIT) on the Forgejo npm registry and `bun install` fetches it (scope mapped in `bunfig.toml`, no credentials). `bun run setup:state-lib`, `vendor/state-lib`, the baseline store backend and `VITE_STATE_BACKEND` are gone, so CI, the Pages demo and the tests run the same backend as the app. Store subscribers are notified in a microtask (state-lib's delivery rule), and the settings link no longer writes back a remote value the store normalized.
 - Removal analysis is 20-100x faster on dense racks (#196): boxes decide before the exact `minGap`/boolean, a gap is asked in growing steps (8 -> 60 mm), a tool cramped
   at rest is not measured along its way (it needs two hands anyway). The showcase wall: 54 s -> 3 s, a rack of three screwdrivers 26 s -> 0.3-0.6 s per tool, same verdicts. The rest gap and the clearance now look at everything within the 60 mm search distance (they only saw
   what lay in the sweep box before), so a tool with another one 25 mm below it has a clearance of 25 mm, not 60: its convenience (and so a holder's rating) can be a little lower.

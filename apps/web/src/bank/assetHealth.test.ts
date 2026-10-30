@@ -200,12 +200,13 @@ describe('asset health store', () => {
     expect(failAfterRetry({ quiet: true }).record.quiet).toBe(false);
   });
 
-  test('every change publishes a new map so subscribers re-render', () => {
+  test('every change publishes a new map so subscribers re-render', async () => {
     let notifications = 0;
     const stop = assetHealthStore.subscribe(() => notifications++);
     recordFailure(input, fixed);
     markRetrying(URL_A);
     markRecovered(URL_A);
+    await Promise.resolve();
     stop();
     expect(notifications).toBe(3);
   });

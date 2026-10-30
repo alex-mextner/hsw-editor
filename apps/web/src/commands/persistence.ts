@@ -28,8 +28,19 @@ export function toSettingsValue(value: unknown): SettingsValue {
 
 function link(client: SettingsClient, entry: PersistedNamespace): () => void {
   let applying = false;
+  // What the last remote apply left in the store. A backend that delivers notifications later (state-lib,
+  // in a microtask) runs push after `applying` is cleared, so an unchanged store is still "not a user edit".
+  let applied: { readonly value: SettingsValue | undefined } | null = null;
+  const settled = (): SettingsValue | undefined => {
+    const value = entry.read();
+    return value === undefined ? undefined : toSettingsValue(value);
+  };
   const push = (): void => {
     if (applying) return;
+    if (applied !== null) {
+      if (jsonEqual(settled(), applied.value)) return;
+      applied = null;
+    }
     const value = entry.read();
     const stored = client.get(entry.namespace);
     if (value === undefined) {
@@ -43,12 +54,14 @@ function link(client: SettingsClient, entry: PersistedNamespace): () => void {
     applying = true;
     try {
       entry.write(value);
+      applied = { value: settled() };
     } finally {
       applying = false;
     }
   };
   const stored = client.get(entry.namespace);
   if (stored !== undefined) apply(stored);
+  applied = null;
   // What only this device knows (an old localStorage theme, usage before the first sync) is stored.
   push();
   const stopClient = client.subscribe(entry.namespace, apply);
