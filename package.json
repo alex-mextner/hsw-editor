@@ -1,6 +1,6 @@
 {
   "name": "hsw-editor",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "private": true,
   "description": "Local 3D wall editor for HSW honeycomb tool walls: photo to wall, offline PWA, omp agent panel.",
   "license": "MIT",
