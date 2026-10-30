@@ -1,16 +1,8 @@
-import { describe, expect, mock, test } from 'bun:test';
-import { existsSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { describe, expect, test } from 'bun:test';
+import { createScope } from './statelib-scope.ts';
 
-// vendor/state-lib is private and absent in CI, and Vite (not Bun) maps its package name: the test runs only
-// where the backend is installed and points the bare name at the built dist, so imports below are dynamic.
-const dist = fileURLToPath(new URL('../../../../vendor/state-lib/dist/index.js', import.meta.url));
-
-describe.skipIf(!existsSync(dist))('state-lib scope', () => {
+describe('state-lib scope', () => {
   test('a subscriber may write another store while being notified', async () => {
-    const lib: object = await import(dist);
-    mock.module('@ultrabricks/state-lib', () => lib);
-    const { createScope } = await import('./statelib-scope.ts');
     const scope = createScope();
     const source = scope.value<number>(0);
     const mirror = scope.value<number>(0);
@@ -22,9 +14,6 @@ describe.skipIf(!existsSync(dist))('state-lib scope', () => {
   });
 
   test('an unsubscribed listener is not called by a pending delivery', async () => {
-    const lib: object = await import(dist);
-    mock.module('@ultrabricks/state-lib', () => lib);
-    const { createScope } = await import('./statelib-scope.ts');
     const scope = createScope();
     const source = scope.value<number>(0);
     let calls = 0;

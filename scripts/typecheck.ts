@@ -1,12 +1,10 @@
 /**
- * Runs tsc for every workspace. The state-lib backend module is type-checked only when
- * `bun run setup:state-lib` has produced vendor/state-lib (it is private and absent in CI).
+ * Runs tsc for every workspace.
  *
  * apps/web runs in build mode (`tsc -b`): the vendored omp renderer (apps/web/src/features/omp/vendor)
  * is its own composite project with the flags upstream compiles under, and the strict web projects
  * consume its emitted declarations (see tsconfig.omp-vendor.json).
  */
-import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 const root = resolve(import.meta.dir, '..');
@@ -26,11 +24,6 @@ const projects = [
   // The service worker is compiled with the WebWorker lib (the DOM lib of apps/web clashes with it).
   'apps/web/tsconfig.sw.json',
 ];
-if (existsSync(resolve(root, 'vendor/state-lib/dist/index.d.ts'))) {
-  projects.push('apps/web/tsconfig.statelib.json');
-} else {
-  console.info('typecheck: vendor/state-lib absent, skipping the state-lib backend project');
-}
 
 let failed = false;
 for (const project of projects) {

@@ -205,9 +205,11 @@ def check_bank(ctx: Context) -> list[Check]:
 
 
 def check_state_lib(ctx: Context) -> list[Check]:
-    if (ctx.repo_root / "vendor/state-lib/dist/index.js").exists():
-        return [Check("state-lib", "ok", "vendored")]
-    return [Check("state-lib", "warn", "absent: the UI uses the baseline store backend", "optional: bun run setup:state-lib")]
+    package = "node_modules/@ultrabricks/state-lib/package.json"
+    # Bun's isolated linker installs under the workspace; the hoisted one under the repo root.
+    if any((ctx.repo_root / base / package).exists() for base in ("apps/web", ".")):
+        return [Check("state-lib", "ok", "installed")]
+    return [Check("state-lib", "warn", "not installed: the web UI cannot build", "bun install")]
 
 
 def check_port(ctx: Context) -> list[Check]:

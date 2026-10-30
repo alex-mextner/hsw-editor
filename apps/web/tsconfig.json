@@ -6,16 +6,10 @@
     "types": ["vite/client", "bun"],
     "paths": {
       "@/*": ["./src/*"],
-      "#state-backend": ["./src/state/baseline.ts"]
+      "#state-backend": ["./src/state/statelib.ts"]
     }
   },
   "include": ["src", "scripts", "vite.config.ts"],
   "references": [{ "path": "./tsconfig.omp-vendor.json" }],
-  "exclude": [
-    "src/features/omp/vendor/omp-render",
-    "src/pwa/sw.ts",
-    "src/state/statelib.ts",
-    "src/state/statelib-scope.ts",
-    "src/state/statelib-scope.test.ts"
-  ]
+  "exclude": ["src/features/omp/vendor/omp-render", "src/pwa/sw.ts"]
 }

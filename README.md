@@ -46,11 +46,10 @@ Development: `bun run dev` (Vite on :5194, proxies `/api` to :8794) and `bun run
 Checks: `bun run lint`, `bun run typecheck`, `bun run test`, `bun run build` (or `bun run check`).
 Vision sidecar: `cd services/vision && uv sync && uv run pytest`.
 
-### state-lib (optional, private)
+### state-lib
 
-The UI state layer can use `@ultrabricks/state-lib` (not on npm). `bun run setup:state-lib` builds it from a local checkout
-into `vendor/state-lib/` (gitignored; override the source with `STATE_LIB_RUNTIME`). Without it, or with
-`VITE_STATE_BACKEND=baseline`, the app uses a dependency-free baseline store. CI always runs the baseline backend.
+The UI state layer is `@ultrabricks/state-lib` (MIT), installed by `bun install` from the public Forgejo npm registry
+mapped for the `@ultrabricks` scope in `bunfig.toml`; no credentials or local checkout are needed.
 
 ## CLI
 

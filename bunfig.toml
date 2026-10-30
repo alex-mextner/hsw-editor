@@ -1,2 +1,6 @@
 [install]
 saveTextLockfile = true
+
+# @ultrabricks packages (state-lib) live on the public Forgejo npm registry; reading needs no credentials.
+[install.scopes]
+"@ultrabricks" = "https://git.hyperide.ai/api/packages/ultrabricks/npm/"

@@ -42,10 +42,6 @@ function demoSeedBank() {
   };
 }
 
-const stateLibDist = fileURLToPath(
-  new URL('../../vendor/state-lib/dist/index.js', import.meta.url),
-);
-
 const DAEMON = 'http://127.0.0.1:8794';
 
 /** Dev proxy that answers 502 (not Vite's bare 500) when the daemon is down, so the client goes offline. */
@@ -64,10 +60,6 @@ function proxyTo(target: string): ProxyOptions {
 
 export default defineConfig(({ mode }) => {
   const env = { ...loadEnv(mode, process.cwd(), ''), ...process.env };
-  // The private state-lib is optional: without vendor/state-lib (see `bun run setup:state-lib`)
-  // or with VITE_STATE_BACKEND=baseline the app uses the dependency-free baseline store.
-  const useStateLib = env['VITE_STATE_BACKEND'] !== 'baseline' && existsSync(stateLibDist);
-  if (!useStateLib) console.info('vite: store backend = baseline (state-lib not used)');
   return {
     plugins: [
       react(),
@@ -76,20 +68,14 @@ export default defineConfig(({ mode }) => {
       VitePWA(pwaPluginOptions()),
       ...(env['VITE_HSW_DEMO'] === '1' ? [demoSeedBank()] : []),
     ],
-    define: { __STATE_BACKEND__: JSON.stringify(useStateLib ? 'state-lib' : 'baseline') },
     resolve: {
       // tunnel-rat (drei) is linked from the shared ~/.bun store, where its react peer can be missing on an
       // old store entry; resolving react from the app root makes a fresh clone build on any machine.
       dedupe: ['react', 'react-dom'],
       alias: {
         '@': fileURLToPath(new URL('./src', import.meta.url)),
-        '#state-backend': fileURLToPath(
-          new URL(
-            useStateLib ? './src/state/statelib.ts' : './src/state/baseline.ts',
-            import.meta.url,
-          ),
-        ),
-        ...(useStateLib ? { '@ultrabricks/state-lib': stateLibDist } : {}),
+        // The one store seam (44 call sites import it); a single backend, state-lib.
+        '#state-backend': fileURLToPath(new URL('./src/state/statelib.ts', import.meta.url)),
       },
     },
     server: {

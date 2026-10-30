@@ -25,8 +25,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      # state-lib is not published; the public build uses the dependency-free baseline store.
-      VITE_STATE_BACKEND: baseline
       # The Pages site has no daemon: read-only demo on the committed seed bank (apps/web/src/demo).
       VITE_HSW_DEMO: '1'
     steps:
