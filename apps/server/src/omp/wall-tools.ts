@@ -354,22 +354,12 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
     }
 
     /** Bank search hits resolved to element summaries; hits whose element cannot be read are dropped. */
-    async function bankSummaries(
-      hits: readonly { id: string; score: number }[],
-      signal: AbortSignal,
-    ): Promise<BankElementSummary[]> {
-      const elements = await Promise.all(
-        hits.map(async ({ id, score }) => {
-          const element = await api<BankElementView & ApiErrorReply>(
-            'GET',
-            `/api/bank/elements/${encodeURIComponent(id)}`,
-            undefined,
-            signal,
-          );
-          return element.status === 200 ? summariseElement(element.body, score) : null;
-        }),
+    function bankSummaries(
+      hits: readonly { id: string; score: number; element?: BankElementView }[],
+    ): BankElementSummary[] {
+      return hits.flatMap(({ score, element }) =>
+        element === undefined ? [] : [summariseElement(element, score)],
       );
-      return elements.filter((entry): entry is BankElementSummary => entry !== null);
     }
 
     const postOps = (
@@ -662,11 +652,13 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
         const parsed = BankSearchArgsSchema.safeParse(args);
         if (!parsed.success) return failure(formatIssues(parsed.error));
         const { query, category, toolClass, mounting, limit } = parsed.data;
-        const params = new URLSearchParams({ q: query, limit: String(limit) });
+        const params = new URLSearchParams({ q: query, limit: String(limit), include: 'elements' });
         if (category) params.set('category', category);
         if (toolClass) params.set('tool', toolClass);
         if (mounting) params.set('mounting', mounting);
-        const search = await api<{ results?: { id: string; score: number }[] } & ApiErrorReply>(
+        const search = await api<{
+          results?: ({ id: string; score: number } & ApiErrorReply & { element?: BankElementView })[];
+        } & ApiErrorReply>(
           'GET',
           `/api/bank/search?${params.toString()}`,
           undefined,
@@ -678,7 +670,8 @@ export function createWallToolFactory(options: WallToolOptions): ToolFactory {
           );
         }
         if (search.status !== 200) return apiFailure(search.status, search.body);
-        const results = await bankSummaries(search.body.results ?? [], signal);
+        const hits = search.body.results ?? [];
+        const results = bankSummaries(hits);
         return jsonResult(
           { count: results.length, results },
           { details: { count: results.length } },
