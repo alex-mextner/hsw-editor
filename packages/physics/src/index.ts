@@ -2,6 +2,7 @@ export * from './body.ts';
 export * from './columns.ts';
 export * from './contacts.ts';
 export * from './equilibrium.ts';
+export * from './fall.ts';
 export * from './hang.ts';
 export * from './nnls.ts';
 export * from './seat.ts';

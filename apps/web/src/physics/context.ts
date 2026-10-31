@@ -8,6 +8,7 @@ import { sessionStore, submitOps } from '@/wall/session.ts';
 import { toolInterfaceOf } from '@/wall/toolInterface.ts';
 import type { AssetContext, ToolModelSource } from './assets.ts';
 import { physicsEnabledStore } from './enabled.ts';
+import type { FallDeps } from './fall.ts';
 import type { PostStepDeps } from './seat.ts';
 import { physicsClient } from './service.ts';
 
@@ -98,5 +99,18 @@ export function livePostStepDeps(): PostStepDeps {
     },
     enabled: () => physicsEnabledStore.get(),
     settled: untilToolModelSettled,
+  };
+}
+
+/** The dependencies of the fall decision over the live stores. */
+export function liveFallDeps(): FallDeps {
+  const { wall, context, submit, enabled, settled } = livePostStepDeps();
+  return {
+    wall,
+    context,
+    submit,
+    enabled,
+    ...(settled === undefined ? {} : { settled }),
+    faller: physicsClient,
   };
 }

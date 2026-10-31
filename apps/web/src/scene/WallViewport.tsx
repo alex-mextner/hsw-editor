@@ -36,10 +36,12 @@ import { PhotoBoard } from './PhotoBoard.tsx';
 import { PhotoCameraRig } from './PhotoCameraRig.tsx';
 import { wallExtent } from './wallExtent.ts';
 import { PhotoFrame } from './PhotoStage.tsx';
-import { photoViewState, shownPhoto } from './photoView.ts';
+import { photoViewState, shownPhoto, type PhotoView } from './photoView.ts';
 import { SelectionFrames } from './SelectionFrames.tsx';
 import { boardSizeMm } from '@hsw-editor/core';
 import { DimensionLayer } from '@/widgets/DimensionLayer.tsx';
+import { FloorPlane } from './FloorPlane.tsx';
+import { toolLiesOnFloor, withFloor } from './floorItems.ts';
 import { InvalidZones } from './invalid-zones/InvalidZones.tsx';
 import { PhysicsZones } from './physics/PhysicsZones.tsx';
 import { itemSolid } from './invalid-zones/itemSolid.ts';
@@ -51,9 +53,124 @@ import { usePhysicsLive } from '@/physics/live.ts';
 
 const GEOMETRY_WARNINGS = new Set(['cell_collision', 'out_of_board', 'cell_out_of_board']);
 
+type Zones = ReturnType<typeof useInvalidZones>;
+
+/** Ids of the items the selection frame marks red: exact regions, cell-based verdicts and server warnings. */
+function useInvalidIds(
+  wall: Wall,
+  bank: Parameters<typeof layoutProblems>[2],
+  zones: Zones,
+  warnings: readonly { readonly code: string; readonly itemIds: readonly string[] }[] | undefined,
+): Set<string> {
+  return useMemo(() => {
+    const ids = new Set<string>(zones?.reasons.map((reason) => reason.itemId));
+    for (const id of layoutProblems(wall.items, wall.board, bank).keys()) ids.add(id);
+    for (const warning of warnings ?? []) {
+      if (GEOMETRY_WARNINGS.has(warning.code)) for (const id of warning.itemIds) ids.add(id);
+    }
+    return ids;
+  }, [zones, wall.items, wall.board, bank, warnings]);
+}
+
+/** Describes the invalid reasons of a region for the tooltip, by item name. */
+function useRegionDescriber(wall: Wall, bank: Parameters<typeof layoutProblems>[2], zones: Zones) {
+  const { t, locale } = useI18n();
+  return useMemo(() => {
+    const nameOf = itemNamer(wall, bank, locale);
+    return (region: Parameters<typeof regionReasons>[0]): string[] =>
+      regionReasons(region, zones?.reasons ?? []).map((reason) => {
+        const message = describeReason(reason, nameOf);
+        return `${nameOf(reason.itemId)}: ${t(message.key, message.params)}`;
+      });
+  }, [wall, bank, locale, t, zones]);
+}
+
+function GhostLayer({
+  ghost,
+  bank,
+  palette,
+}: {
+  readonly ghost: ReturnType<typeof editorStore.get>['ghost'];
+  readonly bank: Parameters<typeof layoutProblems>[2];
+  readonly palette: ReturnType<typeof scenePalette>;
+}) {
+  const element = ghost ? bank.get(ghost.bankId) : undefined;
+  if (!ghost || !element) return null;
+  return (
+    <GhostItem
+      element={element}
+      xMm={ghost.x}
+      yMm={ghost.y}
+      rotZ={0}
+      color={ghost.valid ? palette.ghostOk : palette.ghostBad}
+    />
+  );
+}
+
+function MeasurePlane({
+  widthMm,
+  heightMm,
+}: {
+  readonly widthMm: number;
+  readonly heightMm: number;
+}) {
+  return (
+    <mesh position={[widthMm / 2000, heightMm / 2000, 0.002]} onPointerDown={measureClick}>
+      <planeGeometry
+        args={[(Math.max(widthMm, 4000) / 1000) * 4, (Math.max(heightMm, 4000) / 1000) * 4]}
+      />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+    </mesh>
+  );
+}
+
+/** Camera and backdrop of the viewport: the calibrated photo when one is shown, else the free camera and the board. */
+function ViewLayer(props: {
+  readonly wall: Wall;
+  readonly photoView: PhotoView | null;
+  readonly showCleaned: boolean;
+  readonly extent: ReturnType<typeof wallExtent>;
+  readonly overhangs: boolean;
+  readonly palette: ReturnType<typeof scenePalette>;
+  readonly occupied: ReturnType<typeof occupiedCells>;
+}) {
+  const { wall, photoView, extent, overhangs, palette, occupied } = props;
+  const editor = useStore(editorStore);
+  const size = boardSizeMm(wall.board);
+  if (photoView) {
+    return (
+      <>
+        <PhotoCameraRig
+          camera={photoView.camera}
+          wallToPx={photoView.map.wallToPxMatrix}
+          image={photoView.image}
+        />
+        <PhotoBoard
+          board={wall.board}
+          photoUrl={api.photoUrl(wall.id, shownPhoto(photoView, props.showCleaned).id)}
+          image={photoView.image}
+          calibration={photoView.photo.calibration ?? photoView.calibration}
+        />
+      </>
+    );
+  }
+  return (
+    <>
+      <CameraRig
+        view={editor.view}
+        extent={withFloor(extent)}
+        overhangs={overhangs}
+        widthMm={size.width}
+        heightMm={size.height}
+        fitToken={editor.fitToken}
+      />
+      <BoardMesh board={wall.board} palette={palette} occupied={occupied} />
+    </>
+  );
+}
+
 /** The R3F viewport for the open wall. Reads everything from the stores; sends edits through the session. */
 export function WallViewport({ wall }: { readonly wall: Wall }) {
-  const { t, locale } = useI18n();
   const editor = useStore(editorStore);
   const zonesEnabled = useStore(invalidZonesEnabledStore);
   const variants = useStore(variantVersion);
@@ -109,22 +226,8 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
   // Item-level verdicts feed only the selection frame (a selected item's outline turns red): the exact regions, plus
   // the cell-based verdicts and server warnings. Models themselves are never tinted; with the zones off nothing but
   // the frame of a selected item marks them.
-  const invalidIds = useMemo(() => {
-    const ids = new Set<string>(zones?.reasons.map((reason) => reason.itemId));
-    for (const id of layoutProblems(wall.items, wall.board, bank).keys()) ids.add(id);
-    for (const warning of session?.warnings ?? []) {
-      if (GEOMETRY_WARNINGS.has(warning.code)) for (const id of warning.itemIds) ids.add(id);
-    }
-    return ids;
-  }, [zones, wall.items, wall.board, bank, session?.warnings]);
-  const describeRegion = useMemo(() => {
-    const nameOf = itemNamer(wall, bank, locale);
-    return (region: Parameters<typeof regionReasons>[0]): string[] =>
-      regionReasons(region, zones?.reasons ?? []).map((reason) => {
-        const message = describeReason(reason, nameOf);
-        return `${nameOf(reason.itemId)}: ${t(message.key, message.params)}`;
-      });
-  }, [wall, bank, locale, t, zones]);
+  const invalidIds = useInvalidIds(wall, bank, zones, session?.warnings);
+  const describeRegion = useRegionDescriber(wall, bank, zones);
 
   // Cheap (one pass over the items) and depends on the tool models, which arrive outside React state: not memoised.
   const extent = wallExtent(wall, bank);
@@ -134,7 +237,6 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
     () => occupiedCells(wall.items, wall.board, bank),
     [wall.items, wall.board, bank],
   );
-  const ghostElement = editor.ghost ? bank.get(editor.ghost.bankId) : undefined;
 
   return (
     <ViewportContextMenu
@@ -170,32 +272,16 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
           <BridgeInstaller />
           {photoView ? <PhotoExportInstaller /> : null}
           <OmpViewportInstaller widthMm={size.width} heightMm={size.height} />
-          {photoView ? (
-            <PhotoCameraRig
-              camera={photoView.camera}
-              wallToPx={photoView.map.wallToPxMatrix}
-              image={photoView.image}
-            />
-          ) : (
-            <CameraRig
-              view={editor.view}
-              extent={extent}
-              overhangs={overhangs}
-              widthMm={size.width}
-              heightMm={size.height}
-              fitToken={editor.fitToken}
-            />
-          )}
-          {photoView ? (
-            <PhotoBoard
-              board={wall.board}
-              photoUrl={api.photoUrl(wall.id, shownPhoto(photoView, photoMode.showCleaned).id)}
-              image={photoView.image}
-              calibration={photoView.photo.calibration ?? photoView.calibration}
-            />
-          ) : (
-            <BoardMesh board={wall.board} palette={palette} occupied={occupied} />
-          )}
+          <ViewLayer
+            wall={wall}
+            photoView={photoView}
+            showCleaned={photoMode.showCleaned}
+            extent={extent}
+            overhangs={overhangs}
+            palette={palette}
+            occupied={occupied}
+          />
+          <FloorPlane board={wall.board} palette={palette} occupied={toolLiesOnFloor(wall, bank)} />
           <ItemsLayer
             wall={wall}
             bank={bank}
@@ -209,29 +295,10 @@ export function WallViewport({ wall }: { readonly wall: Wall }) {
           <MountHighlights wall={wall} bank={bank} palette={palette} />
           <PlacementMarker point={editor.placeAt} color={palette.ghostOk} />
           <DimensionLayer wall={wall} bank={bank} palette={palette} />
-          {editor.ghost && ghostElement ? (
-            <GhostItem
-              element={ghostElement}
-              xMm={editor.ghost.x}
-              yMm={editor.ghost.y}
-              rotZ={0}
-              color={editor.ghost.valid ? palette.ghostOk : palette.ghostBad}
-            />
-          ) : null}
+          <GhostLayer ghost={editor.ghost} bank={bank} palette={palette} />
           <MeasureOverlay palette={palette} />
           {editor.tool === 'measure' ? (
-            <mesh
-              position={[size.width / 2000, size.height / 2000, 0.002]}
-              onPointerDown={measureClick}
-            >
-              <planeGeometry
-                args={[
-                  (Math.max(size.width, 4000) / 1000) * 4,
-                  (Math.max(size.height, 4000) / 1000) * 4,
-                ]}
-              />
-              <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-            </mesh>
+            <MeasurePlane widthMm={size.width} heightMm={size.height} />
           ) : null}
           {bench ? <FpsProbe /> : null}
           {showStats ? <Stats className="!left-auto !right-2 !top-14" /> : null}

@@ -3,6 +3,7 @@ import type { FeatureRu } from '../keys.ts';
 /** Hanging tools: the hint under the pointer while dragging a tool and the reasons a mount refuses it. */
 export const attachEn = {
   'attach.hint.hang': 'Release to hang on {holder}',
+  'attach.hint.free': 'No mount here: a tool nothing holds falls to the floor',
   'attach.hint.refused': 'Cannot hang {tool} on {holder}',
   'attach.reason.not_a_mount': 'This element has no mounts for tools.',
   'attach.reason.class_mismatch': 'It takes {accepts}, not {tool}.',
@@ -35,6 +36,7 @@ export const attachEn = {
 
 export const attachRu: FeatureRu<typeof attachEn> = {
   'attach.hint.hang': 'Отпустите — повиснет на {holder}',
+  'attach.hint.free': 'Здесь нет крепления: инструмент, который ничто не держит, упадёт на пол',
   'attach.hint.refused': '{tool} не повесить на {holder}',
   'attach.reason.not_a_mount': 'У этого элемента нет креплений для инструмента.',
   'attach.reason.class_mismatch': 'Подходит: {accepts}. {tool} — нет.',

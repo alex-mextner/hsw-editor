@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, test } from 'bun:test';
 import type { TriMesh, ToolBody } from '@hsw-editor/physics';
 import { loadManifold, type ManifoldToplevel } from '@/scene/invalid-zones/manifold.ts';
 import { barTool, ORIGIN, slotBlockMesh } from './fakes.testkit.ts';
-import type { FromWorker, PhysicsScene, RankRequest } from './protocol.ts';
+import type { FallRequest, FromWorker, PhysicsScene, RankRequest } from './protocol.ts';
 import { WorkerCore } from './workerCore.ts';
 
 let wasm: Promise<ManifoldToplevel>;
@@ -216,5 +216,51 @@ describe('WorkerCore rank', () => {
     await h.core.idle();
     const answer = h.posted.find((m) => m.type === 'ranked');
     expect(answer).toMatchObject({ type: 'ranked', seq: 4, seats: [] });
+  });
+});
+
+describe('WorkerCore fall', () => {
+  const request = (pose: FallRequest['tool']['pose']): FallRequest => ({
+    tool: { id: 'bar', bodyKey: 'bar-model', pose },
+    neighbours: [holder],
+    floorYMm: -250,
+    floorDepthMm: 700,
+  });
+  const fell = (h: Harness): Extract<FromWorker, { type: 'fell' }> => {
+    const found = h.posted.find((m) => m.type === 'fell');
+    if (found?.type !== 'fell') throw new Error('no fell answer');
+    return found;
+  };
+
+  test('a tool let go in mid air falls to the floor and lies there, as a pose the wall can store', async () => {
+    const h = harness();
+    define(h);
+    h.core.handle({ type: 'fall', seq: 5, request: request({ ...ORIGIN, x: 200, y: 400, z: 40 }) });
+    await h.core.idle();
+    const answer = fell(h);
+    expect(answer.seq).toBe(5);
+    expect(answer.plan?.falls).toBe(true);
+    if (answer.plan?.falls !== true) return;
+    expect(answer.plan.landedOn).toBeNull();
+    // the bar is 200 mm long: lying on its side, its origin is within a few mm of the floor
+    expect(answer.plan.rest.y).toBeLessThan(-250 + 25);
+    expect(answer.plan.rest.y).toBeGreaterThan(-250 - 25);
+    expect(answer.plan.dropMm).toBeGreaterThan(500);
+  });
+
+  test('a tool standing in the slot of the holder stays', async () => {
+    const h = harness();
+    define(h);
+    h.core.handle({ type: 'fall', seq: 6, request: request({ ...ORIGIN, y: 4, z: 10 }) });
+    await h.core.idle();
+    expect(fell(h).plan).toMatchObject({ falls: false });
+  });
+
+  test('a tool whose model has no mass data gets no plan', async () => {
+    const h = harness({ noMass: new Set(['u://bar']) });
+    define(h);
+    h.core.handle({ type: 'fall', seq: 7, request: request({ ...ORIGIN, y: 400, z: 40 }) });
+    await h.core.idle();
+    expect(fell(h)).toMatchObject({ seq: 7, plan: null });
   });
 });

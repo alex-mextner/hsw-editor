@@ -6,6 +6,8 @@
 import type { RankedSeat, WallPhysicsReport } from '@hsw-editor/physics';
 import type {
   BodySource,
+  FallRequest,
+  FellPlan,
   FromWorker,
   MissingBody,
   PhysicsScene,
@@ -44,6 +46,16 @@ interface RankWaiter {
   readonly reject: (error: Error) => void;
 }
 
+interface FallWaiter {
+  readonly resolve: (plan: FellPlan | null) => void;
+  readonly reject: (error: Error) => void;
+}
+
+/** What a released tool's fall decision needs of the client; tests supply a fake. */
+export interface PhysicsFaller {
+  fall(request: FallRequest, sources: ReadonlyMap<string, BodySource>): Promise<FellPlan | null>;
+}
+
 /** The part of the client the post-steps and the ratings use; tests supply a fake. */
 export interface PhysicsRanker {
   rank(
@@ -56,13 +68,14 @@ export interface PhysicsChecker {
   check(scene: PhysicsScene, sources: ReadonlyMap<string, BodySource>): Promise<WallCheck>;
 }
 
-export class PhysicsClient implements PhysicsRanker, PhysicsChecker {
+export class PhysicsClient implements PhysicsRanker, PhysicsChecker, PhysicsFaller {
   private readonly worker: WorkerPort;
   private readonly defined = new Set<string>();
   private seq = 0;
   private inFlight: { readonly seq: number; readonly waiters: Waiter[] } | null = null;
   private queued: Queued | null = null;
   private readonly ranks = new Map<number, RankWaiter>();
+  private readonly falls = new Map<number, FallWaiter>();
   private disposed = false;
 
   constructor(
@@ -112,6 +125,22 @@ export class PhysicsClient implements PhysicsRanker, PhysicsChecker {
       return promise;
     }
     this.ranks.set(seq, { resolve, reject });
+    return promise;
+  }
+
+  /** Decides what happens to a tool let go with no mount: stays, or falls and where it comes to rest. Null: its model is unusable. */
+  fall(request: FallRequest, sources: ReadonlyMap<string, BodySource>): Promise<FellPlan | null> {
+    const { promise, resolve, reject } = Promise.withResolvers<FellPlan | null>();
+    const keys = [request.tool, ...request.neighbours].map((body) => body.bodyKey);
+    if (!this.defineKeys(keys, sources, reject)) return promise;
+    const seq = this.nextSeq();
+    try {
+      this.worker.postMessage({ type: 'fall', seq, request });
+    } catch (error) {
+      reject(new Error(`fall request could not be sent to the worker: ${describe(error)}`));
+      return promise;
+    }
+    this.falls.set(seq, { resolve, reject });
     return promise;
   }
 
@@ -188,6 +217,29 @@ export class PhysicsClient implements PhysicsRanker, PhysicsChecker {
     for (const { key, retry } of missing) if (retry) this.defined.delete(key);
   }
 
+  private receiveError(seq: number, text: string): void {
+    this.onError(text);
+    const failure = new Error(text);
+    if (this.inFlight?.seq === seq) {
+      for (const waiter of this.inFlight.waiters) waiter.reject(failure);
+      this.releaseCheck();
+      return;
+    }
+    this.rejectPending(this.ranks, seq, failure);
+    this.rejectPending(this.falls, seq, failure);
+  }
+
+  private rejectPending(
+    pending: Map<number, { reject: (error: Error) => void }>,
+    seq: number,
+    failure: Error,
+  ): void {
+    const entry = pending.get(seq);
+    if (entry === undefined) return;
+    pending.delete(seq);
+    entry.reject(failure);
+  }
+
   private receive(message: FromWorker): void {
     switch (message.type) {
       case 'notice':
@@ -196,22 +248,9 @@ export class PhysicsClient implements PhysicsRanker, PhysicsChecker {
       case 'fatal':
         this.fail(message.message);
         return;
-      case 'error': {
-        this.onError(message.message);
-        const failure = new Error(message.message);
-        if (this.inFlight?.seq === message.seq) {
-          const { waiters } = this.inFlight;
-          for (const waiter of waiters) waiter.reject(failure);
-          this.releaseCheck();
-          return;
-        }
-        const rank = this.ranks.get(message.seq);
-        if (rank !== undefined) {
-          this.ranks.delete(message.seq);
-          rank.reject(failure);
-        }
+      case 'error':
+        this.receiveError(message.seq, message.message);
         return;
-      }
       case 'result': {
         this.forget(message.missing);
         if (this.inFlight?.seq !== message.seq) return;
@@ -227,6 +266,14 @@ export class PhysicsClient implements PhysicsRanker, PhysicsChecker {
         if (rank === undefined) return;
         this.ranks.delete(message.seq);
         rank.resolve(message.seats);
+        return;
+      }
+      case 'fell': {
+        this.forget(message.missing);
+        const fall = this.falls.get(message.seq);
+        if (fall === undefined) return;
+        this.falls.delete(message.seq);
+        fall.resolve(message.plan);
         return;
       }
     }
@@ -246,6 +293,9 @@ export class PhysicsClient implements PhysicsRanker, PhysicsChecker {
     const ranks = [...this.ranks.values()];
     this.ranks.clear();
     for (const rank of ranks) rank.reject(failure);
+    const falls = [...this.falls.values()];
+    this.falls.clear();
+    for (const fall of falls) fall.reject(failure);
   }
 }
 

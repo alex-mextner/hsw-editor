@@ -13,9 +13,11 @@
  *   as a fatal one.
  */
 import type { Pose } from '@hsw-editor/core';
+import { matrixToEuler } from '@hsw-editor/compat';
 import {
   analyseWallPhysics,
   type HolderCandidate,
+  planFall,
   rankHolders,
   SolidBody,
   type ToolBody,
@@ -28,6 +30,7 @@ import type { ManifoldToplevel } from 'manifold-3d';
 import { LruCache } from '@/scene/invalid-zones/lru.ts';
 import type {
   BodySource,
+  FallRequest,
   FromWorker,
   MissingBody,
   PhysicsScene,
@@ -98,6 +101,9 @@ export class WorkerCore {
         return;
       case 'rank':
         this.chain = this.chain.then(() => this.rank(message.seq, message.request));
+        return;
+      case 'fall':
+        this.chain = this.chain.then(() => this.fall(message.seq, message.request));
         return;
     }
   }
@@ -270,6 +276,58 @@ export class WorkerCore {
         ...(wasm === undefined ? {} : { wasm }),
       });
       this.deps.post({ type: 'ranked', seq, seats, missing });
+    } catch (error) {
+      this.deps.post({ type: 'error', seq, message: messageOf(error) });
+    }
+  }
+
+  private async fall(seq: number, request: FallRequest): Promise<void> {
+    try {
+      const keys = new Set<string>([request.tool.bodyKey]);
+      for (const body of request.neighbours) keys.add(body.bodyKey);
+      const models = await this.loaded(keys);
+      const missing = this.missingOf(models);
+      const tool = models.get(request.tool.bodyKey);
+      if (tool?.kind !== 'tool') {
+        this.deps.post({ type: 'fell', seq, plan: null, missing });
+        return;
+      }
+      const obstacles: SolidBody[] = [];
+      for (const body of request.neighbours) {
+        const solid = this.solidOf(body, models);
+        if (solid !== undefined) obstacles.push(solid);
+      }
+      // A neighbour whose model did not load may be what holds the tool: no decision is better than a false fall.
+      if (obstacles.length < request.neighbours.length) {
+        this.deps.post({ type: 'fell', seq, plan: null, missing });
+        return;
+      }
+      const plan = planFall({
+        tool: { ...tool.body, id: request.tool.id },
+        placement: placementOfPose(request.tool.pose),
+        obstacles,
+        floorYMm: request.floorYMm,
+        floorDepthMm: request.floorDepthMm,
+      });
+      this.deps.post({
+        type: 'fell',
+        seq,
+        plan: plan.falls
+          ? {
+              falls: true,
+              report: plan.report,
+              rest: {
+                ...matrixToEuler(plan.rest.rotation),
+                x: plan.rest.position[0],
+                y: plan.rest.position[1],
+                z: plan.rest.position[2],
+              },
+              dropMm: plan.dropMm,
+              landedOn: plan.landedOn,
+            }
+          : { falls: false, report: plan.report },
+        missing,
+      });
     } catch (error) {
       this.deps.post({ type: 'error', seq, message: messageOf(error) });
     }

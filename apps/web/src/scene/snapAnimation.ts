@@ -13,6 +13,28 @@ type FullPose = Required<PreviewPose>;
 let generation = 0;
 let gliding = false;
 
+/**
+ * Takes over the preview pose for an animation of another kind (the fall of a released tool, `fallAnimation.ts`) and returns its
+ * token: the preview is that animation's until `cancelSnap` (a new drag) or another glide bumps the generation.
+ */
+export function takePreview(): number {
+  cancelSnap();
+  gliding = true;
+  return generation;
+}
+
+/** Is `token` still the owner of the preview? */
+export function ownsPreview(token: number): boolean {
+  return token === generation;
+}
+
+/** The owner of `token` is done: the preview pose is dropped, unless a newer drag already took it over. */
+export function dropPreview(token: number): void {
+  if (token !== generation) return;
+  gliding = false;
+  patchEditor({ dragging: new Map(), dragValid: true });
+}
+
 /** Stops a running glide and drops its preview pose (a new drag takes over the preview). */
 export function cancelSnap(): void {
   generation += 1;

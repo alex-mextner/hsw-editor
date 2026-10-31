@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useFrame, type ThreeEvent } from '@react-three/fiber';
 import type { BankElement } from '@hsw-editor/bank';
-import type { Wall } from '@hsw-editor/core';
+import type { Wall, WallItem } from '@hsw-editor/core';
 import { goneReasonFor } from '@/bank/assetRecovery.ts';
 import { lastKnownElement } from '@/bank/client.ts';
 import { failureReason } from '@/bank/failureView.ts';
@@ -11,6 +11,7 @@ import { onModelUrlReleased, toolModelVersion } from '@/toolmodels/regen.ts';
 import { useI18n } from '@/i18n/index.ts';
 import { useStore } from '@/state/react.ts';
 import { editorStore } from '@/state/editor.ts';
+import { pendingToolsStore } from './fallAnimation.ts';
 import { InstancedModel, type Placement } from './InstancedModel.tsx';
 import { InstancedBoxes } from './InstancedBoxes.tsx';
 import { groupItems } from './itemGroups.ts';
@@ -42,6 +43,12 @@ function useFarLod(wall: Wall): boolean {
   return far;
 }
 
+/** The wall with the tools that are still waiting for the physics' decision (not on the wall yet) added. */
+function withPending(wall: Wall, pending: readonly WallItem[]): Wall {
+  const missing = pending.filter((draft) => !wall.items.some((item) => item.id === draft.id));
+  return missing.length === 0 ? wall : { ...wall, items: [...wall.items, ...missing] };
+}
+
 interface ItemsLayerProps {
   readonly wall: Wall;
   readonly bank: ReadonlyMap<string, BankElement>;
@@ -60,7 +67,9 @@ export function ItemsLayer({ wall, bank, bankReady, palette, onItemPointerDown }
   useStore(toolModelVersion);
   useStore(toolAssetsStore);
   const far = useFarLod(wall);
-  const groups = groupItems(wall, bank, bankReady);
+  const pending = useStore(pendingToolsStore);
+  const shown = useMemo(() => withPending(wall, pending), [wall, pending]);
+  const groups = groupItems(shown, bank, bankReady);
 
   const selected = useMemo(() => new Set(editor.selection), [editor.selection]);
 

@@ -47,13 +47,17 @@ mock.module('@/physics/postStep.ts', () => ({
   ...realPostStepExports,
   seatAfterDrop: (id: string) => seated.push(id),
   seatAfterChosenHang: (id: string) => seated.push(id),
+  // A free release: the physics' fall decision has its own tests (physics/fall.test.ts); here the tool is placed.
+  releaseFreeTool: async (release: { ops: readonly Op[]; label: string }) => {
+    submitted.push({ ops: release.ops, label: release.label });
+    return { kind: 'placed' as const };
+  },
 }));
 
 const { editorStore, patchEditor } = await import('@/state/editor.ts');
 const { setViewportBridge } = await import('./viewportBridge.ts');
-const { beginToolDrag, dragOverTool, dropTool, endToolDrag, TOOL_DRAG_TYPE } = await import(
-  './toolDrop.ts'
-);
+const { beginToolDrag, dragOverTool, dropTool, endToolDrag, TOOL_DRAG_TYPE } =
+  await import('./toolDrop.ts');
 
 function holderItem(id: string, bankId: string, col: number, row: number) {
   const centre = cellCenter(board, { col, row });
@@ -78,7 +82,12 @@ interface FakeDrag {
   readonly clientX: number;
   readonly clientY: number;
   readonly altKey: boolean;
-  readonly dataTransfer: { types: string[]; dropEffect: string; setData: () => void; effectAllowed: string };
+  readonly dataTransfer: {
+    types: string[];
+    dropEffect: string;
+    setData: () => void;
+    effectAllowed: string;
+  };
   prevented: boolean;
   preventDefault: () => void;
 }
@@ -132,6 +141,9 @@ afterEach(() => {
   patchEditor({ attach: null });
 });
 
+/** Lets the free release (an async decision of the physics) finish. */
+const settled = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
 const rail = wall.items[0]!;
 const hook = wall.items[1]!;
 
@@ -181,8 +193,9 @@ describe('dropTool', () => {
     expect(editorStore.get().selection).toHaveLength(1);
   });
 
-  test('dropping on bare board adds a free tool and does not hang it', () => {
+  test('dropping on bare board adds a free tool and does not hang it', async () => {
     dropTool(asDrag(dragEvent(500, 500)));
+    await settled();
     expect(submitted).toHaveLength(1);
     expect(submitted[0]?.label).toBe('add-tool');
     expect(seated).toHaveLength(0);
@@ -193,8 +206,9 @@ describe('dropTool', () => {
     expect(submitted).toHaveLength(0);
   });
 
-  test('Alt drops free even over a suitable holder', () => {
+  test('Alt drops free even over a suitable holder', async () => {
     dropTool(asDrag(dragEvent(rail.pose.x, rail.pose.y, true)));
+    await settled();
     expect(submitted[0]?.label).toBe('add-tool');
   });
 

@@ -13,6 +13,7 @@ import { planToolDrag, toolBox, toolBoxCentreOf, type ToolDragPlan } from '@/wal
 import { seatAfterDrop } from '@/physics/postStep.ts';
 import { sessionStore, submitOps } from '@/wall/session.ts';
 import { presetDims, type Dims3 } from '@/wall/toolPresets.ts';
+import { letGoFree } from './freeRelease.ts';
 import { cancelSnap } from './snapAnimation.ts';
 import { wallPointAt } from './viewportBridge.ts';
 
@@ -168,17 +169,34 @@ export function dropTool(event: DragEvent): void {
   if (!planned) return;
   const { resolution } = planned.plan;
   if (resolution.kind === 'refuse') return;
-  const placed =
-    resolution.kind === 'attach'
-      ? planAddHung(planned.item, resolution.target)
-      : ({ type: 'addItem', item: planned.item } satisfies LeafOp);
-  const ok = submitOps(
-    [...planned.setup, placed],
-    resolution.kind === 'attach' ? 'add-and-hang' : 'add-tool',
-  ).ok;
-  if (!ok) return;
-  setSelection([planned.item.id]);
-  // Hung on the nearest holder at once; the physics then seats it (or picks a clearly better holder in reach).
-  if (resolution.kind === 'attach')
+  if (resolution.kind === 'attach') {
+    const ok = submitOps(
+      [...planned.setup, planAddHung(planned.item, resolution.target)],
+      'add-and-hang',
+    ).ok;
+    if (!ok) return;
+    setSelection([planned.item.id]);
+    // Hung on the nearest holder at once; the physics then seats it (or picks a clearly better holder in reach).
     seatAfterDrop(planned.item.id, { x: planned.item.pose.x, y: planned.item.pose.y });
+    return;
+  }
+  // Dropped with nothing to hang it on: it stays if something holds it, else it falls to the floor.
+  void letGoFree(
+    {
+      toolId: planned.item.id,
+      ops: [...planned.setup, { type: 'addItem', item: planned.item } satisfies LeafOp],
+      label: 'add-tool',
+      draft: planned.item,
+    },
+    {
+      rotX: planned.item.pose.rotX,
+      rotY: planned.item.pose.rotY,
+      rotZ: planned.item.pose.rotZ,
+      x: planned.item.pose.x,
+      y: planned.item.pose.y,
+      z: planned.item.pose.z,
+    },
+  ).then((outcome) => {
+    if (outcome.kind !== 'refused') setSelection([planned.item.id]);
+  });
 }
