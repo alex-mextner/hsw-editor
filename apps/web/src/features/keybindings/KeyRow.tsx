@@ -68,6 +68,7 @@ export function KeyRow({
                 <Kbd className="ml-0 h-5 px-1.5 text-xs">{binding.label}</Kbd>
                 <IconButton
                   label={t('keys.removeBinding', { keys: binding.label })}
+                  hintKey="keys.removeBinding"
                   size="icon-xs"
                   onClick={() => onRemove(row.id, binding.text)}
                 >
@@ -92,6 +93,7 @@ export function KeyRow({
           {row.customised ? (
             <IconButton
               label={t('keys.resetFor', { command: row.title })}
+              hintKey="keys.resetFor"
               size="icon-sm"
               onClick={() => onReset(row.id)}
             >

@@ -175,7 +175,14 @@ function SessionMenu({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<Button variant="ghost" size="icon-xs" aria-label={t('omp.session.menu')} />}
+        render={
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label={t('omp.session.menu')}
+            title={t('omp.session.menu')}
+          />
+        }
       >
         <MoreHorizontal />
       </DropdownMenuTrigger>

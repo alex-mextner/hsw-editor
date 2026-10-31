@@ -2,6 +2,7 @@ import { useId, useMemo } from 'react';
 import { PlusIcon, Trash2Icon } from 'lucide-react';
 import type { BankElement, ToolClass } from '@hsw-editor/bank';
 import { Button } from '@/components/ui/button.tsx';
+import { IconButton } from '@/components/IconButton.tsx';
 import { Input } from '@/components/ui/input.tsx';
 import {
   Select,
@@ -98,15 +99,14 @@ function EntryRow({
           placeholder={t('bank.user.fits.capacity')}
           onChange={(event) => onChange({ ...entry, capacity: event.target.value })}
         />
-        <Button
-          variant="ghost"
+        <IconButton
+          label={t('bank.user.fits.removeEntry')}
           size="icon"
           disabled={disabled}
-          aria-label={t('bank.user.fits.removeEntry')}
           onClick={onRemove}
         >
           <Trash2Icon aria-hidden />
-        </Button>
+        </IconButton>
       </div>
       <datalist id={listId}>
         {suggestions.map((key) => (
@@ -154,17 +154,15 @@ function EntryRow({
                 placeholder={t('bank.user.fits.max')}
                 onChange={(event) => setDim(position, { ...row, max: event.target.value })}
               />
-              <Button
-                variant="ghost"
-                size="icon-sm"
+              <IconButton
+                label={t('bank.user.fits.removeDim')}
                 disabled={disabled}
-                aria-label={t('bank.user.fits.removeDim')}
                 onClick={() =>
                   onChange({ ...entry, dims: entry.dims.filter((_, at) => at !== position) })
                 }
               >
                 <Trash2Icon aria-hidden />
-              </Button>
+              </IconButton>
             </div>
             {issue !== null ? (
               <p role="alert" className="text-[11px] text-destructive">

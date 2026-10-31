@@ -177,7 +177,14 @@ function LanguageMenu() {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        render={<Button variant="ghost" size="icon-sm" aria-label={t('language.label')} />}
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label={t('language.label')}
+            title={t('language.label')}
+          />
+        }
       >
         <Languages />
       </DropdownMenuTrigger>
@@ -216,7 +223,14 @@ function OverflowMenu({
     <div className="md:hidden">
       <DropdownMenu>
         <DropdownMenuTrigger
-          render={<Button variant="ghost" size="icon-sm" aria-label={t('action.more')} />}
+          render={
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t('action.more')}
+              title={t('action.more')}
+            />
+          }
         >
           <Ellipsis />
         </DropdownMenuTrigger>
