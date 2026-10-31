@@ -10,6 +10,7 @@
 import {
   applyOp,
   checkWall,
+  withoutFloorWarnings,
   OpError,
   type Actor,
   type LeafOp,
@@ -185,7 +186,7 @@ export class WallSync {
       wall: view,
       confirmedRev: this.confirmed?.rev ?? 0,
       pending: this.pending.length,
-      warnings: view ? checkWall(view) : [],
+      warnings: view ? withoutFloorWarnings(view, checkWall(view)) : [],
     };
     this.persist();
     for (const listener of [...this.listeners]) listener();
@@ -401,32 +402,33 @@ export class WallSync {
         const confirmed = this.confirmed;
         if (!head || !confirmed) break;
         // Remote edits arrived (SSE) while edits were queued: reconcile before sending so they are never overwritten blindly.
-        if (head.kind === 'ops' && this.queueBase && confirmed.rev !== this.queueBase.rev) {
+        if (this.queueMovedOn(head, confirmed)) {
           if (!this.reconcile(confirmed)) break;
           continue;
         }
         try {
-          const response =
-            head.kind === 'ops'
-              ? await this.api.applyOps(this.wallId, head.ops, confirmed.rev, head.label)
-              : head.kind === 'undo'
-                ? await this.api.undo(this.wallId, confirmed.rev)
-                : await this.api.redo(this.wallId, confirmed.rev);
+          const response = await this.sendRequest(head, confirmed.rev);
           this.pending.shift();
           conflicts = 0;
           this.onAck(head, response, confirmed.rev);
         } catch (error) {
           const outcome = this.onSendError(head, error, conflicts);
-          if (outcome === 'retry') {
-            conflicts += 1;
-            continue;
-          }
-          if (outcome === 'stop') break;
+          if (outcome === 'retry') conflicts += 1;
+          else if (outcome === 'stop') break;
         }
       }
     } finally {
       this.flushing = false;
     }
+  }
+
+  private queueMovedOn(head: PendingEdit, confirmed: Wall): boolean {
+    return head.kind === 'ops' && this.queueBase !== null && confirmed.rev !== this.queueBase.rev;
+  }
+
+  private sendRequest(head: PendingEdit, rev: number): Promise<OpResponse> {
+    if (head.kind === 'ops') return this.api.applyOps(this.wallId, head.ops, rev, head.label);
+    return head.kind === 'undo' ? this.api.undo(this.wallId, rev) : this.api.redo(this.wallId, rev);
   }
 
   private onAck(head: PendingEdit, response: OpResponse, sentRev: number): void {

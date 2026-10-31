@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import {
+  checkWall,
   createEmptyWall,
   DEFAULT_BOARD,
   FLOOR_Y_MM,
   type Wall,
   type WallItem,
+  withoutFloorWarnings,
 } from '@hsw-editor/core';
 import { toolLiesOnFloor, withFloor } from './floorItems.ts';
 
@@ -65,5 +67,18 @@ describe('withFloor', () => {
 
   test('a fallen tool further down (overhang) is not cut off', () => {
     expect(withFloor({ x0: 0, y0: -400, x1: 981, y1: 767 }).y0).toBe(-400);
+  });
+});
+
+describe('layout warnings of a fallen tool', () => {
+  test('a tool lying on the floor is not "outside the board"; one far below it still is', () => {
+    const wall: Wall = {
+      ...createEmptyWall('w', 'W', board),
+      items: [tool('lying', FLOOR_Y_MM + 5), tool('lost', -900)],
+    };
+    const ids = withoutFloorWarnings(wall, checkWall(wall))
+      .filter((w) => w.code === 'out_of_board')
+      .flatMap((w) => w.itemIds);
+    expect(ids).toEqual(['lost']);
   });
 });
