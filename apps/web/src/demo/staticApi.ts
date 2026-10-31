@@ -68,3 +68,20 @@ export function installDemoApi(): void {
   const real: FetchFn = globalThis.fetch.bind(globalThis);
   globalThis.fetch = Object.assign(createDemoFetch(real), globalThis.fetch);
 }
+
+/**
+ * The class list is first fetched before the service worker controls the page, so the worker never saw it. Once the worker is ready the
+ * page asks again, through it, so the Tool Library also opens offline after a first visit (the demo has no daemon to warm anything else).
+ */
+export async function warmClassList(): Promise<void> {
+  const worker = globalThis.navigator?.serviceWorker;
+  if (worker === undefined) return;
+  await worker.ready;
+  // `ready` can resolve before the worker has claimed this page; only a controlled page's requests reach its cache.
+  if (worker.controller === null) {
+    await new Promise<void>((resolve) => {
+      worker.addEventListener('controllerchange', () => resolve(), { once: true });
+    });
+  }
+  await fetch('/api/tools/classes', { cache: 'reload' }).catch(() => undefined);
+}

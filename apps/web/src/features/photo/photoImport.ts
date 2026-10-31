@@ -4,6 +4,7 @@
  */
 import { createValueStore } from '#state-backend';
 import { api, ApiError, NetworkError } from '@/api/http.ts';
+import { DEMO } from '@/demo/mode.ts';
 import { notify } from '@/features/notices/notices.ts';
 import { t } from '@/i18n/index.ts';
 import { applyUploadedWall, sessionStore } from '@/wall/session.ts';
@@ -49,6 +50,11 @@ export async function importPhotoFile(file: File): Promise<void> {
   if (wallId === null || importStore.get().phase !== 'idle') return;
   if (!isSupportedImage(file)) {
     notify('error', t('photo.unsupported', { name: file.name }));
+    return;
+  }
+  // The demo has no daemon to store a photo: say so instead of sending it to the host.
+  if (DEMO) {
+    notify('error', t('demo.unavailable'));
     return;
   }
   importStore.set({ phase: 'uploading', name: file.name, fraction: 0 });

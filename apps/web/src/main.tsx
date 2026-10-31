@@ -5,7 +5,7 @@ import { installGlobalErrorLogging } from './api/clientErrors.ts';
 import { watchAssetNotices } from './bank/assetNotices.ts';
 import { refreshBank, startBankAutoRefresh } from './bank/client.ts';
 import { DEMO } from './demo/mode.ts';
-import { installDemoApi } from './demo/staticApi.ts';
+import { installDemoApi, warmClassList } from './demo/staticApi.ts';
 import { refreshToolLibrary } from './features/tools/store.ts';
 import { AppErrorBoundary } from './shell/AppErrorBoundary.tsx';
 import './pwa/instance.ts';
@@ -16,7 +16,10 @@ import './styles.css';
 
 installGlobalErrorLogging();
 // The Pages build has no daemon: static answers for the tool library, a friendly error for what needs a server (src/demo/staticApi.ts).
-if (DEMO) installDemoApi();
+if (DEMO) {
+  installDemoApi();
+  void warmClassList();
+}
 initSession();
 void refreshBank();
 // The tool library is needed by palette commands (`tools.add`) before the Tools tab is ever opened.

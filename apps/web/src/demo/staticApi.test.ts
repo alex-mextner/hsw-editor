@@ -1,5 +1,6 @@
-import { describe, expect, test } from 'bun:test';
-import { createDemoFetch, DEMO_UNAVAILABLE } from './staticApi.ts';
+import { afterEach, describe, expect, test } from 'bun:test';
+import { installFetch, restoreFetch } from '@/test/fetchStub.ts';
+import { createDemoFetch, DEMO_UNAVAILABLE, warmClassList } from './staticApi.ts';
 
 const HTML_404 = (): Response =>
   new Response('<!doctype html><title>404</title>', {
@@ -93,5 +94,64 @@ describe('demo static API', () => {
     ]) {
       expect(await errorCode(await fetch(path))).toBe(DEMO_UNAVAILABLE);
     }
+  });
+});
+
+describe('warmClassList', () => {
+  const original = Object.getOwnPropertyDescriptor(globalThis, 'navigator');
+
+  function stubWorker(worker: object | undefined): void {
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: worker === undefined ? {} : { serviceWorker: worker },
+    });
+  }
+
+  afterEach(() => {
+    restoreFetch();
+    if (original) Object.defineProperty(globalThis, 'navigator', original);
+    else Reflect.deleteProperty(globalThis, 'navigator');
+  });
+
+  test('asks for the class list again, past the HTTP cache, once the worker controls the page', async () => {
+    const seen: { url: string; cache: RequestCache | undefined }[] = [];
+    installFetch((url, init) => {
+      seen.push({ url, cache: init?.cache });
+      return Response.json({ classes: [] });
+    });
+    stubWorker({ ready: Promise.resolve({}), controller: {} });
+    await warmClassList();
+    expect(seen).toEqual([{ url: '/api/tools/classes', cache: 'reload' }]);
+  });
+
+  test('waits for the worker to claim the page when it is ready before it controls it', async () => {
+    const seen: string[] = [];
+    installFetch((url) => {
+      seen.push(url);
+      return Response.json({ classes: [] });
+    });
+    const listeners: (() => void)[] = [];
+    stubWorker({
+      ready: Promise.resolve({}),
+      controller: null,
+      addEventListener: (_type: string, listener: () => void) => listeners.push(listener),
+    });
+    const done = warmClassList();
+    await Bun.sleep(5);
+    expect(seen).toEqual([]);
+    for (const listener of listeners) listener();
+    await done;
+    expect(seen).toEqual(['/api/tools/classes']);
+  });
+
+  test('does nothing without a service worker', async () => {
+    let calls = 0;
+    installFetch(() => {
+      calls += 1;
+      return Response.json({});
+    });
+    stubWorker(undefined);
+    await warmClassList();
+    expect(calls).toBe(0);
   });
 });
