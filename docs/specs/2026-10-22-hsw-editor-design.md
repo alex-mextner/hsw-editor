@@ -34,6 +34,18 @@ Also required by the user:
 - **Overhang is allowed (tg#24300).** A tool may hang over the board edge and stick up or sideways beyond it; that is not invalid.
   Only physics problems (unstable support, awkward removal, collisions between tools and holders) are flagged, and a tool beyond
   the edge is a physics problem only if its centre of gravity or support makes it unstable.
+- **Demo, icons, falling tools, seating (tg#26117, tg#26118, 2026-10-31; screenshots `docs/references/user-demo-seating-and-readonly-2026-10-31.jpg`, `docs/references/user-wrench-holder-piercing-2026-10-31.jpg`).**
+  (1) The demo's Tools panel showed "The tool library is unavailable, HTTP 404": the demo must serve the library statically (built-in classes, thumbnails, tags)
+  and any endpoint it lacks must degrade gracefully, never show a raw 404 (#254). (2) The toolbar icon with the crossed-out eye is unclear: every toolbar icon must be
+  self-explanatory (tooltip, aria-label, first-use hint; audit all icons) (#256). (3) A read-only demo is wrong: the first edit of the demo (or of any read-only/demo
+  wall, also in the daemon app) silently creates a clone and continues there, with no read-only banner and no blocking (#255). (4) Tools must be able to fall to the
+  floor when released with no stable support (gravity animation to a floor plane; the floor visible and highlighted while dragging and when a fall happens; fallen
+  tools stay on the floor and can be picked up again), tied to the physics hang-stability results (#257). (5) Many tools sit unstably or enter holes badly (pliers
+  handles sunk into the rack, the drill unstable in its cradle, screwdrivers piercing the holder, wrenches piercing the holder wall): tools must enter their slot or
+  holes cleanly (shaft through the matching hole, handle on the rim, no piercing, tip down and handle up) and be stable; flag unstable or awkward entries and fix the
+  generators, the holder interface geometry or the seating rules, with regression tests of the screenshot cases (#258).
+  Decisions (implementer, 2026-10-31): the static library is built from the same generators as the daemon (one `describeClass`); parameter variants of a class are
+  generated in the browser; daemon-only routes answer a localized `demo_unavailable` error.
 
 ## Facts found (recon 2026-10-22)
 - agent-tools is a Python/markdown catalog, not an npm lib. Daemon verbs come from `lib/agenttools_service`

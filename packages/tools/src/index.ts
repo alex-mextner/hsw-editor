@@ -6,6 +6,7 @@ export * from './materials.ts';
 export * from './params.ts';
 export * from './model.ts';
 export * from './registry.ts';
+export * from './classInfo.ts';
 export * from './glb.ts';
 export * from './build/rings.ts';
 export * from './build/primitives.ts';

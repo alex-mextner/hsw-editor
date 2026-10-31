@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
 import { ServerResponse } from 'node:http';
 import { fileURLToPath, URL } from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
@@ -11,7 +11,9 @@ import { pwaPluginOptions } from './src/pwa/pluginOptions.ts';
  * Demo build (`VITE_HSW_DEMO=1`, GitHub Pages): the committed seed bank is copied next to the app at the URLs the daemon would
  * serve (`/api/bank/index`, `/api/bank/search-index`, `/bank/assets/...`), so the bank browser needs no code path of its own.
  * The tool models of the showcase wall are copied the same way (`/api/tools/assets/index`, `/tools/assets/glb/...`), with the
- * poses that seat its tools (`/api/demo/seats`).
+ * poses that seat its tools (`/api/demo/seats`). The Tool Library is static too: the class list is copied to
+ * `/api/tools/assets/classes` (a file cannot sit at `/api/tools/classes` next to the per-class thumbnail directories; the page maps
+ * `GET /api/tools/classes` onto it, `src/demo/staticApi.ts`) and the thumbnails to `/api/tools/classes/<id>/thumb.webp`.
  */
 function demoSeedBank() {
   const seed = fileURLToPath(new URL('../../packages/bank/seed', import.meta.url));
@@ -27,7 +29,11 @@ function demoSeedBank() {
       }
       // Generated tool models of the showcase wall (`bun scripts/tools/demo-assets.ts`, run by `bun run build`).
       const tools = fileURLToPath(new URL('./.generated/tools-assets', import.meta.url));
-      if (!existsSync(`${tools}/index.json`) || !existsSync(`${tools}/seats.json`)) {
+      if (
+        !existsSync(`${tools}/index.json`) ||
+        !existsSync(`${tools}/seats.json`) ||
+        !existsSync(`${tools}/classes.json`)
+      ) {
         throw new Error(
           'demo build: run `bun scripts/tools/demo-assets.ts` first (tool model assets are missing)',
         );
@@ -38,6 +44,12 @@ function demoSeedBank() {
       mkdirSync(`${out}/api/demo`, { recursive: true });
       cpSync(`${tools}/seats.json`, `${out}/api/demo/seats`);
       cpSync(`${tools}/glb`, `${out}/tools/assets/glb`, { recursive: true });
+      cpSync(`${tools}/classes.json`, `${out}/api/tools/assets/classes`);
+      for (const file of readdirSync(`${tools}/thumbs`)) {
+        const id = file.replace(/\.webp$/, '');
+        mkdirSync(`${out}/api/tools/classes/${id}`, { recursive: true });
+        cpSync(`${tools}/thumbs/${file}`, `${out}/api/tools/classes/${id}/thumb.webp`);
+      }
     },
   };
 }

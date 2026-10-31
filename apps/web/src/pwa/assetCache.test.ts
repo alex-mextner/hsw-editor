@@ -55,6 +55,13 @@ describe('routeFor', () => {
       INDEX_CACHE,
       false,
     ],
+    [
+      `${ORIGIN}/api/tools/assets/classes`,
+      'tool-index',
+      'stale-while-revalidate',
+      INDEX_CACHE,
+      false,
+    ],
     [`${ORIGIN}/api/tools`, 'tool-library', 'network-first', INDEX_CACHE, false],
     [`${ORIGIN}/api/tools/classes`, 'tool-library', 'network-first', INDEX_CACHE, false],
     [`${ORIGIN}/api/tools/classes/hex-key`, 'tool-library', 'network-first', INDEX_CACHE, false],

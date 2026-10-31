@@ -30,7 +30,9 @@ import {
 } from '@/components/ui/dropdown-menu.tsx';
 import { Button } from '@/components/ui/button.tsx';
 import { openPalette, useShortcutLabel } from '@/commands/app.ts';
-import { LOCALES, localeStore, useI18n, type Locale } from '@/i18n/index.ts';
+import { DEMO } from '@/demo/mode.ts';
+import { notify } from '@/features/notices/notices.ts';
+import { LOCALES, localeStore, t, useI18n, type Locale } from '@/i18n/index.ts';
 import { layoutStore, togglePanel } from '@/state/layout.ts';
 import { useStore } from '@/state/react.ts';
 import { themeStore, toggleTheme } from '@/state/theme.ts';
@@ -42,6 +44,15 @@ import { PresenceBadge } from './PresenceBadge.tsx';
 import { SyncStatus } from './SyncStatus.tsx';
 import { WallSwitcher } from './WallSwitcher.tsx';
 import { choosePhotoFile } from '@/features/photo/photoImport.ts';
+
+/** Opens the wall's JSON export; the demo has no daemon to serve it, so it says so instead of opening the host's 404 page. */
+function exportWall(wallId: string): void {
+  if (DEMO) {
+    notify('error', t('demo.unavailable'));
+    return;
+  }
+  globalThis.open(api.exportUrl(wallId), '_blank', 'noopener');
+}
 
 export function TopBar() {
   const { t } = useI18n();
@@ -107,7 +118,7 @@ export function TopBar() {
         <IconButton
           label={t('wall.export')}
           disabled={!ready}
-          onClick={() => wallId && globalThis.open(api.exportUrl(wallId), '_blank', 'noopener')}
+          onClick={() => wallId && exportWall(wallId)}
         >
           <Download />
         </IconButton>
@@ -213,10 +224,7 @@ function OverflowMenu({
           <DropdownMenuItem disabled={!ready} onClick={onImport}>
             <ImagePlus /> {t('photo.import')}
           </DropdownMenuItem>
-          <DropdownMenuItem
-            disabled={!ready}
-            onClick={() => wallId && globalThis.open(api.exportUrl(wallId), '_blank', 'noopener')}
-          >
+          <DropdownMenuItem disabled={!ready} onClick={() => wallId && exportWall(wallId)}>
             <Download /> {t('wall.export')}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
