@@ -1,17 +1,16 @@
 import {
+  Camera,
   Columns2,
   Contrast,
+  Crosshair,
   Download,
   Eraser,
-  Eye,
-  EyeOff,
   ImageIcon,
   ImageOff,
   ImagePlus,
   Layers,
   Move,
   RotateCw,
-  Ruler,
   ScanSearch,
   WandSparkles,
 } from 'lucide-react';
@@ -35,6 +34,7 @@ import { sessionStore } from '@/wall/session.ts';
 import {
   cleanPhotoBackground,
   exportPhotoPng,
+  firstPhoto,
   findPhotoTools,
   isGridCalibrated,
   toggleAutoClean,
@@ -92,13 +92,40 @@ function cleanNote(
   };
 }
 
-/** Photo controls of the viewport toolbar: photo mode on/off, import, calibrate, how the photo shows, board drag. */
+/** Photo controls of the viewport toolbar: photo mode on/off, import, and, while a photo is shown, its controls. */
 export function PhotoToolbar() {
   const { t } = useI18n();
   const overlayKey = useShortcutLabel('view.overlay');
+  const photoId = useStore(photoStore).photoId;
+  const wall = useStore(sessionStore)?.wall;
+  const hasPhoto = firstPhoto(wall) !== undefined;
+
+  return (
+    <div className="pointer-events-auto flex max-w-[calc(100vw-1rem)] flex-wrap items-center gap-1 rounded-lg border border-border bg-panel/95 p-0.5 pr-2 shadow-sm backdrop-blur">
+      <IconButton
+        label={
+          photoId !== null ? t('overlay.hide') : hasPhoto ? t('overlay.show') : t('overlay.pick')
+        }
+        shortcut={overlayKey}
+        pressed={photoId !== null}
+        disabled={!wall}
+        onClick={togglePhotoMode}
+      >
+        <Camera />
+      </IconButton>
+      <IconButton label={t('photo.import')} disabled={!wall} onClick={choosePhotoFile}>
+        <ImagePlus />
+      </IconButton>
+      {photoId !== null ? <ShownPhotoControls photoId={photoId} /> : null}
+    </div>
+  );
+}
+
+/** What can be done with the photo on screen: calibrate, hide, clean, split, move the board, find tools, export, opacity. */
+function ShownPhotoControls({ photoId }: { readonly photoId: string }) {
+  const { t } = useI18n();
   const photo = useStore(photoStore);
   const wall = useStore(sessionStore)?.wall;
-  const photoId = photo.photoId;
   const tools = useStore(findToolsStore);
   const clean = useStore(cleanStore);
   const autoClean = useStore(autoCleanStore);
@@ -108,130 +135,110 @@ export function PhotoToolbar() {
   const onLattice = isGridCalibrated(wall, photoId);
 
   return (
-    <div className="pointer-events-auto flex max-w-[calc(100vw-1rem)] flex-wrap items-center gap-1 rounded-lg border border-border bg-panel/95 p-0.5 pr-2 shadow-sm backdrop-blur">
+    <>
       <IconButton
-        label={photoId !== null ? t('overlay.hide') : t('overlay.show')}
-        shortcut={overlayKey}
-        pressed={photoId !== null}
-        disabled={!wall}
-        onClick={togglePhotoMode}
+        label={t('calibration.open')}
+        pressed={photo.calibrating}
+        onClick={() => startCalibration(photoId)}
       >
-        {photoId !== null ? <Eye /> : <EyeOff />}
+        <Crosshair />
       </IconButton>
-      <IconButton label={t('photo.import')} disabled={!wall} onClick={choosePhotoFile}>
-        <ImagePlus />
+      <div className="mx-0.5 h-5 w-px bg-border" />
+      <IconButton
+        label={photo.photoHidden ? t('photo.showPhoto') : t('photo.hidePhoto')}
+        pressed={photo.photoHidden}
+        onClick={togglePhotoHidden}
+      >
+        {photo.photoHidden ? <ImageOff /> : <ImageIcon />}
       </IconButton>
-      {photoId !== null ? (
-        <>
-          <IconButton
-            label={t('calibration.open')}
-            pressed={photo.calibrating}
-            onClick={() => startCalibration(photoId)}
-          >
-            <Ruler />
-          </IconButton>
-          <div className="mx-0.5 h-5 w-px bg-border" />
-          <IconButton
-            label={photo.photoHidden ? t('photo.showPhoto') : t('photo.hidePhoto')}
-            pressed={photo.photoHidden}
-            onClick={togglePhotoHidden}
-          >
-            {photo.photoHidden ? <ImageOff /> : <ImageIcon />}
-          </IconButton>
-          <IconButton
-            label={t(WEB_CONTRAST_LABEL[photo.webContrast])}
-            pressed={photo.webContrast === 'on'}
-            onClick={cycleWebContrast}
-          >
-            <Contrast />
-          </IconButton>
-          <IconButton
-            label={
-              variant === undefined
-                ? t('photo.clean.make')
-                : photo.showCleaned
-                  ? t('photo.clean.show')
-                  : t('photo.clean.hide')
-            }
-            pressed={variant !== undefined && photo.showCleaned}
-            disabled={photo.calibrating || clean.phase === 'running'}
-            onClick={variant === undefined ? cleanPhotoBackground : toggleShowCleaned}
-          >
-            <Eraser />
-          </IconButton>
-          <IconButton
-            label={autoClean ? t('photo.clean.auto.on') : t('photo.clean.auto.off')}
-            pressed={autoClean}
-            onClick={toggleAutoClean}
-          >
-            <WandSparkles />
-          </IconButton>
-          {note.text === null ? null : (
-            <span
-              data-slot="clean-note"
-              aria-live="polite"
-              title={note.detail ?? undefined}
-              className="text-[10px] text-muted-foreground"
-            >
-              {note.text}
-            </span>
-          )}
-          <IconButton label={t('photo.split')} pressed={photo.split !== null} onClick={toggleSplit}>
-            <Columns2 />
-          </IconButton>
-          <IconButton
-            label={t('photo.moveBoard')}
-            pressed={photo.align === 'move'}
-            onClick={() => toggleAlign('move')}
-          >
-            <Move />
-          </IconButton>
-          <IconButton
-            label={t('photo.rollBoard')}
-            pressed={photo.align === 'roll'}
-            disabled={onLattice}
-            onClick={() => toggleAlign('roll')}
-          >
-            <RotateCw />
-          </IconButton>
-          <IconButton
-            label={
-              tools.phase === 'unavailable'
-                ? t('photo.findTools.unavailable')
-                : t('photo.findTools')
-            }
-            disabled={
-              tools.phase === 'running' || tools.phase === 'unavailable' || photo.calibrating
-            }
-            onClick={() => void findPhotoTools()}
-          >
-            <ScanSearch />
-          </IconButton>
-          <IconButton
-            label={t('photo.export')}
-            disabled={photo.calibrating}
-            onClick={() => void exportPhotoPng()}
-          >
-            <Download />
-          </IconButton>
-          <Layers className="size-3.5 text-muted-foreground" aria-hidden />
-          <Slider
-            className="w-24"
-            min={0}
-            max={1}
-            step={0.05}
-            value={[photo.overlayOpacity]}
-            aria-label={t('overlay.opacity')}
-            onValueChange={(value) => {
-              const next = Array.isArray(value) ? value[0] : value;
-              if (typeof next === 'number') setOverlayOpacity(next);
-            }}
-          />
-          <span className="w-8 text-right font-mono text-[10px] text-muted-foreground">
-            {Math.round(photo.overlayOpacity * 100)}%
-          </span>
-        </>
-      ) : null}
-    </div>
+      <IconButton
+        label={t(WEB_CONTRAST_LABEL[photo.webContrast])}
+        pressed={photo.webContrast === 'on'}
+        onClick={cycleWebContrast}
+      >
+        <Contrast />
+      </IconButton>
+      <IconButton
+        label={
+          variant === undefined
+            ? t('photo.clean.make')
+            : photo.showCleaned
+              ? t('photo.clean.show')
+              : t('photo.clean.hide')
+        }
+        pressed={variant !== undefined && photo.showCleaned}
+        disabled={photo.calibrating || clean.phase === 'running'}
+        onClick={variant === undefined ? cleanPhotoBackground : toggleShowCleaned}
+      >
+        <Eraser />
+      </IconButton>
+      <IconButton
+        label={autoClean ? t('photo.clean.auto.on') : t('photo.clean.auto.off')}
+        pressed={autoClean}
+        onClick={toggleAutoClean}
+      >
+        <WandSparkles />
+      </IconButton>
+      {note.text === null ? null : (
+        <span
+          data-slot="clean-note"
+          aria-live="polite"
+          title={note.detail ?? undefined}
+          className="text-[10px] text-muted-foreground"
+        >
+          {note.text}
+        </span>
+      )}
+      <IconButton label={t('photo.split')} pressed={photo.split !== null} onClick={toggleSplit}>
+        <Columns2 />
+      </IconButton>
+      <IconButton
+        label={t('photo.moveBoard')}
+        pressed={photo.align === 'move'}
+        onClick={() => toggleAlign('move')}
+      >
+        <Move />
+      </IconButton>
+      <IconButton
+        label={t('photo.rollBoard')}
+        pressed={photo.align === 'roll'}
+        disabled={onLattice}
+        onClick={() => toggleAlign('roll')}
+      >
+        <RotateCw />
+      </IconButton>
+      <IconButton
+        label={
+          tools.phase === 'unavailable' ? t('photo.findTools.unavailable') : t('photo.findTools')
+        }
+        disabled={tools.phase === 'running' || tools.phase === 'unavailable' || photo.calibrating}
+        onClick={() => void findPhotoTools()}
+      >
+        <ScanSearch />
+      </IconButton>
+      <IconButton
+        label={t('photo.export')}
+        disabled={photo.calibrating}
+        onClick={() => void exportPhotoPng()}
+      >
+        <Download />
+      </IconButton>
+      <Layers className="size-3.5 text-muted-foreground" aria-hidden />
+      <Slider
+        className="w-24"
+        min={0}
+        max={1}
+        step={0.05}
+        value={[photo.overlayOpacity]}
+        aria-label={t('overlay.opacity')}
+        onValueChange={(value) => {
+          const next = Array.isArray(value) ? value[0] : value;
+          if (typeof next === 'number') setOverlayOpacity(next);
+        }}
+      />
+      <span className="w-8 text-right font-mono text-[10px] text-muted-foreground">
+        {Math.round(photo.overlayOpacity * 100)}%
+      </span>
+    </>
   );
 }

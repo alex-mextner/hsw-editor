@@ -63,6 +63,7 @@ export function CompareOverlayLegend({
               label={t(style.visible ? 'compare.overlay.hide' : 'compare.overlay.show', {
                 name: model.label,
               })}
+              hintKey="compare.overlay.visibility"
               pressed={style.visible}
               size="icon-xs"
               onClick={() => onChange(model.id, { ...style, visible: !style.visible })}

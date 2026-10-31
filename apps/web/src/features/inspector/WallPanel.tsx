@@ -1,4 +1,4 @@
-import { Eye, EyeOff, Ruler, TriangleAlert } from 'lucide-react';
+import { Camera, Crosshair, TriangleAlert } from 'lucide-react';
 import { boardSizeMm, type Wall } from '@hsw-editor/core';
 import { api } from '@/api/http.ts';
 import { IconButton } from '@/components/IconButton.tsx';
@@ -86,14 +86,14 @@ export function WallPanel({ wall }: { readonly wall: Wall }) {
                     size="icon-xs"
                     onClick={() => startCalibration(photo.id)}
                   >
-                    <Ruler />
+                    <Crosshair />
                   </IconButton>
                   <IconButton
                     label={shown ? t('overlay.hide') : t('overlay.show')}
                     pressed={shown}
                     onClick={() => (shown ? leavePhotoMode() : showPhoto(photo))}
                   >
-                    {shown ? <Eye /> : <EyeOff />}
+                    <Camera />
                   </IconButton>
                 </li>
               );

@@ -42,6 +42,7 @@ export const shellEn = {
   'view.toggle': 'Toggle front / perspective view',
   'overlay.show': 'Show photo overlay',
   'overlay.hide': 'Hide photo overlay',
+  'overlay.pick': 'Overlay a photo of your wall: choose a file',
   'overlay.toggle': 'Toggle photo overlay',
   'overlay.opacity': 'Photo opacity',
   'hint.select':
@@ -309,7 +310,8 @@ export const shellRu: FeatureRu<typeof shellEn> = {
   'view.perspective': 'Перспективный вид',
   'view.toggle': 'Переключить вид спереди / перспектива',
   'overlay.show': 'Показать фото поверх стены',
-  'overlay.hide': 'Скрыть фото',
+  'overlay.hide': 'Скрыть наложение фото',
+  'overlay.pick': 'Наложить фото вашей стены: выбрать файл',
   'overlay.toggle': 'Показать / скрыть фото',
   'overlay.opacity': 'Прозрачность фото',
   'hint.select':

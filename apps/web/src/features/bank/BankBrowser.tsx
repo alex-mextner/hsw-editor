@@ -8,7 +8,6 @@ import {
   type BankIndex,
 } from '@hsw-editor/bank';
 import { createBankSearch, type BankSearch } from '@/bank/search.ts';
-import { Button } from '@/components/ui/button.tsx';
 import { IconButton } from '@/components/IconButton.tsx';
 import { useStore } from '@/state/react.ts';
 import { sessionStore } from '@/wall/session.ts';
@@ -140,17 +139,17 @@ export function BankBrowser({ index, byId, panel, onOpen, onAdd, onAddElement }:
             </span>
           ) : null}
         </IconButton>
-        <Button
+        <IconButton
+          label={t('bank.add')}
+          description={t('bank.addTitle')}
           variant="outline"
           size="icon"
-          data-testid="bank-add-element"
+          testId="bank-add-element"
           className="shrink-0"
-          aria-label={t('bank.add')}
-          title={t('bank.addTitle')}
           onClick={onAddElement}
         >
           <PlusIcon aria-hidden />
-        </Button>
+        </IconButton>
       </div>
       {panel.filtersOpen ? (
         <div className="max-h-[50vh] shrink-0 overflow-y-auto border-t border-border">

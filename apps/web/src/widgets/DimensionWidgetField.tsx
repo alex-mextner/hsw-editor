@@ -129,6 +129,7 @@ export function DimensionWidgetField({
         </Label>
         <span className="font-mono text-[10px] text-muted-foreground">{range}</span>
         <IconButton
+          hintKey="widgets.dimensions.reset"
           label={t('widgets.dimensions.reset', {
             name,
             value: `${fieldText(def, def.default, unit)} ${unitSuffix(def, unit)}`,
@@ -158,6 +159,7 @@ export function DimensionWidgetField({
         <div className="flex shrink-0 items-center gap-0.5">
           <IconButton
             label={t('widgets.dimensions.decrease', { name })}
+            hintKey="widgets.dimensions.decrease"
             size="icon-xs"
             disabled={disabled || value <= def.min}
             onClick={() => onStep(-1, 1, true)}
@@ -183,6 +185,7 @@ export function DimensionWidgetField({
           <span className="w-4 text-[10px] text-muted-foreground">{unitSuffix(def, unit)}</span>
           <IconButton
             label={t('widgets.dimensions.increase', { name })}
+            hintKey="widgets.dimensions.increase"
             size="icon-xs"
             disabled={disabled || value >= def.max}
             onClick={() => onStep(1, 1, true)}
