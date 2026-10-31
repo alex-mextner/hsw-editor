@@ -114,8 +114,16 @@ The Pages workflow builds with `VITE_HSW_DEMO=1` (`apps/web/src/demo/mode.ts`). 
 `/bank/assets/...`, by the `demoSeedBank` plugin in `vite.config.ts`), so the bank browser, the service worker caches and the offline
 behaviour above work unchanged. One bundled wall (`demo/demoApi.ts`, six seed elements) opens read-only on the first visit: `listWalls`/`getWall` are
 served locally, every edit, undo and wall creation is refused with the notice "This is a read-only demo", and the wall, health, event-stream,
-history and client-error requests are never made. Features that need a daemon (photo upload, vision jobs, bank variant builds) still try
-their `/api` call and fail like an unreachable daemon. After one visit the demo reloads offline.
+history and client-error requests are never made. After one visit the demo reloads offline.
+
+The **Tool Library is served statically** (`scripts/tools/demo-assets.ts` writes the build inputs, `demoSeedBank` copies them): the class list at
+`/api/tools/assets/classes` (a file cannot sit at `/api/tools/classes` next to the per-class thumbnail directories), one thumbnail per class at
+`/api/tools/classes/<id>/thumb.webp`, and the content-hashed GLBs and index of every built-in class under `/tools/assets` (about 18 MB, fetched on demand).
+`apps/web/src/demo/staticApi.ts` wraps the page's `fetch` once at startup (`installDemoApi`): `GET /api/tools` is an empty user library,
+`GET /api/tools/classes` reads the static list, the per-parameter answers (`.../holding`, `.../model.glb` with `?p=` / `?preset=`) are generated in the
+browser by the daemon's own generators (`demo/classModels.ts`, a separate chunk loaded when the class detail opens). Everything that needs a daemon
+(saving a tool, photo import, vision, jobs, any write) and every route the build does not ship answers `501 demo_unavailable` with a localized message
+("This needs the full app: the demo has no server"), never the host's `HTTP 404`.
 
 ## Known limits
 

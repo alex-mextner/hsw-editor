@@ -77,7 +77,7 @@ LOD1 far), not as a box: PBR parts (metals reflect a generated studio environmen
   `@hsw-editor/compat` seats the real shape. Box sizes (`width`/`length`/`thickness`) are never holding dimensions.
 - **Invalid zones** check the tool's LOD1 mesh; a tool still may interpenetrate the holder it hangs on (`parentId`).
 - **Offline**: models are runtime-cached (`cache-first`, immutable), the index is stale-while-revalidate; "Offline storage → Tool models" downloads and pins every model.
-  The Pages demo ships the tools of the showcase wall (`scripts/tools/demo-assets.ts`, run by `bun run build`).
+  The Pages demo ships every built-in class (models, thumbnails, class list: `scripts/tools/demo-assets.ts`, run by `bun run build`) and serves the Tool Library from them ([docs/offline.md](offline.md#github-pages-demo-hswmextnercom)).
 - **Showcase wall** (`apps/web/src/demo/showcase.ts`, layout `showcaseLayout.ts`): real seed holders with a dozen generated classes hung by the compat maths;
   it is the demo wall, a test fixture and `bun apps/web/scripts/showcase-wall.ts --api <daemon>` puts it on a running daemon for visual checks.
 

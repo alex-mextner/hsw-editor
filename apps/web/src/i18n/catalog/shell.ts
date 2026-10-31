@@ -255,6 +255,8 @@ export const shellEn = {
   'offline.iosHint': 'On iPhone: Share, then Add to Home Screen.',
   'offline.open': 'Offline storage',
   'demo.readOnly': 'This is a read-only demo. Run the daemon (hsw-editor start) to edit walls.',
+  'demo.unavailable':
+    'This needs the full app: the demo has no server. Run the daemon (hsw-editor start) to use it.',
   'conflict.title': 'Your offline edits clash with changes made meanwhile',
   'conflict.count.one': '{count} of your edits touches something that changed on the daemon.',
   'conflict.count.other': '{count} of your edits touch something that changed on the daemon.',
@@ -534,6 +536,8 @@ export const shellRu: FeatureRu<typeof shellEn> = {
   'offline.open': 'Офлайн-хранилище',
   'demo.readOnly':
     'Это демо только для просмотра. Запустите демон (hsw-editor start), чтобы править стены.',
+  'demo.unavailable':
+    'Для этого нужно полное приложение: в демо нет сервера. Запустите демон (hsw-editor start).',
   'conflict.title': 'Ваши офлайн-правки конфликтуют с изменениями за это время',
   'conflict.count.one': '{count} ваша правка затрагивает то, что изменилось на демоне.',
   'conflict.count.few': '{count} ваши правки затрагивают то, что изменилось на демоне.',

@@ -74,7 +74,8 @@ const BANK_GLB_PATH = /^\/bank\/assets\/(?:glb|variant)\/[0-9a-f]{16}\.glb$/;
 const BANK_THUMB_PATH = /^\/bank\/assets\/thumb\/[0-9a-f]{16}\.webp$/;
 // Mirrors the tool asset store (docs/tools.md): content-hashed GLBs of the generated tool models and the index that lists them.
 const TOOL_GLB_PATH = /^\/tools\/assets\/glb\/[0-9a-f]{16}\.glb$/;
-const TOOL_INDEX_PATH = /^\/api\/tools\/assets\/index$/;
+// `assets/classes` is the static class list of the demo build (no daemon answers `/api/tools/classes` there).
+const TOOL_INDEX_PATH = /^\/api\/tools\/assets\/(?:index|classes)$/;
 const BANK_INDEX_PATH = /^\/api\/bank\/(?:index|search-index|elements\/[a-z0-9-]+)$/;
 // The tool library (docs/api.md#tools). A tool id is a slug; the names the server routes before it are never one.
 const SLUG = '[a-z0-9][a-z0-9-]{0,63}';
