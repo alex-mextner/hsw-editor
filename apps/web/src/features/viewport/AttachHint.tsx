@@ -76,5 +76,13 @@ export function AttachHint() {
       </output>
     );
   }
-  return null;
+  return (
+    <output
+      data-testid="attach-free"
+      style={style}
+      className="pointer-events-none fixed z-50 max-w-60 rounded-md border border-border bg-popover px-2.5 py-1 text-xs text-popover-foreground shadow-md"
+    >
+      {t('attach.hint.free')}
+    </output>
+  );
 }

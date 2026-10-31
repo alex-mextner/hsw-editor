@@ -15,13 +15,14 @@ import {
   type ToolInterface,
   type WallSlot,
 } from '@hsw-editor/compat';
-import type { Pose, Wall, WallItem } from '@hsw-editor/core';
+import { FLOOR_DEPTH_MM, FLOOR_Y_MM, type Pose, type Wall, type WallItem } from '@hsw-editor/core';
 import { loadLimitG, seatSlotInput } from '@hsw-editor/physics';
 import { bankRoutes } from '@/bank/client.ts';
 import { resolveModel } from '@/bank/models.ts';
 import { itemBounds } from '@/scene/itemBounds.ts';
 import type {
   BodySource,
+  FallRequest,
   PhysicsScene,
   PlacedBody,
   PlacedTool,
@@ -71,6 +72,27 @@ function solidOf(
   return { id: item.id, bodyKey: model.key, pose: item.pose };
 }
 
+/** A tool as a posed body with its source registered; null without a model. */
+function toolOf(
+  item: WallItem,
+  ctx: AssetContext,
+  sources: Map<string, BodySource>,
+  holderItems: ReadonlyMap<string, WallItem>,
+): PlacedTool | null {
+  const model = ctx.toolModel(item);
+  if (model === null) return null;
+  sources.set(model.key, { kind: 'tool', url: absolute(model.path, ctx.baseUrl) });
+  const holder = item.parentId === undefined ? undefined : holderItems.get(item.parentId);
+  const element = holder?.bankId === undefined ? undefined : ctx.bank.get(holder.bankId);
+  return {
+    id: item.id,
+    bodyKey: model.key,
+    pose: item.pose,
+    holderId: holder?.id ?? null,
+    maxLoadG: element === undefined ? undefined : loadLimitG(ctx.toolInterface(item), element),
+  };
+}
+
 /** The whole wall as the physics sees it. Items without a usable model are left out (tools are reported by the worker). */
 export function buildPhysicsScene(wall: Wall, ctx: AssetContext): SceneBuild {
   const sources = new Map<string, BodySource>();
@@ -83,18 +105,8 @@ export function buildPhysicsScene(wall: Wall, ctx: AssetContext): SceneBuild {
       const body = solidOf(item, ctx, sources);
       if (body !== null) (item.kind === 'holder' ? holders : others).push(body);
     } else if (item.kind === 'tool') {
-      const model = ctx.toolModel(item);
-      if (model === null) continue;
-      sources.set(model.key, { kind: 'tool', url: absolute(model.path, ctx.baseUrl) });
-      const holder = item.parentId === undefined ? undefined : holderItems.get(item.parentId);
-      const element = holder?.bankId === undefined ? undefined : ctx.bank.get(holder.bankId);
-      tools.push({
-        id: item.id,
-        bodyKey: model.key,
-        pose: item.pose,
-        holderId: holder?.id ?? null,
-        maxLoadG: element === undefined ? undefined : loadLimitG(ctx.toolInterface(item), element),
-      });
+      const tool = toolOf(item, ctx, sources, holderItems);
+      if (tool !== null) tools.push(tool);
     }
   }
   return { scene: { holders, tools, others }, sources };
@@ -211,6 +223,40 @@ export function planWallRank(
       candidates,
       neighbours: [...neighbours.values()],
       removal,
+    },
+    sources,
+  };
+}
+
+export interface FallPlanRequest {
+  readonly request: FallRequest;
+  readonly sources: ReadonlyMap<string, BodySource>;
+}
+
+/**
+ * Request that decides what happens to `toolItem` let go at `pose` with no mount: everything else of the wall is an obstacle
+ * at its own pose. Null when the tool has no usable model (a stand-in box has an invented centre of gravity: it neither falls
+ * nor stays by physics, it keeps the pose it was given).
+ */
+export function planFallRequest(
+  wall: Wall,
+  ctx: AssetContext,
+  toolItem: WallItem,
+  pose: Pose,
+): FallPlanRequest | null {
+  const model = ctx.toolModel(toolItem);
+  if (model === null) return null;
+  const built = buildPhysicsScene(wall, ctx);
+  const sources = new Map(built.sources);
+  sources.set(model.key, { kind: 'tool', url: absolute(model.path, ctx.baseUrl) });
+  return {
+    request: {
+      tool: { id: toolItem.id, bodyKey: model.key, pose },
+      neighbours: [...built.scene.holders, ...built.scene.others, ...built.scene.tools].filter(
+        (body) => body.id !== toolItem.id,
+      ),
+      floorYMm: FLOOR_Y_MM,
+      floorDepthMm: FLOOR_DEPTH_MM,
     },
     sources,
   };

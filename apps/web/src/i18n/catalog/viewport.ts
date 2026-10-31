@@ -9,6 +9,7 @@ export const viewportEn = {
   'context.addHere': 'Add element here…',
   'context.properties': 'Variant and size…',
   'hint.placeAt': 'Pick an element in the bank to put it on the marked spot · Esc cancels',
+  'floor.label': 'Floor: a tool nothing holds falls here',
 } as const;
 
 export const viewportRu: FeatureRu<typeof viewportEn> = {
@@ -19,4 +20,5 @@ export const viewportRu: FeatureRu<typeof viewportEn> = {
   'context.addHere': 'Добавить элемент сюда…',
   'context.properties': 'Вариант и размер…',
   'hint.placeAt': 'Выберите элемент в банке — он встанет на отмеченное место · Esc — отмена',
+  'floor.label': 'Пол: сюда падает инструмент, который ничто не держит',
 };

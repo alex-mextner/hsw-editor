@@ -1,7 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import type { WallPhysicsReport } from '@hsw-editor/physics';
 import { type WorkerPort, PhysicsClient } from './client.ts';
-import type { BodySource, FromWorker, PhysicsScene, RankRequest, ToWorker } from './protocol.ts';
+import type {
+  BodySource,
+  FallRequest,
+  FromWorker,
+  PhysicsScene,
+  RankRequest,
+  ToWorker,
+} from './protocol.ts';
 import { fakeSeat } from './testWall.testkit.ts';
 import { ORIGIN } from './fakes.testkit.ts';
 
@@ -183,5 +190,45 @@ describe('PhysicsClient.rank', () => {
     await expect(a).rejects.toThrow('no seat');
     worker.reply({ type: 'ranked', seq: 2, seats: [], missing: [] });
     expect(await b).toEqual([]);
+  });
+});
+
+describe('PhysicsClient.fall', () => {
+  const fallRequest: FallRequest = {
+    tool: { id: 't', bodyKey: 'bar', pose: ORIGIN },
+    neighbours: [{ id: 'h', bodyKey: 'block', pose: ORIGIN }],
+    floorYMm: -250,
+    floorDepthMm: 700,
+  };
+
+  test('defines the models, sends the job and resolves with the plan of its seq', async () => {
+    const { worker, client } = setup();
+    const planned = client.fall(fallRequest, sources);
+    expect(
+      worker
+        .of('define')
+        .map((m) => m.key)
+        .sort(),
+    ).toEqual(['bar', 'block']);
+    expect(worker.of('fall')).toEqual([{ type: 'fall', seq: 1, request: fallRequest }]);
+    worker.reply({ type: 'fell', seq: 1, plan: null, missing: [] });
+    expect(await planned).toBeNull();
+  });
+
+  test('a failed fall rejects only itself', async () => {
+    const { worker, client } = setup();
+    const a = client.fall(fallRequest, sources);
+    const b = client.fall(fallRequest, sources);
+    worker.reply({ type: 'error', seq: 1, message: 'no model' });
+    await expect(a).rejects.toThrow('no model');
+    worker.reply({ type: 'fell', seq: 2, plan: null, missing: [] });
+    expect(await b).toBeNull();
+  });
+
+  test('a dead worker rejects a fall that is waiting', async () => {
+    const { worker, client } = setup();
+    const waiting = client.fall(fallRequest, sources);
+    worker.reply({ type: 'fatal', message: 'wasm' });
+    await expect(waiting).rejects.toThrow('wasm');
   });
 });

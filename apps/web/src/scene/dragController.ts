@@ -31,6 +31,7 @@ import { sessionStore, submitOps } from '@/wall/session.ts';
 import { moveItemsOps, planToolDrag } from '@/wall/attach.ts';
 import { layoutProblems } from '@/wall/footprint.ts';
 import { seatAfterDrop } from '@/physics/postStep.ts';
+import { letGoFree } from './freeRelease.ts';
 import { cancelSnap, glideTo } from './snapAnimation.ts';
 import { wallPointAt } from './viewportBridge.ts';
 
@@ -91,6 +92,16 @@ export function planMove(
       poses.set(id, { x, y, rotZ: origin.rotZ, cell: undefined });
     }
   }
+  addFollowers(poses, origins, shift);
+  return { poses, valid: isPlacementValid(wall, poses) };
+}
+
+/** Hung tools keep their offset from the holder as it actually lands (snapped), not as the pointer asked. */
+function addFollowers(
+  poses: Map<string, PreviewPose & { cell: GridCell | undefined }>,
+  origins: ReadonlyMap<string, Origin>,
+  shift: Vec2,
+): void {
   for (const [id, origin] of origins) {
     if (!origin.follows) continue;
     // A hung tool keeps its offset from the holder as the holder actually lands (snapped), not as the pointer asked.
@@ -100,9 +111,13 @@ export function planMove(
       holderPose && holderOrigin
         ? { x: holderPose.x - holderOrigin.x, y: holderPose.y - holderOrigin.y }
         : shift;
-    poses.set(id, { x: origin.x + move.x, y: origin.y + move.y, rotZ: origin.rotZ, cell: undefined });
+    poses.set(id, {
+      x: origin.x + move.x,
+      y: origin.y + move.y,
+      rotZ: origin.rotZ,
+      cell: undefined,
+    });
   }
-  return { poses, valid: isPlacementValid(wall, poses) };
 }
 
 /** Would the wall be clean (no footprint overlap, nothing off the board) for the moved items? */
@@ -195,9 +210,7 @@ export function freeDropTarget(
   free: boolean,
 ): { readonly cell: GridCell } | { readonly x: number; readonly y: number } {
   // Snap on keeps tools on lattice cells like every other item; Alt always means "leave it free", also with snap off.
-  return snap && !free
-    ? { cell: nearestCell(board, pose.x, pose.y) }
-    : { x: pose.x, y: pose.y };
+  return snap && !free ? { cell: nearestCell(board, pose.x, pose.y) } : { x: pose.x, y: pose.y };
 }
 
 /** Item pointer-down: select, then start a move that only becomes real after a few pixels of travel. */
@@ -313,7 +326,8 @@ function fullPose(item: WallItem): Required<PreviewPose> {
 /**
  * Dragging one tool: it follows the pointer while a ghost shows where it would hang, suitable mounts glow
  * and an unsuitable one under the pointer refuses (the tool then glides back). Alt drops it anywhere free.
- * Releasing on a mount hangs it (one undo step) and the tool glides onto its slot.
+ * Releasing on a mount hangs it (one undo step) and the tool glides onto its slot; released anywhere else the tool stays if
+ * something holds it and falls to the floor if not (`freeRelease.ts`).
  */
 function beginWallToolDrag(
   tool: WallItem,
@@ -404,7 +418,8 @@ function beginWallToolDrag(
         to: freeDropTarget(live.board, outcome.pose, editorStore.get().snap, outcome.free),
       },
     ];
-    submitOps(ops, 'move-item');
+    // Nothing hangs it there: the physics decides whether it stays or falls to the floor.
+    void letGoFree({ toolId: id, ops, label: 'move-item' }, outcome.pose);
   };
 
   const onCancel = (): void => finish();

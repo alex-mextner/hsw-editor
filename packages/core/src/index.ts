@@ -1,4 +1,5 @@
 export * from './api.ts';
+export * from './floor.ts';
 export * from './grid.ts';
 export * from './json.ts';
 export * from './ops.ts';

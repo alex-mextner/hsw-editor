@@ -1,6 +1,6 @@
 /** Messages between the render thread and the physics worker. All payloads are structured-cloneable. */
 import type { Pose } from '@hsw-editor/core';
-import type { RankedSeat, WallPhysicsReport } from '@hsw-editor/physics';
+import type { HangReport, RankedSeat, WallPhysicsReport } from '@hsw-editor/physics';
 
 /**
  * Where the geometry behind a body key comes from. `url` is absolute: a worker resolves relative urls against its
@@ -54,10 +54,31 @@ export interface RankRequest {
   readonly removal: boolean;
 }
 
+/** A tool let go with no mount: `tool` is the released body at its release pose, `neighbours` everything it can touch (never the tool itself). */
+export interface FallRequest {
+  readonly tool: PlacedBody;
+  readonly neighbours: readonly PlacedBody[];
+  readonly floorYMm: number;
+  readonly floorDepthMm: number;
+}
+
+/** What the worker decided for a `FallRequest`; `rest` is the pose the tool comes to rest in. */
+export type FellPlan =
+  | { readonly falls: false; readonly report: HangReport }
+  | {
+      readonly falls: true;
+      readonly report: HangReport;
+      readonly rest: Pose;
+      readonly dropMm: number;
+      /** Id of the item it lands on; null when it reaches the floor. */
+      readonly landedOn: string | null;
+    };
+
 export type ToWorker =
   | { readonly type: 'define'; readonly key: string; readonly source: BodySource }
   | { readonly type: 'solve'; readonly seq: number; readonly scene: PhysicsScene }
-  | { readonly type: 'rank'; readonly seq: number; readonly request: RankRequest };
+  | { readonly type: 'rank'; readonly seq: number; readonly request: RankRequest }
+  | { readonly type: 'fall'; readonly seq: number; readonly request: FallRequest };
 
 /** Why a body is missing from an answer. */
 export type MissingBody = {
@@ -79,6 +100,13 @@ export type FromWorker =
       readonly type: 'ranked';
       readonly seq: number;
       readonly seats: readonly RankedSeat[];
+      readonly missing: readonly MissingBody[];
+    }
+  | {
+      readonly type: 'fell';
+      readonly seq: number;
+      /** Null when the tool's model is missing or unusable (nothing can be said). */
+      readonly plan: FellPlan | null;
       readonly missing: readonly MissingBody[];
     }
   /** Job `seq` failed: it will never be answered. */

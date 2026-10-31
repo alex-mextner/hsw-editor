@@ -15,6 +15,9 @@ export interface ScenePalette {
   readonly ghostBad: string;
   readonly measure: string;
   readonly dimension: string;
+  /** The floor under the wall where released tools fall, at rest and lit (while a tool is dragged or falls). */
+  readonly floor: string;
+  readonly floorLit: string;
 }
 
 const DARK: ScenePalette = {
@@ -30,6 +33,8 @@ const DARK: ScenePalette = {
   ghostBad: '#ef5350',
   measure: '#38bdf8',
   dimension: '#f5b942',
+  floor: '#6b7280',
+  floorLit: '#22d3ee',
 };
 
 const LIGHT: ScenePalette = {
@@ -45,6 +50,8 @@ const LIGHT: ScenePalette = {
   ghostBad: '#dc2626',
   measure: '#0284c7',
   dimension: '#b45309',
+  floor: '#9ca3af',
+  floorLit: '#0891b2',
 };
 
 export function scenePalette(theme: Theme): ScenePalette {

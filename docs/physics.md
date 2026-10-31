@@ -258,6 +258,27 @@ problems (errors first, then the worst rating); clicking a row selects the tool.
 sentence, the removal verdict with the path ("lift 15 mm, pull", with a tilt prefix when needed) and the convenience, its mass in
 grams and, when the tool leans against the holder walls, the rest-pose note (`hang.rest`).
 
+## Let go with nothing holding it: the floor
+
+Ticket [#257](https://github.com/alex-mextner/hsw-editor/issues/257). A tool released with no mount (a drag onto bare board, Alt = free move, a drop
+from the Tools panel onto bare board; never a release onto a holder, which hangs and seats it) is judged where it was let go, in the physics worker,
+with every holder, board part and other tool as an obstacle: `planFall` (`packages/physics/src/fall.ts`) runs `analyseHangPose` and `releaseFalls`
+says it **falls** when the report carries a balance error, the same ones the physics badge shows in amber: `levitating`, `falls` or `tips`. A tool
+that is sunk into geometry (`penetrates`: the invalid zones show it) and one with only warnings (`swings`, `slides_off`, `needs_retention`) stay.
+
+A falling tool tumbles into one of the 24 axis-aligned poses, the one with the lowest centre of gravity (a bar lies on its broad face), preferring the
+long axis along the wall so it reads from the front, then the least turn. It keeps the x and z of its centre of gravity (in front of the board, within
+`FLOOR_DEPTH_MM` of the wall) and drops until its first contact. If it lands on a holder or another tool, it stays there when lying on it is a
+balance by the same analysis, else it slides towards the viewer in 10 mm steps until the way down is clear and goes on to the floor
+(`FLOOR_Y_MM = -150`, `packages/core/src/floor.ts`). Tools already on the floor are obstacles, so a second tool lands beside or on the first, not inside it.
+
+In the editor (`apps/web/src/physics/fall.ts`, `scene/freeRelease.ts`): the tool hovers at its release pose while the worker decides (0.05-0.5 s;
+at most 4 s, then it stays), the floor lit; a fall is one `fall` batch that carries the release (detach, move) and the fall (`rotateItem`, `moveItem`),
+so one undo returns the tool to where it came from, and the drop is played as a gravity animation (`y = g t^2 / 2`, `scene/fallAnimation.ts`). No model
+(a stand-in box has no centre of gravity), physics checks off, a failing or slow worker, or an edit of the wall meanwhile: the tool is placed exactly
+where it was put, as before. A tool on the floor is an ordinary free tool: pick it up and hang it (the floor never takes a pointer). `FloorPlane`
+draws the floor (cyan, pulsing, labelled) while a tool is dragged or falling, and quietly while a tool lies on it.
+
 ## Daemon, agent tool and CLI
 
 `apps/server/src/physics` judges a stored wall with the same maths. Holders and board parts are bank element GLBs at the item's pose
