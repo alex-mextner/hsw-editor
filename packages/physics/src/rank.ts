@@ -21,6 +21,7 @@ export interface HolderCandidate {
   /** Fit score from `compatibility()` (0..1); folded into `combined`. */
   compatScore: number;
   maxLoadG?: number | undefined;
+  protrudeLimitMm?: number | undefined;
 }
 
 export interface RankedSeat {
@@ -45,6 +46,7 @@ export function rankHolders(
     const hangOptions = {
       ...options.hang,
       ...(c.maxLoadG === undefined ? {} : { maxLoadG: c.maxLoadG }),
+      ...(c.protrudeLimitMm === undefined ? {} : { protrudeLimitMm: c.protrudeLimitMm }),
     };
     const seat = seatTool({
       tool,

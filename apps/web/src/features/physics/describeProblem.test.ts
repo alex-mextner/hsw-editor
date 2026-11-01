@@ -13,6 +13,8 @@ const PROBLEMS: readonly ProblemLike[] = [
   { code: 'swings', params: { swingDeg: 17, swayMm: 42 } },
   { code: 'slides_off', params: { marginG: 0.1, neededG: 0.3 } },
   { code: 'needs_retention', params: { marginG: 0.02, neededG: 0.15 } },
+  { code: 'wedged', params: { depthMm: 11 } },
+  { code: 'protrudes', params: { protrudeMm: 24 } },
   { code: 'overloaded', params: { massG: 900, maxLoadG: 500 } },
   { code: 'removal_blocked', params: { blockedBy: ['holder-2', 'tool-9'] } },
   { code: 'removal_blocked', params: { blockedBy: [] } },

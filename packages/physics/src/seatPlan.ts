@@ -25,6 +25,7 @@ import {
   type WallItem,
 } from '@hsw-editor/core';
 import { defaultLoadCapacityG } from './load.ts';
+import { protrudeLimitMm } from './seatFit.ts';
 import type { HolderCandidate } from './rank.ts';
 
 /** What a holder's slot carries for a tool: the bank's number for the matched entry, else the category default. */
@@ -53,6 +54,7 @@ export function seatSlotInput(
     tipDown: prefersTipDown(tool),
     compatScore: compat.score,
     maxLoadG: loadLimitG(tool, element),
+    protrudeLimitMm: protrudeLimitMm(element.id),
   };
 }
 
@@ -128,13 +130,18 @@ export async function planSeatAll(
       .filter((i) => i.kind === 'tool' && i.parentId !== undefined && !fixed(i))
       .map((i) => i.id),
   );
-  const view = (current: string): Wall => ({
-    ...local,
-    items: local.items.filter((i) => i.id === current || !waiting.has(i.id)),
+  const view = (wall: Wall, current: string): Wall => ({
+    ...wall,
+    items: wall.items.filter((i) => i.id === current || !waiting.has(i.id)),
   });
-  const attempt = async (item: WallItem, parentId: string, slot: number): Promise<Pose | null> => {
+  const attempt = async (
+    item: WallItem,
+    parentId: string,
+    slot: number,
+    wall: Wall,
+  ): Promise<Pose | null> => {
     try {
-      return await seatOne({ ...item, parentId, slot }, view(item.id));
+      return await seatOne({ ...item, parentId, slot }, view(wall, item.id));
     } catch (error) {
       onError?.(item.id, error);
       return null;
@@ -147,7 +154,7 @@ export async function planSeatAll(
       continue;
     }
     waiting.delete(item.id);
-    const pose = await attempt(item, item.parentId, item.slot);
+    const pose = await attempt(item, item.parentId, item.slot, local);
     if (pose === null) {
       kept.push(item.id);
     } else if (samePose(pose, item.pose)) {
@@ -157,27 +164,41 @@ export async function planSeatAll(
       seated.push(item.id);
     }
   }
-  // Tools that did not move (or could not be seated) were hidden from the ones seated before them: now that every pose
-  // is known, each seated tool looks once more at all of them and settles again if one is in its way.
   if (seated.length > 0 && (unchanged.length > 0 || kept.length > 0)) {
-    for (const id of seated) {
-      const item = local.items.find((candidate) => candidate.id === id);
-      if (item === undefined || item.parentId === undefined || item.slot === undefined) continue;
-      const again = await attempt(item, item.parentId, item.slot);
-      if (again === null || samePose(again, item.pose)) continue;
-      local = applyOp(local, seatOps(id, again)).wall;
-    }
+    local = await resettleSeated(local, seated, attempt);
   }
-  // What is applied is the difference between where each tool started and where the passes left it: a tool the second
-  // pass put back where it began is no move at all.
-  const moved = seated.filter((id) => {
-    const from = start.items.find((candidate) => candidate.id === id)?.pose;
-    const to = local.items.find((candidate) => candidate.id === id)?.pose;
-    return from !== undefined && to !== undefined && !samePose(from, to);
-  });
+  const moved = movedTools(start, local, seated);
   const ops: LeafOp[] = moved.flatMap((id) => {
     const to = local.items.find((candidate) => candidate.id === id)?.pose;
     return to === undefined ? [] : seatOps(id, to).ops;
   });
   return { ops, seated: moved, unchanged, kept, unslotted };
+}
+
+/** Tools that did not move (or could not be seated) were hidden from the ones seated before them: now that every pose
+ * is known, each seated tool looks once more at all of them and settles again if one is in its way. */
+async function resettleSeated(
+  start: Wall,
+  seated: readonly string[],
+  attempt: (item: WallItem, parentId: string, slot: number, wall: Wall) => Promise<Pose | null>,
+): Promise<Wall> {
+  let local = start;
+  for (const id of seated) {
+    const item = local.items.find((candidate) => candidate.id === id);
+    if (item === undefined || item.parentId === undefined || item.slot === undefined) continue;
+    const again = await attempt(item, item.parentId, item.slot, local);
+    if (again === null || samePose(again, item.pose)) continue;
+    local = applyOp(local, seatOps(id, again)).wall;
+  }
+  return local;
+}
+
+/** What is applied is the difference between where each tool started and where the passes left it: a tool the second
+ * pass put back where it began is no move at all. */
+function movedTools(start: Wall, local: Wall, seated: readonly string[]): string[] {
+  return seated.filter((id) => {
+    const from = start.items.find((candidate) => candidate.id === id)?.pose;
+    const to = local.items.find((candidate) => candidate.id === id)?.pose;
+    return from !== undefined && to !== undefined && !samePose(from, to);
+  });
 }

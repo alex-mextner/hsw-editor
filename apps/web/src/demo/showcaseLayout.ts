@@ -16,14 +16,18 @@ export interface ShowcaseTool {
   readonly params?: Readonly<Record<string, number>>;
 }
 
+/** Screwdrivers the 5 mm holes of the rail take: a 4 mm shaft and tip (the rail's bank entry takes shafts of 2..4.6 mm) and a slim 11 mm handle, so the 26 mm pitch leaves room for fingers beside each. */
+export const DRIVER_FOR_5MM_HOLES = { shaftDiameter: 4, tipSize: 4, handleDiameter: 11 } as const;
+
 /**
  * The tools of the demo wall and of the proof wall: generated tools of a dozen classes on holders of the committed seed bank,
  * laid out in rows like the reference photo (tape, scissors and measuring tools on the top, pliers, the drill and the hammer in the
  * middle, screwdrivers, wrenches and the spray can at the bottom). Ids exist in the seed bank (`packages/bank/seed`); where a
  * generator's default does not fit the holder, the class parameter the holder asks about is set (`params`), as a user would
  * with the dimension widget. The racks are laid out as the physics says they work (the wall is the proof of "Seat tools"): the side-cutters
- * (handles 82 mm apart at rest) do not fit a 52 mm deep rack beside two other pliers, so they have a rack of their own; the screwdrivers on the
- * 36 mm rail are slim (22 mm handles) so the gap to the neighbour leaves room for fingers.
+ * (handles 82 mm apart at rest) do not fit a 52 mm deep rack beside two other pliers, so they have a rack of their own; the screwdrivers sit in the
+ * 5 mm holes of a 3-slot screwdriver rail with 4 mm shafts and slim 11 mm handles (`DRIVER_FOR_5MM_HOLES`), so the gap to the
+ * neighbour leaves room for fingers; the long-nose pliers are 170 mm so they stay inside the 66 mm rack.
  */
 export const SHOWCASE_LAYOUT: readonly ShowcaseHolder[] = [
   {
@@ -60,7 +64,10 @@ export const SHOWCASE_LAYOUT: readonly ShowcaseHolder[] = [
     id: 'sc-pliers',
     bankId: 'pliers-rack-slots3-jawthickness18',
     cell: { col: 9, row: 12 },
-    tools: [{ classId: 'pliers-combination' }, { classId: 'pliers-long-nose' }],
+    tools: [
+      { classId: 'pliers-combination' },
+      { classId: 'pliers-long-nose', params: { length: 170 } },
+    ],
   },
   {
     id: 'sc-cutters',
@@ -74,8 +81,8 @@ export const SHOWCASE_LAYOUT: readonly ShowcaseHolder[] = [
     cell: { col: 41, row: 2 },
     tools: [
       { classId: 'wrench-combination' },
-      { classId: 'wrench-open-end' },
       { classId: 'wrench-ring' },
+      { classId: 'wrench-open-end' },
     ],
   },
   {
@@ -86,12 +93,12 @@ export const SHOWCASE_LAYOUT: readonly ShowcaseHolder[] = [
   },
   {
     id: 'sc-drivers',
-    bankId: 'refit-screwdriver-rail-3',
+    bankId: 'screwdriver-rail-slots3-holediameter5',
     cell: { col: 8, row: 2 },
     tools: [
-      { classId: 'screwdriver', params: { handleDiameter: 22 } },
-      { classId: 'screwdriver', params: { handleDiameter: 22 } },
-      { classId: 'screwdriver', params: { handleDiameter: 22 } },
+      { classId: 'screwdriver', params: DRIVER_FOR_5MM_HOLES },
+      { classId: 'screwdriver', params: DRIVER_FOR_5MM_HOLES },
+      { classId: 'screwdriver', params: DRIVER_FOR_5MM_HOLES },
     ],
   },
   {

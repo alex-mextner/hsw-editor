@@ -24,6 +24,7 @@ export interface PlacedTool extends PlacedBody {
   /** Holder item id the tool hangs on; null = not hung (an obstacle only). */
   readonly holderId: string | null;
   readonly maxLoadG?: number | undefined;
+  readonly protrudeLimitMm?: number | undefined;
 }
 
 /** The whole wall as the physics sees it: holders, tools and the other solids (shelves, board parts). */
@@ -43,6 +44,7 @@ export interface SeatCandidate {
   /** Fit score of `compatibility()`; folded into the rank. */
   readonly compatScore: number;
   readonly maxLoadG?: number | undefined;
+  readonly protrudeLimitMm?: number | undefined;
 }
 
 /** `tool` is seated in every candidate; `neighbours` (holders, other tools, shelves; never the tool itself) are the obstacles. */

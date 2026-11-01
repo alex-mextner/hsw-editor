@@ -31,6 +31,7 @@ import {
   marginAlong,
   reduceContacts,
 } from './equilibrium.ts';
+import { measureSeatFit, type SeatFit, WEDGED_MIN_MM } from './seatFit.ts';
 import { scanAll } from './settle.ts';
 
 export type HangReasonCode =
@@ -41,6 +42,8 @@ export type HangReasonCode =
   | 'swings'
   | 'slides_off'
   | 'needs_retention'
+  | 'wedged'
+  | 'protrudes'
   | 'overloaded';
 
 export interface HangReason {
@@ -82,6 +85,8 @@ export interface HangOptions {
   penetrationLimitMm: number;
   /** Largest mass (g) the mount carries; undefined = unchecked. */
   maxLoadG?: number | undefined;
+  /** How far (mm) a tool may reach below the holder before the holder is too shallow for it; undefined = unchecked (racks that tools dangle from by design). */
+  protrudeLimitMm?: number | undefined;
 }
 
 export const DEFAULT_HANG_OPTIONS: HangOptions = {
@@ -212,6 +217,10 @@ export interface HangInput {
   placement: Placement;
   /** Holder, neighbouring holders and tools, shelves: everything the tool can touch. */
   obstacles: readonly SolidBody[];
+  /** The holder the tool hangs on (one of `obstacles`): how the tool sits in it (jammed, reaching out below) is judged against it. Without one only the contacts are judged. */
+  holder?: SolidBody;
+  /** Try leaning the tool back against the wall when it stands but nothing holds it (the seat search, which writes the lean into the pose); a pose as stored is judged as it is. */
+  leanBack?: boolean;
   options?: Partial<HangOptions>;
 }
 
@@ -223,6 +232,7 @@ function analyseAt(
   placement: Placement,
   obstacles: readonly SolidBody[],
   options: HangOptions,
+  holder: SolidBody | undefined,
 ): { report: HangReport; contacts: Contact[]; penetrationMm: number; fallMm: number } {
   const near = nearbyObstacles(worldBounds(tool, placement), obstacles);
   const { grid, di, dj, y } = toolGridAt(tool, placement);
@@ -235,23 +245,37 @@ function analyseAt(
     y,
   );
   const contacts = reduceContacts(findContacts(grid, near, di, dj, y, options.contact));
+  const fit =
+    holder === undefined
+      ? null
+      : measureSeatFit(
+          { grid, di, dj, y },
+          holder.grid(),
+          holder.bounds(),
+          options.protrudeLimitMm !== undefined,
+        );
   return {
-    report: judge(tool, com, contacts, scan.fallMm, scan.penetrationMm, options),
+    report: withFit(
+      judge(tool, com, contacts, scan.fallMm, scan.penetrationMm, options),
+      fit,
+      options,
+    ),
     contacts,
     penetrationMm: scan.penetrationMm,
     fallMm: scan.fallMm,
   };
 }
 
-export function analyseHangPose(input: HangInput): HangReport {
-  const options: HangOptions = { ...DEFAULT_HANG_OPTIONS, ...input.options };
+/**
+ * Not in equilibrium as put, but a tool in a slot leans against the walls until it is: try small leans about the
+ * contact patch and keep the first that holds; null when none does.
+ */
+function leanUntilStable(
+  input: HangInput,
+  first: { contacts: Contact[] },
+  options: HangOptions,
+): HangReport | null {
   const { tool, placement } = input;
-  const first = analyseAt(tool, placement, input.obstacles, options);
-  const leans =
-    first.report.reasons.some((r) => r.code === 'tips') && first.report.status === 'unstable';
-  if (!leans || first.contacts.length === 0) return first.report;
-  // Not in equilibrium as put, but a tool in a slot leans against the walls until it is: try small leans about the
-  // contact patch and keep the first that holds.
   const support = first.contacts.filter((c) => c.kind === 'support' || c.kind === 'ceiling');
   const pivot: Vec3 = support.length > 0 ? meanOf(support) : meanOf(first.contacts);
   for (const deg of LEAN_STEPS_DEG) {
@@ -259,13 +283,114 @@ export function analyseHangPose(input: HangInput): HangReport {
       const leaned = leanAbout(placement, pivot, axis, sign * deg);
       const settled = restOnObstacles(tool, leaned, input.obstacles);
       if (settled === null) continue;
-      const trial = analyseAt(tool, settled, input.obstacles, options);
+      const trial = analyseAt(tool, settled, input.obstacles, options, input.holder);
       if (trial.report.status !== 'unstable') {
         return { ...trial.report, rest: { placement: settled, tiltDeg: deg } };
       }
     }
   }
-  return first.report;
+  return null;
+}
+
+export function analyseHangPose(input: HangInput): HangReport {
+  const options: HangOptions = { ...DEFAULT_HANG_OPTIONS, ...input.options };
+  const { tool, placement } = input;
+  const first = analyseAt(tool, placement, input.obstacles, options, input.holder);
+  const leans =
+    first.report.reasons.some((r) => r.code === 'tips') && first.report.status === 'unstable';
+  if (input.leanBack === true && first.contacts.length > 0) {
+    const braced = leanBack(tool, placement, first, input.obstacles, options, input.holder);
+    if (braced !== null) return braced;
+  }
+  if (!leans || first.contacts.length === 0) return first.report;
+  return leanUntilStable(input, first, options) ?? first.report;
+}
+
+/** Lean-back angles (degrees toward the wall) tried, smallest first, for a tool that stands but nothing holds it against a pull. */
+const LEAN_BACK_STEPS_DEG: readonly number[] = [2, 4, 6, 9, 12];
+/** What a lean back against the wall cures: nothing holds the tool against a pull, or it tips off the edge it stands on (a plate on its rim). */
+const LEAN_BACK_FIXES: ReadonlySet<HangReasonCode> = new Set<HangReasonCode>([
+  'needs_retention',
+  'tips',
+]);
+/** A tool that has leaned back may touch the wall plane but not sink into it (mm). */
+const WALL_TOLERANCE_MM = 0.5;
+/** How far (mm) a tool may end lower than it started when it leans back. */
+const LEAN_SINK_MM = 4;
+
+/** How far (mm) a tool may have to be lifted at a step of a lean: the unsettled turn grazes its support, a divider is far higher. */
+const LEAN_PATH_LIFT_MM = 20;
+
+/**
+ * The tool settled at `deg` degrees back about `pivot` (sliding `slideMm` forward on the way), or null when the turn has to climb
+ * over a divider or a neighbour, or has nothing to land on.
+ */
+function leanPath(
+  tool: ToolBody,
+  placement: Placement,
+  pivot: Vec3,
+  deg: number,
+  slideMm: number,
+  obstacles: readonly SolidBody[],
+): Placement | null {
+  let landed: Placement | null = null;
+  // Three looks along the way are enough to see a divider; every degree would cost seconds on a real tool mesh.
+  for (const step of new Set([Math.ceil(deg / 3), Math.ceil((2 * deg) / 3), deg])) {
+    const turned = leanAbout(placement, pivot, [1, 0, 0], -step);
+    const at: Placement = {
+      rotation: turned.rotation,
+      position: [
+        turned.position[0],
+        turned.position[1],
+        turned.position[2] + (slideMm * step) / deg,
+      ],
+    };
+    const settled = restOnObstacles(tool, at, obstacles);
+    // A turn part way that has nothing to land on yet (null) is not a collision; one that has to be lifted a long way is.
+    if (settled !== null && settled.position[1] - at.position[1] > LEAN_PATH_LIFT_MM) return null;
+    if (step === deg) landed = settled;
+  }
+  return landed;
+}
+
+/**
+ * A tool that stands in its holder (on a shelf, a cradle) with nothing against a pull, or that would tip forward off the
+ * edge it stands on, leans back against the wall: its centre of gravity moves behind the lip it rests on, and a pull outward
+ * has to lift it first. Returns the report of the
+ * smallest lean that removes the problem without making anything else worse, with that pose as its rest; null
+ * when the tool needs no retention or no lean gives it.
+ */
+function leanBack(
+  tool: ToolBody,
+  placement: Placement,
+  first: { report: HangReport; contacts: Contact[] },
+  obstacles: readonly SolidBody[],
+  options: HangOptions,
+  holder: SolidBody | undefined,
+): HangReport | null {
+  const needs = first.report.reasons.some((r) => LEAN_BACK_FIXES.has(r.code));
+  if (!needs) return null;
+  const support = first.contacts.filter((c) => c.kind === 'support');
+  if (support.length === 0) return null;
+  const pivot = meanOf(support);
+  const known = new Set(first.report.reasons.map((r) => r.code));
+  const startMinY = worldBounds(tool, placement).min[1];
+  for (const deg of LEAN_BACK_STEPS_DEG) {
+    const leaned = leanAbout(placement, pivot, [1, 0, 0], -deg);
+    // The part of the tool that was against the wall swings into it: the turn slides the whole tool forward until it only touches.
+    const slide = Math.max(0, -worldBounds(tool, leaned).min[2]);
+    const settled = leanPath(tool, placement, pivot, deg, slide, obstacles);
+    if (settled === null) continue;
+    const bounds = worldBounds(tool, settled);
+    // A lean is a small turn on the spot: a tool that slips down past its support while turning has found another seat.
+    if (bounds.min[2] < -WALL_TOLERANCE_MM || bounds.min[1] < startMinY - LEAN_SINK_MM) continue;
+    const trial = analyseAt(tool, settled, obstacles, options, holder);
+    const codes = trial.report.reasons.map((r) => r.code);
+    if (codes.some((c) => LEAN_BACK_FIXES.has(c) || !known.has(c))) continue;
+    if (trial.report.score < first.report.score) continue;
+    return { ...trial.report, rest: { placement: settled, tiltDeg: deg } };
+  }
+  return null;
 }
 
 const LEAN_AXES: readonly (readonly [Vec3, number])[] = [
@@ -349,7 +474,6 @@ export function judge(
   const reasons: HangReason[] = [];
   const eq = options.equilibrium;
   let score = 1;
-  let swingDeg: number | null = null;
   let marginsG = { ...ZERO_MARGINS };
 
   // The board only holds a tool that is pulled onto it (a magnet); otherwise touching it is not being held.
@@ -382,23 +506,38 @@ export function judge(
   marginsG = { ...ZERO_MARGINS };
   for (const name of names) marginsG[name] = marginAlong(contacts, com, eq, DISTURBANCES[name]);
 
+  const lateral = judgeLateral(contacts, com, marginsG, options, reasons);
+  score = Math.min(score, lateral.cap);
+  score = Math.min(score, judgeRetention(tool, marginsG, options, reasons));
+  return finish(tool, score, reasons, marginsG, contacts.length, penetrationMm, lateral.swingDeg);
+}
+
+/** Side-to-side stability: a hinged tool swings (or tips above its hinge), anything else must resist a sideways bump. Cap on the score. */
+function judgeLateral(
+  contacts: readonly Contact[],
+  com: Vec3,
+  marginsG: Record<DisturbanceName, number>,
+  options: HangOptions,
+  reasons: HangReason[],
+): { cap: number; swingDeg: number | null } {
+  const eq = options.equilibrium;
   const side = Math.min(marginsG.left, marginsG.right);
   const hinge = hingeOf(contacts);
   if (hinge) {
     const pendulum = pendulumOf(hinge, com);
     if (pendulum.belowMm < 0 || pendulum.offsetMm > HINGE_COM_OFFSET_MM) {
       reasons.push({ code: 'tips', params: { aboveMm: round1(-pendulum.belowMm) } });
-      score = Math.min(score, 0.15);
-    } else {
-      const tilt = Math.atan(options.bumpG);
-      swingDeg = Math.round((tilt * 180) / Math.PI);
-      const swayMm = pendulum.belowMm * Math.sin(tilt);
-      if (swayMm >= SWING_REPORT_MM) {
-        reasons.push({ code: 'swings', params: { swingDeg, swayMm: Math.round(swayMm) } });
-      }
-      score = Math.min(score, 0.95 - 0.45 * clamp01(swayMm / 150));
+      return { cap: 0.15, swingDeg: null };
     }
-  } else if (side < options.bumpG * REFERENCE_MARGIN_FACTOR) {
+    const tilt = Math.atan(options.bumpG);
+    const swingDeg = Math.round((tilt * 180) / Math.PI);
+    const swayMm = pendulum.belowMm * Math.sin(tilt);
+    if (swayMm >= SWING_REPORT_MM) {
+      reasons.push({ code: 'swings', params: { swingDeg, swayMm: Math.round(swayMm) } });
+    }
+    return { cap: 0.95 - 0.45 * clamp01(swayMm / 150), swingDeg };
+  }
+  if (side < options.bumpG * REFERENCE_MARGIN_FACTOR) {
     const bump = options.bumpG;
     const left = balances(contacts, com, eq, DISTURBANCES.left, bump, true).ok;
     const right = balances(contacts, com, eq, DISTURBANCES.right, bump, true).ok;
@@ -406,23 +545,59 @@ export function judge(
       code: left && right ? 'tips' : 'slides_off',
       params: { marginG: round3(side), neededG: bump },
     });
-    score = Math.min(score, 0.25 + 0.5 * clamp01(side / bump));
+    return { cap: 0.25 + 0.5 * clamp01(side / bump), swingDeg: null };
   }
+  return { cap: Infinity, swingDeg: null };
+}
+
+/** Hold against a pull and the holder's load limit. Cap on the score. */
+function judgeRetention(
+  tool: ToolBody,
+  marginsG: Record<DisturbanceName, number>,
+  options: HangOptions,
+  reasons: HangReason[],
+): number {
+  let cap = Infinity;
   if (marginsG.outward < options.pullG * REFERENCE_MARGIN_FACTOR) {
     reasons.push({
       code: 'needs_retention',
       params: { marginG: round3(marginsG.outward), neededG: options.pullG },
     });
-    score = Math.min(score, 0.4 + 0.4 * clamp01(marginsG.outward / options.pullG));
+    cap = 0.4 + 0.4 * clamp01(marginsG.outward / options.pullG);
   }
   if (options.maxLoadG !== undefined && tool.massG > options.maxLoadG) {
     reasons.push({
       code: 'overloaded',
       params: { massG: Math.round(tool.massG), maxLoadG: options.maxLoadG },
     });
-    score = Math.min(score, 0.3);
+    cap = Math.min(cap, 0.3);
   }
-  return finish(tool, score, reasons, marginsG, contacts.length, penetrationMm, swingDeg);
+  return cap;
+}
+
+const WEDGED_SCORE = 0.35;
+const PROTRUDES_SCORE = 0.7;
+
+function statusOf(score: number): HangStatus {
+  return score >= 0.8 ? 'stable' : score >= 0.45 ? 'marginal' : 'unstable';
+}
+
+/** Adds what the contacts cannot tell: a tool stuck in an opening it does not fit, and one that reaches out below a holder too shallow for it. */
+function withFit(report: HangReport, fit: SeatFit | null, options: HangOptions): HangReport {
+  if (fit === null) return report;
+  const reasons = [...report.reasons];
+  let score = report.score;
+  if (fit.wedgedMm >= WEDGED_MIN_MM) {
+    reasons.push({ code: 'wedged', params: { depthMm: round1(fit.wedgedMm) } });
+    score = Math.min(score, WEDGED_SCORE);
+  }
+  if (options.protrudeLimitMm !== undefined && fit.protrudeMm > options.protrudeLimitMm) {
+    reasons.push({ code: 'protrudes', params: { protrudeMm: round1(fit.protrudeMm) } });
+    score = Math.min(score, PROTRUDES_SCORE);
+  }
+  return reasons.length === report.reasons.length
+    ? report
+    : { ...report, reasons, score, status: statusOf(score) };
 }
 
 function finish(
@@ -435,7 +610,7 @@ function finish(
   swingDeg: number | null,
 ): HangReport {
   const rounded = Math.round(clamp01(score) * 100) / 100;
-  const status: HangStatus = rounded >= 0.8 ? 'stable' : rounded >= 0.45 ? 'marginal' : 'unstable';
+  const status = statusOf(rounded);
   return {
     score: rounded,
     status,

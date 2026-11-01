@@ -138,4 +138,26 @@ describe('planSeatAll', () => {
     expect(plan.ops).toEqual([]);
     expect(plan.unchanged).toEqual(['b']);
   });
+
+  test('in the second look a tool sees the poses the earlier ones took in that same look', async () => {
+    const three = wallOf([
+      { id: 'h', kind: 'holder', bankId: 'rail' },
+      { id: 'a', kind: 'tool', bankId: 'tool', parentId: 'h', slot: 0, pose: hover(10) },
+      { id: 'b', kind: 'tool', bankId: 'tool', parentId: 'h', slot: 1, pose: hover(50) },
+      { id: 'c', kind: 'tool', bankId: 'tool', parentId: 'h', slot: 2, pose: hover(90) },
+    ]);
+    const bSaw: (number | undefined)[] = [];
+    let aCalls = 0;
+    await planSeatAll(three, async (tool, view) => {
+      if (tool.id === 'c') return hover(90);
+      if (tool.id === 'b') {
+        bSaw.push(view.items.find((i) => i.id === 'a')?.pose.x);
+        return { ...SEATED, x: 2 };
+      }
+      aCalls += 1;
+      return { ...SEATED, x: aCalls === 1 ? 1 : 3 };
+    });
+    // first look: a was already at x=1 when b was seated; second look: a moved to x=3 before b looked again
+    expect(bSaw).toEqual([1, 3]);
+  });
 });

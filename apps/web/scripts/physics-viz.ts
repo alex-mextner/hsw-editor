@@ -29,7 +29,12 @@ export interface VizPart {
 export function vizScene(
   parts: VizPart[],
   file: string,
-  opts: { center?: Vec3; sizeMm?: number } = {},
+  opts: {
+    center?: Vec3;
+    sizeMm?: number;
+    /** Camera directions (from the scene centre towards the eye); default front (+Z) and side (+X). */
+    views?: readonly Vec3[];
+  } = {},
 ): void {
   const posed: Part[] = parts.map((p, i) => {
     const r = p.rotation;
@@ -74,26 +79,28 @@ export function vizScene(
   const ppm =
     Math.min(w, h) /
     (opts.sizeMm ?? Math.max(bounds.max[0] - bounds.min[0], bounds.max[1] - bounds.min[1]) * 1.15);
-  const front = render(model, {
-    width: w,
-    height: h,
-    view: { eye: [0, 0, 1], up: [0, 1, 0] },
-    background: '#20242a',
-    center: c,
-    pixelsPerMm: ppm,
-  });
-  const side = render(model, {
-    width: w,
-    height: h,
-    view: { eye: [1, 0, 0], up: [0, 1, 0] },
-    background: '#20242a',
-    center: c,
-    pixelsPerMm: ppm,
-  });
-  const out = new Uint8ClampedArray(w * 2 * h * 4);
-  for (let y = 0; y < h; y++) {
-    out.set(front.rgba.subarray(y * w * 4, (y + 1) * w * 4), y * w * 8);
-    out.set(side.rgba.subarray(y * w * 4, (y + 1) * w * 4), y * w * 8 + w * 4);
+  const views = opts.views ?? [
+    [0, 0, 1],
+    [1, 0, 0],
+  ];
+  const tiles = views.map((eye) =>
+    render(model, {
+      width: w,
+      height: h,
+      view: { eye, up: [0, 1, 0] },
+      background: '#20242a',
+      center: c,
+      pixelsPerMm: ppm,
+    }),
+  );
+  const out = new Uint8ClampedArray(w * tiles.length * h * 4);
+  for (const [at, tile] of tiles.entries()) {
+    for (let y = 0; y < h; y++) {
+      out.set(
+        tile.rgba.subarray(y * w * 4, (y + 1) * w * 4),
+        y * w * 4 * tiles.length + at * w * 4,
+      );
+    }
   }
-  writeFileSync(file, encodePng(out, w * 2, h));
+  writeFileSync(file, encodePng(out, w * tiles.length, h));
 }

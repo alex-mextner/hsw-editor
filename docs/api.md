@@ -298,8 +298,8 @@ WallPhysicsView = {
 ```
 
 `code` is one of `levitating`, `penetrates` (not seated: stuck in the holder), `falls`, `tips`, `swings`, `slides_off`,
-`needs_retention`, `overloaded`, `removal_blocked`, `removal_needs_tilt`, `removal_two_hands`; `params` carries the numbers
-(`gapMm`, `depthMm`, `swingDeg`, `swayMm`, `marginG`, `neededG`, `massG`, `maxLoadG`, `blockedBy`, `path`, `reasons`). `text` is
+`needs_retention`, `wedged` (the end of the tool is jammed in an opening too small for it), `protrudes` (the tool reaches out below a rack too shallow for it), `overloaded`, `removal_blocked`, `removal_needs_tilt`, `removal_two_hands`; `params` carries the numbers
+(`gapMm`, `depthMm`, `protrudeMm`, `swingDeg`, `swayMm`, `marginG`, `neededG`, `massG`, `maxLoadG`, `blockedBy`, `path`, `reasons`). `text` is
 one English sentence built from them (`describeProblemEn`), for example `Floats about 42 mm above its holder: nothing touches
 it, so it would fall.`, `Swings freely (about 17° when bumped, about 40 mm sideways).`, `Needs two hands to take off: it is
 heavy, there is little room for fingers beside it.`, `Cannot be taken off: blocked by i-7.`. The page has its own ru/en

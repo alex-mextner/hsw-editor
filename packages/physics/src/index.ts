@@ -12,3 +12,4 @@ export * from './removal.ts';
 export * from './wall.ts';
 export * from './rank.ts';
 export * from './load.ts';
+export * from './seatFit.ts';

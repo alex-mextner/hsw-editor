@@ -17,9 +17,10 @@ import {
   type Vec3,
 } from '@hsw-editor/compat';
 import type { Pose } from '@hsw-editor/core';
-import { CELL_MM, type Placement, type SolidBody, type ToolBody } from './body.ts';
+import { CELL_MM, type Bounds, type Placement, type SolidBody, type ToolBody } from './body.ts';
 import { rasterize, spanRange, topOf, type ColumnGrid } from './columns.ts';
 import { analyseHangPose, type HangOptions, type HangReport } from './hang.ts';
+import { measureSeatFit, WEDGED_MIN_MM } from './seatFit.ts';
 import { scanAll, settle, settleBelow } from './settle.ts';
 
 export interface SeatRequest {
@@ -77,9 +78,17 @@ const UNPREFERRED_FLIP_MM = 30;
 const QUARTER_TURN_MM: readonly number[] = [0, 15, 8, 15];
 /** Centre-of-gravity height (mm) a fully unstable seat is charged: a lower seat that is less stable loses to a higher stable one. */
 const UNSTABLE_COST_MM = 150;
-const NATURAL_FAILS_BELOW = 0.5;
+/** A natural seat below this score cannot be held: it gives way to the other end whenever that one is clearly better. */
+const NATURAL_CANNOT_BE_HELD_BELOW = 0.5;
+/** A natural seat below this score is held but not solidly (a wrench stood on prongs it only tips on): it gives way to the other end when that one is stable and clearly better. */
+const NATURAL_FAILS_BELOW = 0.8;
 /** Shares of the holder depth at which a tool's hole is tried over a peg (clear of the back plate, its gusset and the end flange). */
 const HOLE_DEPTH_FRACTIONS: readonly number[] = [0.3, 0.4, 0.5, 0.6, 0.7];
+
+/** Centre-of-gravity height (mm) a seat is charged for a tool stuck in an opening instead of resting (wedged: a flared tip in a small hole). */
+const WEDGED_COST_MM = 120;
+/** Centre-of-gravity height (mm) a seat is charged for reaching out below a rack that is too shallow for the tool. */
+const PROTRUDES_COST_MM = 60;
 
 /** A holder column this much below the holder's rim counts as part of a cavity. */
 const CAVITY_DEPTH_MM = 3;
@@ -137,20 +146,9 @@ function searchOrientation(
   const iTo = Math.floor(window.x1 / cellMm);
   const jFrom = Math.max(Math.ceil(window.z0 / cellMm), Math.ceil(-tool.min[2] / cellMm));
   const jTo = Math.floor(window.z1 / cellMm);
-  // Cells of the window that lie in a cavity of the holder (a slot, a pocket, a fork gap); everything when it has none.
   const hb = request.holder.bounds();
-  const inCavity = (di: number, dj: number): boolean => {
-    const x = di * cellMm;
-    const z = dj * cellMm;
-    if (x < hb.min[0] || x > hb.max[0] || z < hb.min[2] || z > hb.max[2]) return false;
-    return topOf(holderGrid, di, dj) < rim - CAVITY_DEPTH_MM;
-  };
-  let cavityCells = 0;
-  for (let dj = jFrom; dj <= jTo; dj++)
-    for (let di = iFrom; di <= iTo; di++) if (inCavity(di, dj)) cavityCells++;
-  const useCavity = cavityCells > 0;
-  const cells = useCavity ? cavityCells : (iTo - iFrom + 1) * (jTo - jFrom + 1);
-  const step = Math.max(1, Math.ceil(Math.sqrt(cells / LATTICE_BUDGET)));
+  const range: CellRange = { iFrom, iTo, jFrom, jTo };
+  const { inCavity, useCavity, step } = latticeOf(holderGrid, hb, rim, range);
 
   let tried = 0;
   let best: Candidate | null = null;
@@ -163,24 +161,16 @@ function searchOrientation(
       Math.abs(x - request.anchor[0]) * X_PENALTY_PER_MM +
       (orientation.flipped === request.tipDown ? 0 : UNPREFERRED_FLIP_MM) +
       (QUARTER_TURN_MM[orientation.quarterTurns] ?? 0);
-    const s = settleBelow(
-      tool,
-      grids,
+    const rest = restCost(
+      { request, tool, grids, holderGrid, hb, startY },
       di,
       dj,
-      startY,
       (best === null ? Infinity : best.comY) - extra,
-      HOLDER_ONLY,
+      best === null ? null : best.comY,
+      extra,
     );
-    if (s === null || s.startPenetrationMm > 0.01 || !Number.isFinite(s.y)) return;
-    // A position that ends inside a neighbour (a handle poking over the slot) loses to a clean one beside it, even when
-    // both fall to the same floor: the overlap counts against the seat like a taller centre of gravity.
-    const overlap =
-      grids.length > HOLDER_ONLY
-        ? scanAll(tool, grids.slice(HOLDER_ONLY), di, dj, s.y).penetrationMm
-        : 0;
-    const comY = s.y + extra + overlap * NEIGHBOUR_OVERLAP_MM_PER_MM;
-    if (best === null || comY < best.comY) {
+    if (rest === null) return;
+    if (best === null || rest.comY < best.comY) {
       best = {
         rotation: orientation.rotation,
         angles: {
@@ -191,28 +181,120 @@ function searchOrientation(
         natural: orientation.flipped === request.tipDown,
         x,
         z: dj * cellMm,
-        y: s.y,
-        comY,
+        y: rest.y,
+        comY: rest.comY,
       };
     }
   };
+  sweepLattice(range, step, useCavity ? inCavity : null, evaluate);
+  const coarseBest = best as Candidate | null;
+  if (coarseBest !== null && step > 1) {
+    refineAround(range, step, coarseBest, evaluate);
+  }
+  return { best, tried };
+}
+
+/** Evaluates every `step`-th cell of the range (only cavity cells when `inCavity` is given). */
+function sweepLattice(
+  { iFrom, iTo, jFrom, jTo }: CellRange,
+  step: number,
+  inCavity: ((di: number, dj: number) => boolean) | null,
+  evaluate: (di: number, dj: number) => void,
+): void {
   for (let dj = jFrom; dj <= jTo; dj += step) {
     for (let di = iFrom; di <= iTo; di += step) {
-      if (useCavity && !inCavity(di, dj)) continue;
+      if (inCavity !== null && !inCavity(di, dj)) continue;
       evaluate(di, dj);
     }
   }
-  const coarseBest = best as Candidate | null;
-  if (coarseBest !== null && step > 1) {
-    const ci = Math.round(coarseBest.x / cellMm);
-    const cj = Math.round(coarseBest.z / cellMm);
-    for (let dj = cj - step; dj <= cj + step; dj++) {
-      for (let di = ci - step; di <= ci + step; di++) {
-        if (di >= iFrom && di <= iTo && dj >= jFrom && dj <= jTo) evaluate(di, dj);
-      }
+}
+
+/** Evaluates every cell within `step` of the coarse winner that lies in the range. */
+function refineAround(
+  { iFrom, iTo, jFrom, jTo }: CellRange,
+  step: number,
+  coarseBest: Candidate,
+  evaluate: (di: number, dj: number) => void,
+): void {
+  const ci = Math.round(coarseBest.x / CELL_MM);
+  const cj = Math.round(coarseBest.z / CELL_MM);
+  for (let dj = cj - step; dj <= cj + step; dj++) {
+    for (let di = ci - step; di <= ci + step; di++) {
+      if (di >= iFrom && di <= iTo && dj >= jFrom && dj <= jTo) evaluate(di, dj);
     }
   }
-  return { best, tried };
+}
+
+interface CellRange {
+  iFrom: number;
+  iTo: number;
+  jFrom: number;
+  jTo: number;
+}
+
+/** Which window cells lie in a cavity of the holder (a slot, a pocket, a fork gap; everything when it has none) and the lattice step. */
+function latticeOf(
+  holderGrid: ColumnGrid,
+  hb: Bounds,
+  rim: number,
+  { iFrom, iTo, jFrom, jTo }: CellRange,
+): { inCavity: (di: number, dj: number) => boolean; useCavity: boolean; step: number } {
+  const inCavity = (di: number, dj: number): boolean => {
+    const x = di * CELL_MM;
+    const z = dj * CELL_MM;
+    if (x < hb.min[0] || x > hb.max[0] || z < hb.min[2] || z > hb.max[2]) return false;
+    return topOf(holderGrid, di, dj) < rim - CAVITY_DEPTH_MM;
+  };
+  let cavityCells = 0;
+  for (let dj = jFrom; dj <= jTo; dj++)
+    for (let di = iFrom; di <= iTo; di++) if (inCavity(di, dj)) cavityCells++;
+  const useCavity = cavityCells > 0;
+  const cells = useCavity ? cavityCells : (iTo - iFrom + 1) * (jTo - jFrom + 1);
+  const step = Math.max(1, Math.ceil(Math.sqrt(cells / LATTICE_BUDGET)));
+  return { inCavity, useCavity, step };
+}
+
+interface RestContext {
+  request: SeatRequest;
+  tool: ColumnGrid;
+  grids: readonly ColumnGrid[];
+  holderGrid: ColumnGrid;
+  hb: Bounds;
+  startY: number;
+}
+
+/**
+ * Where the tool comes to rest above lattice cell (di, dj) and what that costs (centre of gravity plus penalties, `extra`
+ * included); null when it has no clean rest there. `bestComY` is the best cost so far (null when none).
+ */
+function restCost(
+  ctx: RestContext,
+  di: number,
+  dj: number,
+  floor: number,
+  bestComY: number | null,
+  extra: number,
+): { y: number; comY: number } | null {
+  const { request, tool, grids, holderGrid, hb, startY } = ctx;
+  const s = settleBelow(tool, grids, di, dj, startY, floor, HOLDER_ONLY);
+  if (s === null || s.startPenetrationMm > 0.01 || !Number.isFinite(s.y)) return null;
+  // A position that ends inside a neighbour (a handle poking over the slot) loses to a clean one beside it, even when
+  // both fall to the same floor: the overlap counts against the seat like a taller centre of gravity.
+  const overlap =
+    grids.length > HOLDER_ONLY
+      ? scanAll(tool, grids.slice(HOLDER_ONLY), di, dj, s.y).penetrationMm
+      : 0;
+  let comY = s.y + extra + overlap * NEIGHBOUR_OVERLAP_MM_PER_MM;
+  // The lowest rest is not the best one when the tool only got there by jamming: charge a wedge or a reach out of the rack
+  // like a taller centre of gravity, so the position beside the hole, the shaft right through it or the handle on the rim wins.
+  // Only a position that could still win is measured (the fit reads every column of the tool).
+  if (bestComY === null || comY < bestComY) {
+    const limit = request.options?.protrudeLimitMm;
+    const fit = measureSeatFit({ grid: tool, di, dj, y: s.y }, holderGrid, hb, limit !== undefined);
+    if (fit.wedgedMm >= WEDGED_MIN_MM) comY += WEDGED_COST_MM;
+    if (limit !== undefined && fit.protrudeMm > limit) comY += PROTRUDES_COST_MM;
+  }
+  return { y: s.y, comY };
 }
 
 export function seatTool(request: SeatRequest): SeatResult | null {
@@ -240,15 +322,16 @@ export function seatTool(request: SeatRequest): SeatResult | null {
   const bestNatural = evaluateBest(request, natural.slice(0, TOP_CANDIDATES), obstacles, tried);
   const bestAlternative = evaluateBest(request, alternative.slice(0, 2), obstacles, tried);
   if (bestNatural === null) return bestAlternative;
-  // The class's natural end first; the other way up only when the natural one cannot be held and the other can.
-  if (
-    bestAlternative !== null &&
-    bestNatural.report.score < NATURAL_FAILS_BELOW &&
-    bestAlternative.report.score > bestNatural.report.score + 0.3
-  ) {
-    return bestAlternative;
+  // The class's natural end first. The other way up when the natural one cannot be held and the other is clearly better; and
+  // when the natural one is held but not solidly (below NATURAL_FAILS_BELOW) only for an end that is solid.
+  if (bestAlternative === null || bestAlternative.report.score <= bestNatural.report.score + 0.3) {
+    return bestNatural;
   }
-  return bestNatural;
+  const naturalScore = bestNatural.report.score;
+  const flips =
+    naturalScore < NATURAL_CANNOT_BE_HELD_BELOW ||
+    (naturalScore < NATURAL_FAILS_BELOW && bestAlternative.report.status === 'stable');
+  return flips ? bestAlternative : bestNatural;
 }
 
 function evaluateBest(
@@ -265,6 +348,8 @@ function evaluateBest(
       tool: request.tool,
       placement,
       obstacles,
+      holder: request.holder,
+      leanBack: true,
       ...(request.options ? { options: request.options } : {}),
     });
     const cost = c.comY + (1 - report.score) * UNSTABLE_COST_MM;
@@ -312,27 +397,7 @@ export function findPegs(holder: SolidBody, z: number, maxWidthMm: number): Vec3
   const out: Vec3[] = [];
   for (let start = 0; start < w * h; start++) {
     if (!solid[start] || seen[start]) continue;
-    const stack = [start];
-    seen[start] = 1;
-    let minI = w;
-    let maxI = 0;
-    let minJ = h;
-    let maxJ = 0;
-    while (stack.length > 0) {
-      const c = stack.pop() as number;
-      const i = c % w;
-      const j = (c - i) / w;
-      minI = Math.min(minI, i);
-      maxI = Math.max(maxI, i);
-      minJ = Math.min(minJ, j);
-      maxJ = Math.max(maxJ, j);
-      for (const n of [c - 1, c + 1, c - w, c + w]) {
-        if (n < 0 || n >= w * h || seen[n] || !solid[n]) continue;
-        if ((n === c - 1 && i === 0) || (n === c + 1 && i === w - 1)) continue;
-        seen[n] = 1;
-        stack.push(n);
-      }
-    }
+    const { minI, maxI, minJ, maxJ } = floodBlob(solid, seen, w, h, start);
     const width = (maxI - minI + 1) * CELL_MM;
     const height = (maxJ - minJ + 1) * CELL_MM;
     if (width <= maxWidthMm && height <= maxWidthMm) {
@@ -340,6 +405,38 @@ export function findPegs(holder: SolidBody, z: number, maxWidthMm: number): Vec3
     }
   }
   return out;
+}
+
+/** Marks the blob of solid cells connected to `start` as seen and returns its cell-index bounds. */
+function floodBlob(
+  solid: Uint8Array,
+  seen: Uint8Array,
+  w: number,
+  h: number,
+  start: number,
+): { minI: number; maxI: number; minJ: number; maxJ: number } {
+  const stack = [start];
+  seen[start] = 1;
+  let minI = w;
+  let maxI = 0;
+  let minJ = h;
+  let maxJ = 0;
+  while (stack.length > 0) {
+    const c = stack.pop() as number;
+    const i = c % w;
+    const j = (c - i) / w;
+    minI = Math.min(minI, i);
+    maxI = Math.max(maxI, i);
+    minJ = Math.min(minJ, j);
+    maxJ = Math.max(maxJ, j);
+    for (const n of [c - 1, c + 1, c - w, c + w]) {
+      if (n < 0 || n >= w * h || seen[n] || !solid[n]) continue;
+      if ((n === c - 1 && i === 0) || (n === c + 1 && i === w - 1)) continue;
+      seen[n] = 1;
+      stack.push(n);
+    }
+  }
+  return { minI, maxI, minJ, maxJ };
 }
 
 /** Seats by a hole or loop of the tool onto a rod of the holder: the hole is lowered over the rod until its top rests on it. */
@@ -355,8 +452,24 @@ function seatByHole(request: SeatRequest, obstacles: readonly SolidBody[]): Cand
     return [];
   const radius = diameter / 2;
   const hb = request.holder.bounds();
-  const [vx, vy] = [request.tool.comMm[0] - hang.point[0], request.tool.comMm[1] - hang.point[1]];
+  const angles = holeAngles(request.tool.comMm, hang.point);
   const grids = obstacles.map((o) => o.grid(CELL_MM));
+  const out: Candidate[] = [];
+  for (const fraction of HOLE_DEPTH_FRACTIONS) {
+    const z0 = hb.min[2] + fraction * (hb.max[2] - hb.min[2]);
+    for (const peg of findPegs(request.holder, z0, 2 * radius - 2)) {
+      for (const deg of angles) {
+        const c = seatOnPeg(request, grids, hang.point, peg, deg, fraction);
+        if (c !== null) out.push(c);
+      }
+    }
+  }
+  return out;
+}
+
+/** Rotations about z (degrees) to try for a hole: around the hanging equilibrium, or both ways up when it has none. */
+function holeAngles(com: Vec3, hangPoint: Vec3): number[] {
+  const [vx, vy] = [com[0] - hangPoint[0], com[1] - hangPoint[1]];
   const angles: number[] = [];
   if (Math.hypot(vx, vy) >= 3) {
     const eq = -90 - (Math.atan2(vy, vx) * 180) / Math.PI;
@@ -364,42 +477,45 @@ function seatByHole(request: SeatRequest, obstacles: readonly SolidBody[]): Cand
   } else {
     angles.push(0, 180);
   }
-  const out: Candidate[] = [];
-  for (const fraction of HOLE_DEPTH_FRACTIONS) {
-    const z0 = hb.min[2] + fraction * (hb.max[2] - hb.min[2]);
-    for (const peg of findPegs(request.holder, z0, 2 * radius - 2)) {
-      for (const deg of angles) {
-        const rotation = rotationZ(deg);
-        const h = apply(rotation, hang.point);
-        const di = Math.round((peg[0] - h[0]) / CELL_MM);
-        const dj = Math.round((peg[2] - h[2]) / CELL_MM);
-        const startY = peg[1] - h[1];
-        const tool = rasterize(request.tool.mesh, rotation, [0, 0, 0], CELL_MM);
-        if (tool.nx === 0 || dj * CELL_MM + tool.min[2] < -0.01) continue;
-        const s = settle(tool, grids, di, dj, startY, HOLDER_ONLY);
-        if (s.startPenetrationMm > 0.05 || !Number.isFinite(s.y)) continue;
-        // Ties (every depth along a plain rod rests alike) go to the middle of the rod; a hang inside a neighbour is charged
-        // like a slot seat is.
-        const overlap =
-          grids.length > HOLDER_ONLY
-            ? scanAll(tool, grids.slice(HOLDER_ONLY), di, dj, s.y).penetrationMm
-            : 0;
-        const comY =
-          s.y +
-          apply(rotation, request.tool.comMm)[1] +
-          Math.abs(fraction - 0.5) * 0.2 +
-          overlap * NEIGHBOUR_OVERLAP_MM_PER_MM;
-        out.push({
-          rotation,
-          angles: { rotX: 0, rotY: 0, rotZ: ((deg % 360) + 360) % 360 },
-          natural: true,
-          x: di * CELL_MM,
-          z: dj * CELL_MM,
-          y: s.y,
-          comY,
-        });
-      }
-    }
-  }
-  return out;
+  return angles;
+}
+
+/** The tool hung by its hole on `peg` at rotation `deg`, or null when it does not rest there cleanly. */
+function seatOnPeg(
+  request: SeatRequest,
+  grids: readonly ColumnGrid[],
+  hangPoint: Vec3,
+  peg: Vec3,
+  deg: number,
+  fraction: number,
+): Candidate | null {
+  const rotation = rotationZ(deg);
+  const h = apply(rotation, hangPoint);
+  const di = Math.round((peg[0] - h[0]) / CELL_MM);
+  const dj = Math.round((peg[2] - h[2]) / CELL_MM);
+  const startY = peg[1] - h[1];
+  const tool = rasterize(request.tool.mesh, rotation, [0, 0, 0], CELL_MM);
+  if (tool.nx === 0 || dj * CELL_MM + tool.min[2] < -0.01) return null;
+  const s = settle(tool, grids, di, dj, startY, HOLDER_ONLY);
+  if (s.startPenetrationMm > 0.05 || !Number.isFinite(s.y)) return null;
+  // Ties (every depth along a plain rod rests alike) go to the middle of the rod; a hang inside a neighbour is charged
+  // like a slot seat is.
+  const overlap =
+    grids.length > HOLDER_ONLY
+      ? scanAll(tool, grids.slice(HOLDER_ONLY), di, dj, s.y).penetrationMm
+      : 0;
+  const comY =
+    s.y +
+    apply(rotation, request.tool.comMm)[1] +
+    Math.abs(fraction - 0.5) * 0.2 +
+    overlap * NEIGHBOUR_OVERLAP_MM_PER_MM;
+  return {
+    rotation,
+    angles: { rotX: 0, rotY: 0, rotZ: ((deg % 360) + 360) % 360 },
+    natural: true,
+    x: di * CELL_MM,
+    z: dj * CELL_MM,
+    y: s.y,
+    comY,
+  };
 }

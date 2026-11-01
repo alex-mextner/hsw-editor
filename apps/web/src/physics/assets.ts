@@ -16,7 +16,7 @@ import {
   type WallSlot,
 } from '@hsw-editor/compat';
 import { FLOOR_DEPTH_MM, FLOOR_Y_MM, type Pose, type Wall, type WallItem } from '@hsw-editor/core';
-import { loadLimitG, seatSlotInput } from '@hsw-editor/physics';
+import { loadLimitG, protrudeLimitMm, seatSlotInput } from '@hsw-editor/physics';
 import { bankRoutes } from '@/bank/client.ts';
 import { resolveModel } from '@/bank/models.ts';
 import { itemBounds } from '@/scene/itemBounds.ts';
@@ -72,8 +72,8 @@ function solidOf(
   return { id: item.id, bodyKey: model.key, pose: item.pose };
 }
 
-/** A tool as a posed body with its source registered; null without a model. */
-function toolOf(
+/** A tool on the wall as a posed body with its holder and load limits, source registered; null without a model. */
+function placedToolOf(
   item: WallItem,
   ctx: AssetContext,
   sources: Map<string, BodySource>,
@@ -90,6 +90,7 @@ function toolOf(
     pose: item.pose,
     holderId: holder?.id ?? null,
     maxLoadG: element === undefined ? undefined : loadLimitG(ctx.toolInterface(item), element),
+    protrudeLimitMm: element === undefined ? undefined : protrudeLimitMm(element.id),
   };
 }
 
@@ -105,7 +106,7 @@ export function buildPhysicsScene(wall: Wall, ctx: AssetContext): SceneBuild {
       const body = solidOf(item, ctx, sources);
       if (body !== null) (item.kind === 'holder' ? holders : others).push(body);
     } else if (item.kind === 'tool') {
-      const tool = toolOf(item, ctx, sources, holderItems);
+      const tool = placedToolOf(item, ctx, sources, holderItems);
       if (tool !== null) tools.push(tool);
     }
   }

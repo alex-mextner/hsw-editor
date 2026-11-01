@@ -12,6 +12,7 @@ import {
   type PhysicsProblem,
   type RemovalReport,
   type ToolPhysics,
+  protrudeLimitMm,
   type WallHolder,
   type WallTool,
 } from '@hsw-editor/physics';
@@ -142,6 +143,7 @@ export function createPhysicsService(options: { store: WallStore; home: string }
     const holders: WallHolder[] = solids.holders.map((h) => ({ id: h.item.id, body: h.body }));
     const { boardParts } = solids;
     const holderIds = new Set(holders.map((h) => h.id));
+    const bankIdOfHolder = new Map(solids.holders.map((h) => [h.item.id, h.element.id]));
 
     const skipped: SkippedTool[] = [];
     const tools: WallTool[] = [];
@@ -160,11 +162,13 @@ export function createPhysicsService(options: { store: WallStore; home: string }
         skipped.push({ toolId: item.id, reason: built.skip });
         continue;
       }
+      const limit = protrudeLimitMm(bankIdOfHolder.get(item.parentId) ?? '');
       tools.push({
         id: item.id,
         body: built.body,
         placement: placementOfPose(item.pose),
         holderId: item.parentId,
+        protrudeLimitMm: limit,
       });
     }
 
