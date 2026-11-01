@@ -160,6 +160,16 @@ export const api = {
   getWall(id: string): Promise<WallResponse> {
     return request(wallPath(id), WallResponseSchema);
   },
+  /** An independent copy of a wall (items, models, photos) with a fresh history: what the first edit of a template wall makes. */
+  async cloneWall(sourceId: string, input: { id: string; name: string }): Promise<Wall> {
+    return (
+      await post(
+        `${wallPath(sourceId)}/clone`,
+        { ...input, actor: HUMAN },
+        CreateWallResponseSchema,
+      )
+    ).wall;
+  },
   async deleteWall(id: string): Promise<void> {
     await request(wallPath(id), z.object({ ok: z.literal(true) }), { method: 'DELETE' });
   },

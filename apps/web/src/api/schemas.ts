@@ -25,6 +25,8 @@ export const WallResponseSchema = z.object({
   canUndo: z.boolean(),
   canRedo: z.boolean(),
   warnings: z.array(WarningSchema),
+  /** True for a template wall (a demo or showcase wall): the first edit clones it (`wall/fork.ts`). */
+  template: z.boolean().optional(),
 });
 export type WallResponse = z.infer<typeof WallResponseSchema>;
 

@@ -369,8 +369,8 @@ describe('offline mirror and queue', () => {
   });
 });
 
-describe('demo API (read-only)', () => {
-  test('an edit is refused with the demo notice, leaves the wall as it was and does not go offline', async () => {
+describe('demo API', () => {
+  test('the bundled wall is a seated template, and an edit sent to it is applied, never refused', async () => {
     const seed = await Bun.file(
       new URL('../../../../packages/bank/seed/index.json', import.meta.url),
     ).text();
@@ -392,15 +392,18 @@ describe('demo API (read-only)', () => {
     await sync.load();
     const before = sync.getSnapshot().wall?.rev;
     expect(before).toBeGreaterThan(0);
+    expect((await demoApi.getWall('demo')).template).toBe(true);
+    expect(sync.getSnapshot().wall?.name).toBe('Demo wall');
     const seated = sync.getSnapshot().wall?.items.find((item) => item.id === 'sc-drivers-t0');
     expect(seated?.pose.rotZ).toBe(180);
     sync.submit([{ type: 'rename', name: 'Mine' }]);
     await sync.idle();
     const state = sync.getSnapshot();
-    expect(state.notice?.code).toBe('demo_read_only');
+    expect(state.notice).toBeNull();
     expect(state.pending).toBe(0);
     expect(state.status).toBe('ready');
-    expect(state.wall?.rev).toBe(before);
+    expect(state.wall?.name).toBe('Mine');
+    expect(state.wall?.rev).toBe((before ?? 0) + 1);
     sync.dispose();
     restoreFetch();
   });

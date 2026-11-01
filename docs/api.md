@@ -57,10 +57,16 @@ Reducer codes (`details.code`): `item_not_found`, `item_exists`, `item_locked`, 
 | `POST /api/walls`         | `{ name, id?, board? (partial; defaults 48x32 HSW), actor? }`     | `201 { wall, warnings, canUndo, canRedo }`  |
 | `GET /api/walls/:id`      |                                                                   | `{ wall, canUndo, canRedo, warnings }`      |
 | `DELETE /api/walls/:id`   |                                                                   | `{ ok: true, trashedTo }` (moved to `walls/.trash/`, never unlinked) |
+| `POST /api/walls/:id/clone` | `{ name? (default: the source's), id? (fresh by default), actor? }`  | `201 { wall, warnings, canUndo, canRedo }`: an independent copy (items, models, photos and their files) whose history starts at the copy, so undo never reaches into the source; `404` unknown source, `409 wall_exists` |
+| `PUT /api/walls/:id/template` | `{ template: boolean }`                                       | `{ ok: true, template }`: marks a wall as a template (the file `walls/<id>/template`) |
 | `GET /api/walls/:id/history` | `?since=<rev>&limit=<n>`                                       | `{ entries: HistoryEntry[] }` (rev > since) |
 | `GET /api/walls/:id/export`  |                                                                | `{ format: "hsw-editor-wall", version: 1, wall, history }` |
 
-`WallSummary = { id, name, rev, items, photos, models, updatedAt }`.
+`WallSummary = { id, name, rev, items, photos, models, updatedAt, template? }`.
+
+**Template walls.** A template (`template: true` in the list and in `GET /api/walls/:id`) is a wall meant to be copied, not edited in
+place, such as the showcase wall (`bun apps/web/scripts/showcase-wall.ts --template`). The daemon does not forbid edits to it (agents and the
+CLI may still change it); the web app clones it on the first edit, silently, and continues on the copy (`apps/web/src/wall/fork.ts`).
 `HistoryEntry = { rev, ts, actor, kind: "create" | "op" | "undo" | "redo", op, inverse, ref?, label? }` — `op` is
 what was applied to the wall at `rev`; for `undo`/`redo`, `ref` is the rev being undone/redone.
 

@@ -70,6 +70,7 @@ export const shellEn = {
   'wall.empty': 'No walls yet',
   'wall.listFailed': 'Could not load the wall list',
   'wall.new': 'New wall',
+  'wall.copyName': '{name} (copy)',
   'wall.rename': 'Rename wall',
   'wall.delete': 'Delete wall',
   'wall.deleteTitle': 'Delete “{name}”?',
@@ -255,7 +256,6 @@ export const shellEn = {
   'offline.install': 'Install the app',
   'offline.iosHint': 'On iPhone: Share, then Add to Home Screen.',
   'offline.open': 'Offline storage',
-  'demo.readOnly': 'This is a read-only demo. Run the daemon (hsw-editor start) to edit walls.',
   'demo.unavailable':
     'This needs the full app: the demo has no server. Run the daemon (hsw-editor start) to use it.',
   'conflict.title': 'Your offline edits clash with changes made meanwhile',
@@ -339,6 +339,7 @@ export const shellRu: FeatureRu<typeof shellEn> = {
   'wall.empty': 'Пока нет стен',
   'wall.listFailed': 'Не удалось загрузить список стен',
   'wall.new': 'Новая стена',
+  'wall.copyName': '{name} (копия)',
   'wall.rename': 'Переименовать стену',
   'wall.delete': 'Удалить стену',
   'wall.deleteTitle': 'Удалить «{name}»?',
@@ -536,8 +537,6 @@ export const shellRu: FeatureRu<typeof shellEn> = {
   'offline.install': 'Установить приложение',
   'offline.iosHint': 'На iPhone: «Поделиться», затем «На экран Домой».',
   'offline.open': 'Офлайн-хранилище',
-  'demo.readOnly':
-    'Это демо только для просмотра. Запустите демон (hsw-editor start), чтобы править стены.',
   'demo.unavailable':
     'Для этого нужно полное приложение: в демо нет сервера. Запустите демон (hsw-editor start).',
   'conflict.title': 'Ваши офлайн-правки конфликтуют с изменениями за это время',

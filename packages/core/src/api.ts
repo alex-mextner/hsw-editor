@@ -51,6 +51,8 @@ export const WallSummarySchema = z.strictObject({
   photos: z.number().int(),
   models: z.number().int(),
   updatedAt: z.string(),
+  /** A wall meant to be copied, not edited in place (a demo or showcase wall): the editor clones it on the first edit. */
+  template: z.boolean().optional(),
 });
 export type WallSummary = z.infer<typeof WallSummarySchema>;
 
@@ -96,6 +98,8 @@ export interface WallResponse {
   warnings: WallWarning[];
   canUndo: boolean;
   canRedo: boolean;
+  /** Present (true) for a template wall, see `WallSummary.template`. */
+  template?: boolean;
 }
 
 export interface PhotoUploadResponse {

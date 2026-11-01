@@ -1,12 +1,19 @@
-/** The wall API of the demo build: one bundled wall, read-only. Same shape as the daemon client so `WallSync` is unchanged. */
+/** The wall API of the demo build: one bundled template wall plus the visitor's own walls, all local (`localWalls.ts`). Same shape as the daemon client so `WallSync` is unchanged. */
 import type { HolderSpec } from '@hsw-editor/compat';
-import { applyOp, LeafOpSchema, type Wall } from '@hsw-editor/core';
+import {
+  applyOp,
+  LeafOpSchema,
+  type Board,
+  type Op,
+  type Wall,
+  type WallSummary,
+} from '@hsw-editor/core';
 import { TOOL_ASSET_INDEX_URL, ToolAssetIndexSchema } from '@hsw-editor/tools/contract';
 import { z } from 'zod';
-import { ApiError } from '@/api/http.ts';
-import type { OpResponse, WallResponse, WallSummary } from '@/api/schemas.ts';
-import { t } from '@/i18n/index.ts';
+import type { ChangeEntry, OpResponse, WallResponse } from '@/api/schemas.ts';
+import { wallMirror } from '@/offline/runtime.ts';
 import { buildShowcaseWall } from './showcase.ts';
+import { LocalWalls } from './localWalls.ts';
 import { SHOWCASE_LAYOUT } from './showcaseLayout.ts';
 
 export const DEMO_WALL_ID = 'demo';
@@ -48,13 +55,7 @@ async function buildDemoWall(): Promise<Wall> {
       },
     ]),
   );
-  const { wall } = buildShowcaseWall(
-    DEMO_WALL_ID,
-    'Demo wall (read-only)',
-    SHOWCASE_LAYOUT,
-    specs,
-    index,
-  );
+  const { wall } = buildShowcaseWall(DEMO_WALL_ID, 'Demo wall', SHOWCASE_LAYOUT, specs, index);
   const { ops } = DemoSeatsSchema.parse(seats);
   return ops.length === 0 ? wall : applyOp(wall, { type: 'batch', label: 'seat all', ops }).wall;
 }
@@ -74,38 +75,24 @@ function wallOnce(): Promise<Wall> {
   return demoWall;
 }
 
-function readOnly(): ApiError {
-  return new ApiError(403, 'demo_read_only', t('demo.readOnly'), null);
-}
+const walls = new LocalWalls(DEMO_WALL_ID, wallOnce, wallMirror);
 
+/** The wall service of the demo build: the bundled demo wall is a template, a first edit of it clones it (`wall/fork.ts`). */
 export const demoApi = {
-  async listWalls(): Promise<WallSummary[]> {
-    const wall = await wallOnce();
-    return [
-      {
-        id: wall.id,
-        name: wall.name,
-        rev: wall.rev,
-        items: wall.items.length,
-        photos: 0,
-        models: wall.models.length,
-        updatedAt: new Date(0).toISOString(),
-      },
-    ];
-  },
-  createWall(): Promise<Wall> {
-    return Promise.reject(readOnly());
-  },
-  async getWall(): Promise<WallResponse> {
-    return { wall: await wallOnce(), canUndo: false, canRedo: false, warnings: [] };
-  },
-  applyOps(): Promise<OpResponse> {
-    return Promise.reject(readOnly());
-  },
-  undo(): Promise<OpResponse> {
-    return Promise.reject(readOnly());
-  },
-  redo(): Promise<OpResponse> {
-    return Promise.reject(readOnly());
-  },
+  listWalls: (): Promise<WallSummary[]> => walls.list(),
+  createWall: (input: { name: string; board?: Board }): Promise<Wall> => walls.create(input),
+  cloneWall: (sourceId: string, input: { id: string; name: string }): Promise<Wall> =>
+    walls.clone(sourceId, input),
+  deleteWall: (id: string): Promise<void> => walls.remove(id),
+  getWall: (id: string): Promise<WallResponse> => walls.get(id),
+  history: (id: string, since: number, limit: number): Promise<ChangeEntry[]> =>
+    walls.history(id, since, limit),
+  applyOps: (
+    id: string,
+    ops: readonly Op[],
+    baseRev: number,
+    label?: string,
+  ): Promise<OpResponse> => walls.apply(id, ops, baseRev, label),
+  undo: (id: string, baseRev?: number): Promise<OpResponse> => walls.undo(id, baseRev),
+  redo: (id: string, baseRev?: number): Promise<OpResponse> => walls.redo(id, baseRev),
 };

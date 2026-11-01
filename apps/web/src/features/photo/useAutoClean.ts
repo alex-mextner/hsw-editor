@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import type { Wall } from '@hsw-editor/core';
 import { photoStore } from '@/state/photo.ts';
 import { useStore } from '@/state/react.ts';
+import { isCopyPending, isTemplateWall } from '@/wall/session.ts';
 import {
   CLEAN_DEBOUNCE_MS,
   autoCleanStore,
@@ -21,7 +22,14 @@ export function useAutoClean(wall: Wall): void {
   const phase = useStore(cleanStore).phase;
   const plan = photoId === null || calibrating || draft !== null ? null : planClean(wall, photoId);
   const due =
-    enabled && phase !== 'running' && plan !== null && (plan.needsClean || plan.needsUpgrade);
+    enabled &&
+    // A template is never changed in the background: its copy is made by the first edit of the visitor.
+    !isTemplateWall(wall.id) &&
+    // The copy of a template exists on the service only after its clone request is answered.
+    !isCopyPending(wall.id) &&
+    phase !== 'running' &&
+    plan !== null &&
+    (plan.needsClean || plan.needsUpgrade);
   const signature = plan?.signature ?? null;
   useEffect(() => {
     if (!due || photoId === null || signature === null) return undefined;
