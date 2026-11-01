@@ -268,10 +268,14 @@ export class WallSync {
    * The wall a photo/model upload answered with: the server applied one `add*` op, so it is undoable. The SSE
    * echo of that op arrives at (or below) this rev and is ignored, hence the history flags are set here.
    */
-  acceptUploaded(wall: Wall): void {
+  acceptUploaded(wall: Wall, undoable = true): void {
     if (this.confirmed && wall.rev <= this.confirmed.rev) return;
     this.confirmed = wall;
-    this.publish({ status: 'ready', errorMessage: null, canUndo: true, canRedo: false });
+    this.publish({
+      status: 'ready',
+      errorMessage: null,
+      ...(undoable ? { canUndo: true, canRedo: false } : {}),
+    });
   }
 
   /** One SSE `op` event; foreign edits show up live, own echoes are recognised by rev and ignored. */
@@ -328,22 +332,34 @@ export class WallSync {
 
   // ---- editing -----------------------------------------------------------------------------------
 
+  /** Dry run of `submit`: whether the reducer accepts `ops` on the current view and whether they would change it. */
+  check(
+    ops: readonly Op[],
+    label?: string,
+  ):
+    | { readonly ok: true; readonly changed: boolean }
+    | { readonly ok: false; readonly error: OpError } {
+    const view = this.fold();
+    if (!view) return { ok: false, error: new OpError('invalid_op', 'wall is not loaded') };
+    const leaves = flatten(ops);
+    if (leaves.length === 0) return { ok: true, changed: false };
+    try {
+      return { ok: true, changed: applyOp(view, asOp(leaves, label)).changed };
+    } catch (error) {
+      if (error instanceof OpError) return { ok: false, error };
+      throw error;
+    }
+  }
+
   /**
    * Applies `ops` optimistically as ONE undo step. Refused locally (and nothing queued) when the
    * reducer rejects them against the current view, e.g. a locked item.
    */
   submit(ops: readonly Op[], label?: string): SubmitResult {
-    const view = this.fold();
-    if (!view) return { ok: false, error: new OpError('invalid_op', 'wall is not loaded') };
+    const checked = this.check(ops, label);
+    if (!checked.ok) return checked;
+    if (!checked.changed) return { ok: true };
     const leaves = flatten(ops);
-    if (leaves.length === 0) return { ok: true };
-    try {
-      const result = applyOp(view, asOp(leaves, label));
-      if (!result.changed) return { ok: true };
-    } catch (error) {
-      if (error instanceof OpError) return { ok: false, error };
-      throw error;
-    }
     // The base of the queue is the wall its first edit was made on; undo/redo steps in the queue count too.
     this.queueBase ??= this.confirmed;
     this.pending.push({

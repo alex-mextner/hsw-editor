@@ -3,7 +3,7 @@ import type { Photo, Wall } from '@hsw-editor/core';
 import { api } from '@/api/http.ts';
 import { notify } from '@/features/notices/notices.ts';
 import { t } from '@/i18n/index.ts';
-import { sessionStore } from '@/wall/session.ts';
+import { editableWallId, sessionStore } from '@/wall/session.ts';
 import { autoCleanStore, forgetAsked, planClean, runClean } from './cleanBackground.ts';
 import { findToolsStore, runFindTools } from './findTools.ts';
 import { exportComposite, exportFileName } from './photoExport.ts';
@@ -128,6 +128,10 @@ export { togglePhotoHidden, toggleSplit };
 
 /** Makes the cleaned background again, also when the footprint has not moved (the AI is asked once more). */
 export function cleanPhotoBackground(): void {
+  void cleanShownPhoto();
+}
+
+async function cleanShownPhoto(): Promise<void> {
   const { photoId } = photoStore.get();
   const wall = sessionStore.get()?.wall;
   const plan = wall && photoId !== null ? planClean(wall, photoId) : null;
@@ -136,7 +140,14 @@ export function cleanPhotoBackground(): void {
     return;
   }
   forgetAsked(photoId);
-  void runClean(wall.id, photoId, plan.signature, { refresh: true });
+  // A template is cloned first (the clean adds a photo to the wall); the copy has the same photo.
+  try {
+    const target = await editableWallId();
+    if (target === null || photoStore.get().photoId !== photoId) return;
+    void runClean(target, photoId, plan.signature, { refresh: true });
+  } catch (error) {
+    notify('error', error instanceof Error ? error.message : String(error));
+  }
 }
 
 /** The "auto-clean background" setting on / off. */

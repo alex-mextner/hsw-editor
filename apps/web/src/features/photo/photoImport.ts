@@ -7,7 +7,7 @@ import { api, ApiError, NetworkError } from '@/api/http.ts';
 import { DEMO } from '@/demo/mode.ts';
 import { notify } from '@/features/notices/notices.ts';
 import { t } from '@/i18n/index.ts';
-import { applyUploadedWall, sessionStore } from '@/wall/session.ts';
+import { applyUploadedWall, editableWallId, sessionStore } from '@/wall/session.ts';
 import { enterPhotoMode } from '@/state/photo.ts';
 
 export type ImportState =
@@ -46,8 +46,7 @@ function reasonOf(error: unknown): string {
 
 /** Uploads one photo and makes it the backdrop. Resolves when done; failures become a notice, never a throw. */
 export async function importPhotoFile(file: File): Promise<void> {
-  const wallId = sessionStore.get()?.wallId ?? null;
-  if (wallId === null || importStore.get().phase !== 'idle') return;
+  if (sessionStore.get() === null || importStore.get().phase !== 'idle') return;
   if (!isSupportedImage(file)) {
     notify('error', t('photo.unsupported', { name: file.name }));
     return;
@@ -59,6 +58,9 @@ export async function importPhotoFile(file: File): Promise<void> {
   }
   importStore.set({ phase: 'uploading', name: file.name, fraction: 0 });
   try {
+    // A template wall is cloned first: the photo belongs to the copy.
+    const wallId = await editableWallId();
+    if (wallId === null) return;
     const { photoId, wall } = await api.uploadPhoto(wallId, file, ({ loaded, total }) => {
       importStore.set(
         loaded >= total

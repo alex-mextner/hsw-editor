@@ -2,7 +2,7 @@
  * Puts the showcase wall (`src/demo/showcase.ts`: generated tools hanging in real holders) on a running daemon, for visual proofs and
  * manual checks of how tools look on the wall:
  *
- *   bun apps/web/scripts/showcase-wall.ts [--api http://127.0.0.1:8794] [--id showcase] [--replace]
+ *   bun apps/web/scripts/showcase-wall.ts [--api http://127.0.0.1:8794] [--id showcase] [--replace] [--template]
  *
  * Holders and tool poses come from the bank the daemon serves and the tool models of its asset store, so the wall shows exactly what
  * a drag-and-drop of the same tools would produce.
@@ -77,4 +77,12 @@ const applied = await fetch(`${api}/api/walls/${id}/ops`, {
   body: JSON.stringify({ ops: [{ type: 'batch', label: 'showcase', ops }] }),
 });
 if (!applied.ok) throw new Error(`ops: HTTP ${applied.status} ${await applied.text()}`);
+if (args.includes('--template')) {
+  const marked = await fetch(`${api}/api/walls/${id}/template`, {
+    method: 'PUT',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ template: true }),
+  });
+  if (!marked.ok) throw new Error(`template: HTTP ${marked.status} ${await marked.text()}`);
+}
 console.log(`wall ${id}: ${wall.items.length} items, ${wall.models.length} models on ${api}`);

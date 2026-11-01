@@ -1,5 +1,5 @@
 /** Durable file primitives for the wall store: atomic replace and fsynced append. */
-import { mkdir, open, rename, unlink } from 'node:fs/promises';
+import { mkdir, open, rename, stat, unlink } from 'node:fs/promises';
 import { dirname } from 'node:path';
 
 let tmpCounter = 0;
@@ -64,4 +64,23 @@ export async function appendDurable(path: string, data: string): Promise<void> {
 
 export function isNotFound(error: unknown): boolean {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT';
+}
+
+/** A rename onto a directory that already has content. */
+export function isExists(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    'code' in error &&
+    (error.code === 'EEXIST' || error.code === 'ENOTEMPTY')
+  );
+}
+
+export async function pathExists(path: string): Promise<boolean> {
+  return stat(path).then(
+    () => true,
+    (error: unknown) => {
+      if (isNotFound(error)) return false;
+      throw error;
+    },
+  );
 }

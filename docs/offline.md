@@ -112,9 +112,12 @@ install controllers against fakes. The worker itself is verified in real Chromiu
 The Pages workflow builds with `VITE_HSW_DEMO=1` (`apps/web/src/demo/mode.ts`). There is no daemon: the committed seed bank
 (`packages/bank/seed`) is copied into `dist` at the URLs the daemon serves (`/api/bank/index`, `/api/bank/search-index`,
 `/bank/assets/...`, by the `demoSeedBank` plugin in `vite.config.ts`), so the bank browser, the service worker caches and the offline
-behaviour above work unchanged. One bundled wall (`demo/demoApi.ts`, six seed elements) opens read-only on the first visit: `listWalls`/`getWall` are
-served locally, every edit, undo and wall creation is refused with the notice "This is a read-only demo", and the wall, health, event-stream,
-history and client-error requests are never made. After one visit the demo reloads offline.
+behaviour above work unchanged. The demo is a normal editor over local walls (`demo/localWalls.ts`: the same contract the daemon answers, undo and
+redo included): the bundled demo wall (`demo/demoApi.ts`) is a **template**, rebuilt on every load and never saved, and the first edit of it silently
+clones it (`wall/fork.ts`): the wall on screen becomes "Demo wall (copy)", the edit is applied there and nothing is refused or announced. The copy and
+any wall the visitor creates are kept by the offline mirror (IndexedDB), listed in the wall switcher next to the demo wall, and are there after a
+reload (undo history is per session). The wall health, event-stream, history and client-error requests are never made. After one visit the demo
+reloads offline.
 
 The **Tool Library is served statically** (`scripts/tools/demo-assets.ts` writes the build inputs, `demoSeedBank` copies them): the class list at
 `/api/tools/assets/classes` (a file cannot sit at `/api/tools/classes` next to the per-class thumbnail directories), one thumbnail per class at

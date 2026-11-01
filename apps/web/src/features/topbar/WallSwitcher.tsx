@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Check, ChevronDown, Pencil, Plus, Trash2 } from 'lucide-react';
-import { api } from '@/api/http.ts';
 import { Button } from '@/components/ui/button.tsx';
 import {
   Dialog,
@@ -25,7 +24,15 @@ import { newWallDialogStore } from '@/features/wizard/NewWallDialog.tsx';
 import { useI18n } from '@/i18n/index.ts';
 import { currentWallId } from '@/state/current-wall.ts';
 import { useStore } from '@/state/react.ts';
-import { refreshWalls, sessionStore, submitOps, wallListStore } from '@/wall/session.ts';
+import { DEMO } from '@/demo/mode.ts';
+import { DEMO_WALL_ID } from '@/demo/demoApi.ts';
+import {
+  deleteWall,
+  refreshWalls,
+  sessionStore,
+  submitOps,
+  wallListStore,
+} from '@/wall/session.ts';
 
 /** Current wall name with a menu to switch, create, rename or delete walls. */
 export function WallSwitcher() {
@@ -80,7 +87,7 @@ export function WallSwitcher() {
           </DropdownMenuItem>
           <DropdownMenuItem
             variant="destructive"
-            disabled={!wall}
+            disabled={!wall || (DEMO && wall.id === DEMO_WALL_ID)}
             onClick={() => setDialog('delete')}
           >
             <Trash2 /> {t('wall.delete')}
@@ -107,8 +114,7 @@ export function WallSwitcher() {
                   variant="destructive"
                   onClick={() => {
                     setDialog(null);
-                    void api
-                      .deleteWall(wall.id)
+                    void deleteWall(wall.id)
                       .then(() => refreshWalls())
                       .then(() => {
                         const rest = wallListStore

@@ -1,5 +1,4 @@
 /** The real `EditorActions`: wires the registry's handlers to the editor's stores and wall actions. */
-import { api } from '@/api/http.ts';
 import {
   calibrateShownPhoto,
   exportPhotoPng,
@@ -36,7 +35,14 @@ import {
   selectAll,
   toggleLockSelection,
 } from '@/wall/actions.ts';
-import { redoEdit, sessionStore, undoEdit, wallListStore } from '@/wall/session.ts';
+import {
+  historyEntries,
+  isTemplateWall,
+  redoEdit,
+  sessionStore,
+  undoEdit,
+  wallListStore,
+} from '@/wall/session.ts';
 import type { EditorActions, PanelKey } from './editorCommands.ts';
 import { planUndoTo, UNDO_WINDOW, windowStart } from './historyUndo.ts';
 
@@ -79,7 +85,7 @@ function focusPanelContents(panel: PanelKey): void {
 /** The newest slice of a wall's history, ending at its current revision. */
 export function loadUndoWindow(wallId: string, currentRev: number): Promise<HistoryEntry[]> {
   // A little past the window, so edits that landed after `currentRev` are part of the replay too.
-  return api.history(wallId, windowStart(currentRev), UNDO_WINDOW + 200);
+  return historyEntries(wallId, windowStart(currentRev), UNDO_WINDOW + 200);
 }
 
 /**
@@ -90,6 +96,8 @@ export function loadUndoWindow(wallId: string, currentRev: number): Promise<Hist
 export async function undoToRevision(rev: number): Promise<number> {
   const before = sessionStore.get();
   if (before === null) throw new Error(t('cmd.needsWall'));
+  // A template is never undone (its history is not the visitor's): the first edit leaves it for a copy.
+  if (isTemplateWall(before.wallId)) throw new Error(t('cmd.undoToUnreachable'));
   const entries = await loadUndoWindow(before.wallId, before.confirmedRev);
   const now = sessionStore.get();
   if (now?.wallId !== before.wallId || now.confirmedRev !== before.confirmedRev) {

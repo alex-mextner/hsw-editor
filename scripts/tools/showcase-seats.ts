@@ -36,7 +36,7 @@ export async function seatShowcase(
   specs: ReadonlyMap<string, HolderSpec>,
   tools: ToolAssetIndex,
 ): Promise<SeatedShowcase> {
-  const { wall, unhung } = buildShowcaseWall('demo', 'Demo wall (read-only)', layout, specs, tools);
+  const { wall, unhung } = buildShowcaseWall('demo', 'Demo wall', layout, specs, tools);
   const home = await mkdtemp(join(tmpdir(), 'hsw-demo-seats-'));
   try {
     const plan = await createSeatPlanner(new PhysicsAssets(home)).seatAll(wall);

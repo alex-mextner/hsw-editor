@@ -1,14 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Bot, Redo2, Terminal, Undo2, User } from 'lucide-react';
-import { api } from '@/api/http.ts';
 import type { ChangeEntry } from '@/api/schemas.ts';
 import { useShortcutLabel } from '@/commands/app.ts';
-import { DEMO } from '@/demo/mode.ts';
 import { IconButton } from '@/components/IconButton.tsx';
 import { useI18n } from '@/i18n/index.ts';
 import { cn } from '@/lib/cn.ts';
 import { useStore } from '@/state/react.ts';
-import { redoEdit, sessionStore, undoEdit } from '@/wall/session.ts';
+import { redoEdit, sessionStore, undoEdit, wallHistory } from '@/wall/session.ts';
 import { describeOp } from './describeOp.ts';
 import { horizontalWheelDelta } from './wheelScroll.ts';
 
@@ -26,15 +24,13 @@ export function Timeline() {
   const rev = session?.confirmedRev ?? 0;
 
   useEffect(() => {
-    if (!wallId || DEMO) return; // the demo has no history endpoint
+    if (!wallId) return;
     let cancelled = false;
     // Debounced: a burst of edits triggers one refresh once the revision settles.
     const timer = setTimeout(() => {
-      api
-        .history(wallId, Math.max(0, rev - WINDOW), WINDOW)
+      wallHistory(wallId, Math.max(0, rev - WINDOW), WINDOW)
         .then((loaded) => {
-          if (cancelled) return;
-          setEntries(loaded.filter((entry): entry is ChangeEntry => entry.kind !== 'create'));
+          if (!cancelled) setEntries(loaded);
         })
         .catch(() => undefined);
     }, 150);

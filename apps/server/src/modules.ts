@@ -18,6 +18,7 @@ import { ompModule } from './omp/module.ts';
 import { createPhysicsModule } from './physics/module.ts';
 import type { SettingsStore } from './settings.ts';
 import { createToolsModule } from './tools/module.ts';
+import { wallCloneModule } from './wall-clone.ts';
 import type { WallStore } from './store/wall-store.ts';
 
 export interface ServerDeps {
@@ -61,4 +62,5 @@ export const modules: ServerModule[] = [
   createDrawModule(),
   createToolsModule(),
   createPhysicsModule(),
+  wallCloneModule,
 ];

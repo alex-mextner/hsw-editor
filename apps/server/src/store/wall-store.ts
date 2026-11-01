@@ -7,8 +7,18 @@
  * last history line is dropped and truncated. Undo/redo are ordinary history entries that apply stored
  * inverse ops, so every actor's edits live in one linear stream.
  */
-import { mkdir, readdir, readFile, rename, rm, stat, truncate, writeFile } from 'node:fs/promises';
-import { join, resolve, sep } from 'node:path';
+import {
+  cp,
+  mkdir,
+  readdir,
+  readFile,
+  rename,
+  rm,
+  stat,
+  truncate,
+  writeFile,
+} from 'node:fs/promises';
+import { basename, join, resolve, sep } from 'node:path';
 import {
   type Actor,
   applyOp,
@@ -37,7 +47,7 @@ import {
   type RequestStatus,
 } from '@hsw-editor/core';
 import { z } from 'zod';
-import { appendDurable, atomicWrite, isNotFound } from './fsutil.ts';
+import { appendDurable, atomicWrite, isExists, isNotFound, pathExists } from './fsutil.ts';
 
 export type StoreErrorCode =
   | 'wall_not_found'
@@ -103,6 +113,8 @@ export interface WallState {
   warnings: WallWarning[];
   canUndo: boolean;
   canRedo: boolean;
+  /** Present (true) for a template wall: meant to be copied, not edited in place (`WallStore.clone`). */
+  template?: boolean;
 }
 
 export type RequestEvent =
@@ -130,6 +142,22 @@ export interface AssetSlot {
 const ASSET_DIRS: readonly string[] = ['photos', 'photos/derived', 'models'];
 const EXT_PATTERN = /^[a-z0-9]{1,8}$/;
 
+/**
+ * Copies an asset folder. A file being written (`.tmp-` name) is not part of the wall yet and is left out; a file that is deleted
+ * (a discarded clean variant) between the listing and its copy fails the copy with ENOENT, so the copy is made again from a fresh listing.
+ */
+async function copyAssets(from: string, to: string): Promise<void> {
+  for (let attempt = 1; ; attempt += 1) {
+    try {
+      await cp(from, to, { recursive: true, filter: (path) => !basename(path).includes('.tmp-') });
+      return;
+    } catch (error) {
+      if (!isNotFound(error) || attempt === 3) throw error;
+      await rm(to, { recursive: true, force: true });
+    }
+  }
+}
+
 class LoadedWall {
   wall: Wall;
   entries: HistoryEntry[];
@@ -138,6 +166,8 @@ class LoadedWall {
   redoStack: number[];
   /** Input requests (open and resolved); persisted in requests.json, never part of the history. */
   requests: InputRequest[];
+  /** Marked by the `template` file in the wall directory. */
+  template = false;
   readonly listeners = new Set<WallListener>();
   /** Wake-ups for long-polling readers of a request, keyed by request id. */
   readonly waiters = new Map<string, Set<() => void>>();
@@ -200,6 +230,8 @@ function processAlive(pid: number): boolean {
 export class WallStore {
   readonly home: string;
   private readonly wallsDir: string;
+  /** Ids a `create` or `clone` is making right now: a second one for the same id waits for it, so two cannot end up in one directory. */
+  private readonly making = new Map<string, Promise<unknown>>();
   private readonly now: () => Date;
   private readonly hooks: StoreHooks;
   private readonly loaded = new Map<string, LoadedWall>();
@@ -254,6 +286,7 @@ export class WallStore {
           photos: loaded.wall.photos.length,
           models: loaded.wall.models.length,
           updatedAt: last?.ts ?? '',
+          ...(loaded.template ? { template: true } : {}),
         });
       } catch (error) {
         console.error(`hsw-editor: skipping wall ${name}: ${String(error)}`);
@@ -282,6 +315,7 @@ export class WallStore {
       warnings: checkWall(loaded.wall),
       canUndo: loaded.undoStack.length > 0,
       canRedo: loaded.redoStack.length > 0,
+      ...(loaded.template ? { template: true } : {}),
     };
   }
 
@@ -292,13 +326,110 @@ export class WallStore {
     actor: Actor,
   ): Promise<WallState> {
     const id = input.id ?? `${slugify(input.name)}-${newId('w').slice(2, 8)}`;
+    return this.claiming(id, async () => {
+      const dir = await this.claimDir(id);
+      return this.start(dir, createEmptyWall(id, input.name, input.board ?? DEFAULT_BOARD), actor);
+    });
+  }
+
+  /**
+   * A new wall that starts as a copy of `sourceId`: its items, models and photos (files included) under a new id and name, with a
+   * fresh history (the copy is the `create` entry, so undo never reaches back into the source). The copy is not a template.
+   */
+  async clone(
+    sourceId: string,
+    input: { name: string; id?: string | undefined },
+    actor: Actor,
+  ): Promise<WallState> {
+    const source = await this.open(sourceId);
+    const id = input.id ?? `${slugify(input.name)}-${newId('w').slice(2, 8)}`;
+    return this.claiming(id, () => this.copyInto(source, sourceId, id, input.name, actor));
+  }
+
+  /** Runs `job` as the only `create` or `clone` of `id` at a time. */
+  private async claiming<T>(id: string, job: () => Promise<T>): Promise<T> {
+    // A second one for an id being made waits for the first, so "already exists" always means the wall is there to read.
+    for (let running = this.making.get(id); running !== undefined; running = this.making.get(id)) {
+      await running.catch(() => undefined);
+    }
+    const run = job();
+    this.making.set(id, run);
+    try {
+      return await run;
+    } finally {
+      this.making.delete(id);
+    }
+  }
+
+  private async copyInto(
+    source: LoadedWall,
+    sourceId: string,
+    id: string,
+    name: string,
+    actor: Actor,
+  ): Promise<WallState> {
+    const target = this.wallDir(id);
+    if (await pathExists(target)) throw new StoreError('wall_exists', `wall ${id} already exists`);
+    // Built beside the walls under a name no wall id can have, then renamed into place: the copy is never visible half made.
+    const staging = join(this.wallsDir, `.clone-${id}-${newId('s')}`);
+    await mkdir(staging);
+    try {
+      // Inside the source's queue, so no edit lands between the snapshot of its items and the copy of its files: an asset file is
+      // written before the op that adds it, so files copied after the snapshot cover every item in it.
+      const wall = await source.run(async () => {
+        this.assertLive(sourceId, source);
+        const snapshot = source.wall;
+        for (const assets of ['photos', 'models']) {
+          const from = join(this.wallDir(sourceId), assets);
+          if (!(await pathExists(from))) continue;
+          await copyAssets(from, join(staging, assets));
+        }
+        return snapshot;
+      });
+      const loaded = await this.write(staging, { ...wall, id, name, rev: 0 }, actor);
+      await rename(staging, target).catch((error: unknown) => {
+        if (isExists(error)) throw new StoreError('wall_exists', `wall ${id} already exists`);
+        throw error;
+      });
+      this.loaded.set(id, loaded);
+      return this.state(loaded);
+    } catch (error) {
+      await rm(staging, { recursive: true, force: true });
+      throw error;
+    }
+  }
+
+  /** Marks (or unmarks) a wall as a template; the flag lives in a `template` file next to `wall.json`. */
+  async setTemplate(id: string, template: boolean): Promise<void> {
+    const loaded = await this.open(id);
+    await loaded.run(async () => {
+      this.assertLive(id, loaded);
+      const marker = join(this.wallDir(id), 'template');
+      if (template) await writeFile(marker, '');
+      else await rm(marker, { force: true });
+      loaded.template = template;
+    });
+  }
+
+  private async claimDir(id: string): Promise<string> {
     const dir = this.wallDir(id);
     try {
       await mkdir(dir);
     } catch {
       throw new StoreError('wall_exists', `wall ${id} already exists`);
     }
-    const wall = createEmptyWall(id, input.name, input.board ?? DEFAULT_BOARD);
+    return dir;
+  }
+
+  /** Writes the `create` entry and the snapshot of a new wall and registers it. */
+  private async start(dir: string, wall: Wall, actor: Actor): Promise<WallState> {
+    const loaded = await this.write(dir, wall, actor);
+    this.loaded.set(wall.id, loaded);
+    return this.state(loaded);
+  }
+
+  /** Writes the `create` entry and the snapshot of a new wall into `dir`. */
+  private async write(dir: string, wall: Wall, actor: Actor): Promise<LoadedWall> {
     const entry: HistoryEntry = {
       kind: 'create',
       rev: 0,
@@ -308,9 +439,7 @@ export class WallStore {
     };
     await appendDurable(join(dir, 'history.jsonl'), `${JSON.stringify(entry)}\n`);
     await atomicWrite(join(dir, 'wall.json'), `${JSON.stringify(wall, null, 2)}\n`);
-    const loaded = new LoadedWall({ wall, entries: [entry], undoStack: [], redoStack: [] });
-    this.loaded.set(id, loaded);
-    return this.state(loaded);
+    return new LoadedWall({ wall, entries: [entry], undoStack: [], redoStack: [] });
   }
 
   /** Moves the wall to `walls/.trash/`; nothing is ever unlinked. */
@@ -689,6 +818,9 @@ export class WallStore {
     if (pending !== undefined) return pending;
     const load = this.loadFromDisk(id)
       .then((loaded) => {
+        // A clone installs its wall while a read that began after the rename may still be loading it: the live one wins.
+        const live = this.loaded.get(id);
+        if (live !== undefined) return live;
         this.loaded.set(id, loaded);
         return loaded;
       })
@@ -740,6 +872,10 @@ export class WallStore {
     if (recovered) await atomicWrite(join(dir, 'wall.json'), `${JSON.stringify(wall, null, 2)}\n`);
     const requests = await readRequests(join(dir, 'requests.json'));
     const loaded = new LoadedWall({ wall, entries, undoStack: [], redoStack: [] }, requests);
+    loaded.template = await stat(join(dir, 'template')).then(
+      () => true,
+      () => false,
+    );
     for (const entry of entries) advanceStacks(loaded, entry);
     return loaded;
   }
@@ -787,13 +923,8 @@ function advanceStacks(loaded: LoadedWall, entry: HistoryEntry): void {
 
 /** Reads valid history lines, drops a torn/garbled tail, and fails on corruption in the middle. */
 async function readHistory(path: string): Promise<HistoryEntry[]> {
-  let bytes: Buffer;
-  try {
-    bytes = await readFile(path);
-  } catch (error) {
-    if (isNotFound(error)) return [];
-    throw error;
-  }
+  const bytes = await readBytes(path);
+  if (bytes === undefined) return [];
   const entries: HistoryEntry[] = [];
   let validBytes = 0;
   let offset = 0;
@@ -824,6 +955,15 @@ async function readHistory(path: string): Promise<HistoryEntry[]> {
   }
   if (damaged) await truncate(path, validBytes);
   return entries;
+}
+
+async function readBytes(path: string): Promise<Buffer | undefined> {
+  try {
+    return await readFile(path);
+  } catch (error) {
+    if (isNotFound(error)) return undefined;
+    throw error;
+  }
 }
 
 function parseEntry(line: string): HistoryEntry | undefined {
