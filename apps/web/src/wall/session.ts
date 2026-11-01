@@ -218,8 +218,16 @@ function confirmCopy(
 /** Makes `next` the open wall: mirrors its sync state into `sessionStore`. */
 function adopt(next: WallSync): void {
   sync = next;
-  detach = next.subscribe(() => sessionStore.set(next.getSnapshot()));
-  sessionStore.set(next.getSnapshot());
+  detach = next.subscribe(() => sessionStore.set(shown(next)));
+  sessionStore.set(shown(next));
+}
+
+/** What the editor shows of `target`: a template offers no undo or redo, whatever a live event says (it is never undone here). */
+function shown(target: WallSync): SyncState {
+  const state = target.getSnapshot();
+  return isTemplate(target.wallId) && (state.canUndo || state.canRedo)
+    ? { ...state, canUndo: false, canRedo: false }
+    : state;
 }
 
 /**
