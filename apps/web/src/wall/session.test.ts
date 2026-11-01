@@ -92,7 +92,10 @@ class QuietEventSource {
   constructor(url: string) {
     QuietEventSource.urls.push(url);
   }
-  addEventListener(): void {}
+  static readonly listeners = new Map<string, (event: Event) => void>();
+  addEventListener(type: string, listener: (event: Event) => void): void {
+    QuietEventSource.listeners.set(type, listener);
+  }
   close(): void {}
 }
 
@@ -124,6 +127,7 @@ beforeEach(() => {
   localeStore.set('en');
   Object.defineProperty(globalThis, 'localStorage', { value: memoryStorage(), configurable: true });
   QuietEventSource.urls.length = 0;
+  QuietEventSource.listeners.clear();
   Reflect.set(globalThis, 'EventSource', QuietEventSource);
   walls = new Map([
     [
@@ -245,5 +249,26 @@ describe('first edit of a template wall', () => {
     await Bun.sleep(20);
     expect(log.some((entry) => entry.endsWith('/undo') || entry.endsWith('/redo'))).toBe(false);
     expect(sessionStore.get()?.canUndo).toBe(false);
+  });
+
+  test('a live edit event on a template does not switch Undo on', async () => {
+    openWall('showcase');
+    await until(() => sessionStore.get()?.status === 'ready');
+    await until(() => QuietEventSource.listeners.has('op'));
+    // Another writer (the agent, the CLI) changed the template: the stream delivers its op.
+    const entry = {
+      kind: 'op',
+      rev: 1,
+      ts: new Date().toISOString(),
+      actor: { kind: 'agent', name: 'a' },
+      op: addHolder,
+      inverse: { type: 'removeItem', id: 'h2' },
+    };
+    QuietEventSource.listeners.get('op')?.(
+      new MessageEvent('op', { data: JSON.stringify(entry), lastEventId: '1' }),
+    );
+    await until(() => sessionStore.get()?.wall?.items.some((item) => item.id === 'h2') === true);
+    expect(sessionStore.get()?.canUndo).toBe(false);
+    expect(sessionStore.get()?.canRedo).toBe(false);
   });
 });

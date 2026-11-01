@@ -332,6 +332,8 @@ describe('endpoint resolution and lifecycle', () => {
     const client = new HttpVisionClient({
       repoRoot: root,
       env: {},
+      // Not the machine's own vision environment: whether one is installed here must not decide the result.
+      venv: join(root, 'no-venv'),
       stateFile: join(root, 'none.json'),
       spawn: () => (spawned++, failSpawn()),
     });
@@ -739,7 +741,8 @@ describe('segmentation quality default (the vision.segmentQuality setting)', () 
         const url = new URL(request.url);
         if (url.pathname === '/health')
           return Response.json({ ok: true, name: 'hsw-vision', version: 'test' });
-        if (request.method === 'POST') seen.push({ path: url.pathname, body: await request.json() });
+        if (request.method === 'POST')
+          seen.push({ path: url.pathname, body: await request.json() });
         if (url.pathname === '/segment') {
           return Response.json({
             image: { w: 1, h: 1, sha256: 'b'.repeat(64) },
@@ -799,7 +802,14 @@ describe('segmentation quality default (the vision.segmentQuality setting)', () 
   test('every stage route that takes segment params gets the quality', async () => {
     const seen: Seen[] = [];
     const client = clientWith(recordingSidecar(seen), async () => 'accurate');
-    const routes = ['/segment', '/calibrate', '/recognise', '/fit', '/photo-to-wall', '/photo-to-objects'];
+    const routes = [
+      '/segment',
+      '/calibrate',
+      '/recognise',
+      '/fit',
+      '/photo-to-wall',
+      '/photo-to-objects',
+    ];
     for (const route of routes) await client.post(route, { image_path: '/x' });
     expect(seen.map((s) => s.path)).toEqual(routes);
     for (const { body } of seen) {
