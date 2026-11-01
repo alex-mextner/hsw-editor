@@ -3,27 +3,27 @@
  * from the front, from a three-quarter view above-left and from the side, plus the physics verdict per tool (status, score,
  * problem codes: `wedged` and `protrudes` among them) and the pose it was seated at.
  *
- *   bun apps/web/scripts/showcase-closeups.ts [holderId...] [--out DIR] [--unseated]
+ *   bun scripts/tools/showcase-closeups.ts [holderId...] [--out DIR] [--unseated]
  *
  * Default out dir `~/.cache/hsw-editor/proofs/seat`. Holder ids are the showcase layout ids (`sc-drivers`, `sc-pliers`, ...).
  */
 import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import type { HolderSpec } from '@hsw-editor/compat';
-import { applyOp } from '@hsw-editor/core';
+import type { HolderSpec } from '../../packages/compat/src/index.ts';
+import { applyOp } from '../../packages/core/src/index.ts';
 import {
   analyseWallPhysics,
   placementOfPose,
   protrudeLimitMm,
   type ToolBody,
-} from '@hsw-editor/physics';
-import '../../../packages/tools/src/classes/index.ts';
-import { ToolAssetStore } from '../../../packages/tools/src/node/assets.ts';
-import { PhysicsAssets } from '../../server/src/physics/assets.ts';
-import { seatShowcase } from '../../../scripts/tools/showcase-seats.ts';
-import { SHOWCASE_LAYOUT } from '../src/demo/showcaseLayout.ts';
-import { vizScene, type VizPart } from './physics-viz.ts';
+} from '../../packages/physics/src/index.ts';
+import '../../packages/tools/src/classes/index.ts';
+import { ToolAssetStore } from '../../packages/tools/src/node/assets.ts';
+import { PhysicsAssets } from '../../apps/server/src/physics/assets.ts';
+import { seatShowcase } from './showcase-seats.ts';
+import { SHOWCASE_LAYOUT } from '../../apps/web/src/demo/showcaseLayout.ts';
+import { vizScene, type VizPart } from '../../apps/web/scripts/physics-viz.ts';
 
 const args = process.argv.slice(2);
 const outFlag = args.indexOf('--out');
@@ -36,7 +36,7 @@ mkdirSync(out, { recursive: true });
 delete process.env['HSW_BANK_DIR'];
 
 const seed = JSON.parse(
-  readFileSync(new URL('../../../packages/bank/seed/index.json', import.meta.url), 'utf8'),
+  readFileSync(new URL('../../packages/bank/seed/index.json', import.meta.url), 'utf8'),
 ) as {
   elements: readonly {
     id: string;
