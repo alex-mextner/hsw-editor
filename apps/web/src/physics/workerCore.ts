@@ -229,6 +229,7 @@ export class WorkerCore {
           placement: placementOfPose(tool.pose),
           holderId: tool.holderId,
           maxLoadG: tool.maxLoadG,
+          protrudeLimitMm: tool.protrudeLimitMm,
         });
       }
       const report = analyseWallPhysics({ tools, holders, others, wasm });
@@ -270,6 +271,7 @@ export class WorkerCore {
           tipDown: candidate.tipDown,
           compatScore: candidate.compatScore,
           maxLoadG: candidate.maxLoadG,
+          protrudeLimitMm: candidate.protrudeLimitMm,
         });
       }
       const seats = rankHolders({ ...tool.body, id: request.tool.id }, candidates, {

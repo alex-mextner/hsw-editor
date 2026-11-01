@@ -17,6 +17,8 @@ export interface WallTool {
   holderId: string | null;
   /** Largest mass (g) the holder's mount carries per tool; undefined = unchecked. */
   maxLoadG?: number | undefined;
+  /** How far (mm) the tool may reach below the holder; undefined = unchecked (see `protrudeLimitMm`). */
+  protrudeLimitMm?: number | undefined;
 }
 
 export interface WallHolder {
@@ -40,7 +42,7 @@ export type ProblemSeverity = 'error' | 'warning';
 
 /** One thing a user should know about a tool, with parameters for a localised sentence. */
 export interface PhysicsProblem {
-  /** `levitating`, `penetrates`, `falls`, `tips`, `swings`, `slides_off`, `needs_retention`, `overloaded`, `removal_blocked`, `removal_needs_tilt`, `removal_two_hands`. */
+  /** `levitating`, `penetrates`, `falls`, `tips`, `swings`, `slides_off`, `needs_retention`, `wedged`, `protrudes`, `overloaded`, `removal_blocked`, `removal_needs_tilt`, `removal_two_hands`. */
   code: string;
   severity: ProblemSeverity;
   params: Readonly<Record<string, number | string | readonly string[]>>;
@@ -67,6 +69,7 @@ const HANG_ERRORS: ReadonlySet<HangReason['code']> = new Set<HangReason['code']>
   'penetrates',
   'falls',
   'tips',
+  'wedged',
   'overloaded',
 ]);
 
@@ -101,6 +104,57 @@ export function removalProblems(report: RemovalReport): PhysicsProblem[] {
   }
 }
 
+/** One hung tool judged on its holder against everything around it (other tools at their own poses). */
+function analyseTool(
+  item: WallTool,
+  holderId: string,
+  holder: WallHolder,
+  input: WallPhysicsInput,
+  toolSolids: ReadonlyMap<string, SolidBody>,
+  probe: RemovalProbe | null,
+): ToolPhysics {
+  const neighbours = [...input.holders.map((h) => h.body), ...(input.others ?? [])].filter(
+    (b) => b !== holder.body,
+  );
+  // Other tools are obstacles at their own poses.
+  const obstacles = [
+    holder.body,
+    ...neighbours,
+    ...[...toolSolids].filter(([id]) => id !== item.id).map(([, body]) => body),
+  ];
+  const hang = analyseHangPose({
+    tool: item.body,
+    placement: item.placement,
+    obstacles,
+    holder: holder.body,
+    options: {
+      ...input.hang,
+      ...(item.maxLoadG === undefined ? {} : { maxLoadG: item.maxLoadG }),
+      ...(item.protrudeLimitMm === undefined ? {} : { protrudeLimitMm: item.protrudeLimitMm }),
+    },
+  });
+  const seat = hang.rest?.placement ?? item.placement;
+  const removal =
+    probe === null
+      ? null
+      : probe.analyse({
+          tool: item.body,
+          placement: seat,
+          holder: holder.body,
+          neighbours: obstacles.filter((b) => b !== holder.body),
+          ...(input.removal ? { options: input.removal } : {}),
+        });
+  const problems = [...hangProblems(hang), ...(removal ? removalProblems(removal) : [])];
+  return {
+    toolId: item.id,
+    holderId,
+    hang,
+    removal,
+    problems,
+    rating: physicsRating({ stability: hang.score, convenience: removal?.convenience ?? null }),
+  };
+}
+
 export function analyseWallPhysics(input: WallPhysicsInput): WallPhysicsReport {
   const probe = input.wasm === undefined ? null : new RemovalProbe(input.wasm);
   const holderById = new Map(input.holders.map((h) => [h.id, h]));
@@ -116,44 +170,7 @@ export function analyseWallPhysics(input: WallPhysicsInput): WallPhysicsReport {
     if (item.holderId === null) continue;
     const holder = holderById.get(item.holderId);
     if (holder === undefined) continue;
-    const neighbours = [...input.holders.map((h) => h.body), ...(input.others ?? [])].filter(
-      (b) => b !== holder.body,
-    );
-    // Other tools are obstacles at their own poses.
-    const obstacles = [
-      holder.body,
-      ...neighbours,
-      ...[...toolSolids].filter(([id]) => id !== item.id).map(([, body]) => body),
-    ];
-    const hang = analyseHangPose({
-      tool: item.body,
-      placement: item.placement,
-      obstacles,
-      options: {
-        ...input.hang,
-        ...(item.maxLoadG === undefined ? {} : { maxLoadG: item.maxLoadG }),
-      },
-    });
-    const seat = hang.rest?.placement ?? item.placement;
-    const removal =
-      probe === null
-        ? null
-        : probe.analyse({
-            tool: item.body,
-            placement: seat,
-            holder: holder.body,
-            neighbours: obstacles.filter((b) => b !== holder.body),
-            ...(input.removal ? { options: input.removal } : {}),
-          });
-    const problems = [...hangProblems(hang), ...(removal ? removalProblems(removal) : [])];
-    tools.push({
-      toolId: item.id,
-      holderId: item.holderId,
-      hang,
-      removal,
-      problems,
-      rating: physicsRating({ stability: hang.score, convenience: removal?.convenience ?? null }),
-    });
+    tools.push(analyseTool(item, item.holderId, holder, input, toolSolids, probe));
   }
   probe?.dispose();
   return { tools, flagged: tools.filter((t) => t.problems.length > 0).length };

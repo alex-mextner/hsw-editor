@@ -130,7 +130,18 @@ largest disturbance in g (bisection) towards left, right, outward, inward, up, d
 | `slides_off` | a 0.3 g bump moves it sideways (not tipping) | force-only balance infeasible at the bump |
 | `swings` | hangs from a line contact (peg, hook): free to turn; the sway of the centre of gravity under the bump is 20 mm or more | hinge detection, `l * sin(atan 0.3 g)` |
 | `needs_retention` | a pull of 0.15 g outward walks it off its mount | outward margin |
+| `wedged` | the tool's lowest end is jammed 8 mm or more inside an opening with open air still below it and it touches the holder only by an edge (a flared screwdriver tip caught in a too-small hole: the handle floats above the rim while every contact looks fine; a collar or ring that rests on the rim by 1.5 mm or more is a seat); error, caps the score at 0.35 | `measureSeatFit`: open air under the lowest end, holder material beside it, the rest contact overlapping the rim by less than 1.5 mm |
+| `protrudes` | a part of the tool that is body (a section of 10 mm² or more, not a needle tip) reaches more than 15 mm below the lowest point of a pliers or wrench rack (`protrudeLimitMm(holderBankId)`: the bank's `pliers-rack-*` and `wrench-rack-*`; hammer forks, rails, cradles and the pliers saddle that tools dangle from are not checked); warning, caps the score at 0.7 | `measureSeatFit`: slices of the tool below the holder bottom |
 | `overloaded` | mass above the mount's per-slot capacity (`fitsTool.maxLoadG`, else a documented default) | compare |
+
+Leaning back: a tool that stands but would tip or has nothing against a pull (a drill on its battery on a U-shelf, a wrench on the
+rim of its head) is turned back about its support towards the wall in steps of 2, 4, 6, 9 and 12 degrees (slid forward off the board,
+settled again); the smallest lean that leaves none of those reasons and nothing new is reported as the hang's `rest`, and `seatTool` seats
+the tool that way. A lean that lets the tool slip down past its support is another seat, not a lean, and is refused.
+
+The seat search charges a wedged position 120 mm and a reach out of the rack 60 mm of centre-of-gravity height, so the shaft right
+through the hole, the position beside it or the handle on the rim beats the lowest rest; a natural end that cannot be held (score below 0.5) gives way
+to the other end when that one is clearly better (0.3 higher), and one that is held but not stable (below 0.8) only when the other end is stable.
 
 `score` is 0..1 (1 solid; a hinge `0.95 - 0.45 * min(1, sway / 150 mm)`; failures cap it), `status` is stable >= 0.8, marginal >= 0.45,
 else unstable. The reference disturbances (0.3 g bump about a shoulder brushing past, 0.15 g pull) and the friction coefficient are
@@ -184,7 +195,7 @@ Static, rigid, quasi-planar: no dynamics, no flexing holders, friction is one co
 of the raster (a sloped surface is approximated within 0.5 mm), a peg is detected as a free-standing blob in one depth slice, a
 magnet is the option `EquilibriumOptions.magnetPullG` (an inward pull in weights of the tool at the centre of its wall contacts, so
 friction on the board can carry it; the bank does not publish magnet strength yet, so no holder sets it) and a clip adds no pull-in force, and the lattice seat search needs the
-slot to be reachable from above. All constants live in `HangOptions`, `EquilibriumOptions`, `ContactOptions` and `RemovalOptions`.
+slot to be reachable from above. The reference disturbances and friction live in `HangOptions`, `EquilibriumOptions`, `ContactOptions` and `RemovalOptions`; the seat-fit thresholds and seat-search charges are module constants (`seatFit.ts`: `WEDGED_MIN_MM`, `EDGE_OVERLAP_MM`, `RACK_PROTRUDE_LIMIT_MM`; `hang.ts`: `LEAN_BACK_STEPS_DEG`; `seat.ts`: `WEDGED_COST_MM`, `PROTRUDES_COST_MM`). Known limit: `wedged` reads the contact on the rim of the opening, so a tool whose collar is a cone resting inside a deep bore (a short screwdriver in the 52 mm refit rail) can be called jammed; the stored lean-back seat is judged as stored, not leaned again.
 
 ### Tests
 
@@ -244,9 +255,9 @@ neighbours) and returns `{stability, convenience, status, reasons}` as ratings a
 compatibility order and re-ranks with `rankWithPhysics` (30 % fit, 70 % physics) without making rows already shown jump. Each
 card carries a chip (Stable / Marginal / Unstable, and Awkward when convenience is below 0.5) with the reasons as tooltip.
 
-**Amber marks, not red.** `<PhysicsZones/>` marks every tool with a problem of severity `error` (levitating, penetrates, falls, tips,
+**Amber marks, not red.** `<PhysicsZones/>` marks every tool with a problem of severity `error` (levitating, penetrates, falls, tips, wedged,
 overloaded, removal blocked) with amber `#f5a524` diagonal stripes on a dark neutral, in two passes (surface and faint see-through) over
-its own model; tools with only warnings (swings, slides off, needs retention, awkward removal) get a thin amber outline. The stripes
+its own model; tools with only warnings (swings, slides off, needs retention, protrudes, awkward removal) get a thin amber outline. The stripes
 run the opposite diagonal and have a wider period (9 px) than the red invalid-zone stripes, so the two stay apart even in monochrome:
 red means geometry (two bodies share volume), amber a tool that overlaps nothing but hangs badly. Hover shows the reason sentences.
 A tool that overhangs the board edge is never red (tg#24300): it is judged only by the physics check (a tool half off the board shows

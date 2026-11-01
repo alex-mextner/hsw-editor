@@ -50,7 +50,8 @@ export const physicsEn = {
   'physics.inspector.hang': 'Hang',
   'physics.inspector.mass': 'Mass',
   'physics.inspector.massValue': '{massG} g',
-  'physics.inspector.rest': 'Leans {tiltDeg}° and rests against the holder walls',
+  'physics.inspector.rest':
+    'Leans {tiltDeg}° and rests against the holder walls or leans back on the board',
   'physics.inspector.removal': 'Taking it off',
   'physics.inspector.path': 'Path: {path}',
   'physics.inspector.convenience': 'Convenience {percent}%',
@@ -84,6 +85,10 @@ export const physicsEn = {
   'physics.problem.slides_off': 'Slides off sideways when bumped',
   'physics.problem.needs_retention':
     'Nothing holds it against a pull: it can be dragged out with a neighbour',
+  'physics.problem.wedged':
+    'Stuck, not seated: its end is jammed {depthMm} mm into an opening too small for it',
+  'physics.problem.protrudes':
+    'Sticks out {protrudeMm} mm below its holder: the rack is too shallow for it',
   'physics.problem.overloaded':
     'Too heavy for the holder: {massG} g, it carries up to {maxLoadG} g',
   'physics.problem.removal_blocked': 'Cannot be taken off: blocked by {blockedBy}',
@@ -162,7 +167,8 @@ export const physicsRu = {
   'physics.inspector.hang': 'Подвес',
   'physics.inspector.mass': 'Масса',
   'physics.inspector.massValue': '{massG} г',
-  'physics.inspector.rest': 'Наклоняется на {tiltDeg}° и опирается на стенки держателя',
+  'physics.inspector.rest':
+    'Наклоняется на {tiltDeg}° и опирается на стенки держателя или откинут на доску',
   'physics.inspector.removal': 'Снятие',
   'physics.inspector.path': 'Путь: {path}',
   'physics.inspector.convenience': 'Удобство {percent}%',
@@ -196,6 +202,10 @@ export const physicsRu = {
   'physics.problem.slides_off': 'Соскальзывает вбок при толчке',
   'physics.problem.needs_retention':
     'Ничто не держит его при вытягивании: его можно вытащить вместе с соседом',
+  'physics.problem.wedged':
+    'Застрял, а не сидит: конец заклинило на {depthMm} мм в отверстии, которое для него мало',
+  'physics.problem.protrudes':
+    'Торчит на {protrudeMm} мм ниже держателя: стойка для него слишком мелкая',
   'physics.problem.overloaded':
     'Слишком тяжёлый для держателя: {massG} г при допустимых {maxLoadG} г',
   'physics.problem.removal_blocked': 'Снять нельзя: мешает {blockedBy}',

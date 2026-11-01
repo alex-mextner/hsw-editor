@@ -12,6 +12,7 @@ import {
   mountSlots,
   placeTool,
   prefersTipDown,
+  slotHalfWidthMm,
   type HolderSpec,
   type ToolInterface,
 } from '@hsw-editor/compat';
@@ -24,13 +25,18 @@ import {
 } from '@hsw-editor/core';
 import {
   analyseHangPose,
+  type Bounds,
   placementOfPose,
+  protrudeLimitMm,
+  type SeatResult,
   seatTool,
   SolidBody,
   type ToolBody,
+  worldBounds,
 } from '@hsw-editor/physics';
 import { readGlbSolid, readToolBody } from '@hsw-editor/physics/glb';
 import { exportGlb, generate, getToolClass } from '@hsw-editor/tools';
+import { DRIVER_FOR_5MM_HOLES } from '@/demo/showcaseLayout.ts';
 import { loadManifold } from '@/scene/invalid-zones/manifold.ts';
 import type { AssetContext } from './assets.ts';
 import type { PhysicsChecker } from './client.ts';
@@ -188,8 +194,101 @@ describe('the levitating tools of the user screenshot', () => {
         const top = HOLDER_POSE.y + spec().bboxMm.max.y;
         expect(top - seat.pose.y).toBeGreaterThan(100);
       }
-    });
+    }, 30_000);
   }
+});
+
+// ---- seat cleanliness (#258): tools enter holes and slots cleanly and sit stably -------------------------
+
+interface SeatedIn {
+  readonly seat: SeatResult;
+  readonly tool: ToolBody;
+  readonly holder: SolidBody;
+  readonly holderBounds: Bounds;
+  readonly toolBounds: Bounds;
+}
+
+/** Seats a generated tool in slot `slotIndex` of a seed holder the way the daemon does, with the holder's own protrusion limit. */
+async function seatedIn(
+  holderId: string,
+  generator: string,
+  params: Readonly<Record<string, number>>,
+  slotIndex = 0,
+): Promise<SeatedIn> {
+  const spec = element(holderId);
+  const holder = await holderBody(holderId, HOLDER_POSE);
+  const tool = await toolBody(generator, params);
+  const slots = mountSlots(spec, spec.fitsTool[0] ?? null);
+  const slot = slots[slotIndex];
+  if (slot === undefined) throw new Error(`${holderId} has no slot ${slotIndex}`);
+  const limit = protrudeLimitMm(holderId);
+  const seat = seatTool({
+    tool,
+    holder,
+    neighbours: [],
+    anchor: [HOLDER_POSE.x + slot.anchor[0], HOLDER_POSE.y + slot.anchor[1], slot.anchor[2]],
+    halfWidthMm: slotHalfWidthMm(spec, slots.length),
+    tipDown: prefersTipDown(toolInterfaceOf(generator, params)),
+    ...(limit === undefined ? {} : { options: { protrudeLimitMm: limit } }),
+  });
+  if (seat === null) throw new Error(`${generator} in ${holderId}: no seat found`);
+  return {
+    seat,
+    tool,
+    holder,
+    holderBounds: holder.bounds(),
+    toolBounds: worldBounds(tool, seat.placement),
+  };
+}
+
+const codesOf = (seat: SeatResult): string[] => seat.report.reasons.map((r) => r.code);
+
+describe('seat cleanliness (#258, the circled tools of the user screenshot)', () => {
+  test('screwdriver in the 5 mm rail: shaft through the hole, handle on the rim, nothing flagged', async () => {
+    for (const slotIndex of [0, 1, 2]) {
+      const { seat, toolBounds, holderBounds } = await seatedIn(
+        'screwdriver-rail-slots3-holediameter5',
+        'screwdriver',
+        DRIVER_FOR_5MM_HOLES,
+        slotIndex,
+      );
+      expect(codesOf(seat)).toEqual([]);
+      expect(seat.report.status).toBe('stable');
+      // The shaft (100 mm, less the ferrule above the rim) is through the hole and out under the rail: the handle sits on the rim.
+      expect(holderBounds.max[1] - toolBounds.min[1]).toBeGreaterThan(85);
+      expect(toolBounds.min[1]).toBeLessThan(holderBounds.min[1]);
+    }
+  });
+
+  test('cordless drill on its battery on the U-shelf leans back against the wall and is held against a pull', async () => {
+    const { seat, tool, holder } = await seatedIn('drill-cradle-bodywidth45', 'cordless-drill', {});
+    expect(codesOf(seat)).not.toContain('needs_retention');
+    // The pose the wall stores is the leaned one: the wall analysis (which leans nothing back) judges it stable as it is.
+    const stored = analyseHangPose({
+      tool,
+      placement: seat.placement,
+      obstacles: [holder],
+      holder,
+    });
+    expect(stored.status).toBe('stable');
+    expect(stored.reasons).toEqual([]);
+    expect(seat.report.status).toBe('stable');
+    // Leaned back (about the horizontal axis along the wall), not standing plumb.
+    expect(seat.report.rest?.tiltDeg ?? 0).toBeGreaterThan(0);
+    expect(seat.report.marginsG.outward).toBeGreaterThanOrEqual(0.15 * 0.9);
+  }, 30_000);
+
+  test('open-end wrench in the 4-slot rack is held, not tipping on its prongs', async () => {
+    const { seat } = await seatedIn(
+      'wrench-rack-slots4-maxwrenchwidth30',
+      'wrench-open-end',
+      {},
+      1,
+    );
+    expect(codesOf(seat)).not.toContain('tips');
+    expect(codesOf(seat)).not.toContain('needs_retention');
+    expect(seat.report.status).toBe('stable');
+  }, 30_000);
 });
 
 // ---- the whole pipeline ---------------------------------------------------------------------------

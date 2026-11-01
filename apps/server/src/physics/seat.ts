@@ -90,6 +90,37 @@ function reachOf(tool: ToolBody): number {
 }
 
 export function createSeatPlanner(assets: PhysicsAssets): SeatPlanner {
+  /** What the tool could touch: the other holders and shelves near, and the other tools at the poses they have in `view`. */
+  async function neighboursOf(
+    solids: WallSolids,
+    view: Wall,
+    item: WallItem,
+    holder: WallSolids['holders'][number],
+    toolBody: ToolBody,
+  ): Promise<SolidBody[]> {
+    const reach = reachOf(toolBody);
+    const near = (body: SolidBody): boolean =>
+      boundsOverlap(body.bounds(), holder.body.bounds(), reach);
+    const neighbours: SolidBody[] = [
+      ...solids.holders.filter((h) => h.item.id !== holder.item.id).map((h) => h.body),
+      ...solids.boardParts,
+    ].filter(near);
+    for (const other of view.items) {
+      if (other.kind !== 'tool' || other.id === item.id || other.parentId === undefined) continue;
+      const otherBody = await assets.toolBody(other, view);
+      if ('skip' in otherBody) continue;
+      const placement = placementOfPose(other.pose);
+      const solid = new SolidBody(
+        other.id,
+        otherBody.body.mesh,
+        placement.rotation,
+        placement.position,
+      );
+      if (near(solid)) neighbours.push(solid);
+    }
+    return neighbours;
+  }
+
   async function seatIn(
     solids: WallSolids,
     view: Wall,
@@ -115,27 +146,7 @@ export function createSeatPlanner(assets: PhysicsAssets): SeatPlanner {
     );
     if (input === null) return { seat: null, reason: 'holder_not_upright' };
 
-    // What the tool could touch: the other holders and shelves near, and the other tools at the poses they have in `view`.
-    const reach = reachOf(built.body);
-    const near = (body: SolidBody): boolean =>
-      boundsOverlap(body.bounds(), holder.body.bounds(), reach);
-    const neighbours: SolidBody[] = [
-      ...solids.holders.filter((h) => h.item.id !== holder.item.id).map((h) => h.body),
-      ...solids.boardParts,
-    ].filter(near);
-    for (const other of view.items) {
-      if (other.kind !== 'tool' || other.id === item.id || other.parentId === undefined) continue;
-      const otherBody = await assets.toolBody(other, view);
-      if ('skip' in otherBody) continue;
-      const placement = placementOfPose(other.pose);
-      const solid = new SolidBody(
-        other.id,
-        otherBody.body.mesh,
-        placement.rotation,
-        placement.position,
-      );
-      if (near(solid)) neighbours.push(solid);
-    }
+    const neighbours = await neighboursOf(solids, view, item, holder, built.body);
 
     const result = seatTool({
       tool: built.body,
@@ -144,7 +155,10 @@ export function createSeatPlanner(assets: PhysicsAssets): SeatPlanner {
       anchor: input.anchor,
       halfWidthMm: input.halfWidthMm,
       tipDown: input.tipDown,
-      options: input.maxLoadG === undefined ? {} : { maxLoadG: input.maxLoadG },
+      options: {
+        ...(input.maxLoadG === undefined ? {} : { maxLoadG: input.maxLoadG }),
+        ...(input.protrudeLimitMm === undefined ? {} : { protrudeLimitMm: input.protrudeLimitMm }),
+      },
     });
     if (result === null) return { seat: null, reason: 'no_seat' };
     return {
